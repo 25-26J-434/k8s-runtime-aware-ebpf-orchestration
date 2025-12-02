@@ -1,11 +1,4 @@
-Understood.
-Here is a **fully updated, professional README.md** WITHOUT the architecture diagram and WITH a **clean, correct branching strategy**, ready to copy and paste into Visual Studio Code.
 
-You can paste this into `README.md` directly.
-
----
-
-# UPDATED PROFESSIONAL README.md
 
 ### Kubernetes Runtime-Aware Orchestration via eBPF
 
@@ -81,7 +74,7 @@ k8s-runtime-aware-ebpf-orchestration/
 
 ---
 
-## 3. Branching Strategy (Correct and Clean)
+## 3. Branching Strategy 
 
 This project uses a structured Git workflow to support multi-component development.
 
