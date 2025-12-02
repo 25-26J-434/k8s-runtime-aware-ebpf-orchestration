@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ebpf-daemon
+spec:
+  selector:
+    matchLabels:
+      app: ebpf-daemon
+  template:
+    metadata:
+      labels:
+        app: ebpf-daemon
+    spec:
+      hostPID: true
+      containers:
+      - name: ebpf-daemon
+        image: ebpf/daemon:latest
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: bpffs
+          mountPath: /sys/fs/bpf
+      volumes:
+      - name: bpffs
+        hostPath:
+          path: /sys/fs/bpf

@@ -1,0 +1,17 @@
+# Binaries
+*.o
+*.so
+*.out
+*.bin
+
+# Go
+bin/
+dist/
+vendor/
+
+# Node
+node_modules/
+
+# Editor
+.vscode/
+.idea/
