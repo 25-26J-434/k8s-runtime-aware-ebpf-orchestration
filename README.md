@@ -1,111 +1,86 @@
-# Kubernetes Runtime-Aware Orchestration via eBPF
+Kubernetes Runtime-Aware Orchestration via eBPF
 
-## Introduction
-This repository implements a unified, eBPF-powered orchestration framework designed to eliminate sidecar proxies and introduce a modular, kernel-level telemetry and control plane for Kubernetes clusters. The system enables real-time, network-aware decision making through four interoperable components:
+Sidecar-Less Telemetry, Intelligent Routing, Runtime-Aware Scheduling, Multi-Cluster Coordination
 
-1. Component 1 – eBPF Daemon Layer  
-2. Component 2 – Intelligent Routing  
-3. Component 3 – Runtime-Aware Scheduling  
-4. Component 4 – Federated Multi-Cluster Coordination  
+1. Overview
 
-A single node-level daemon (Component 1) is deployed as a Kubernetes DaemonSet. It manages eBPF program loading, telemetry extraction, map updates, event handling, and enforcement operations. All other components connect to this daemon through a pluggable API surface.
+This repository provides a modular orchestration framework for Kubernetes using eBPF as the primary mechanism for kernel-level telemetry and control. The system removes the need for sidecar proxies and replaces them with a unified node-level daemon that exposes a pluggable interface for routing, scheduling, and multi-cluster coordination.
 
----
+The platform is divided into four main components:
 
-## System Architecture Overview
+Component 1 — eBPF Daemon Layer
 
-### High-Level Architecture
+Component 2 — Intelligent Routing
 
-+--------------------------------------------------------------+
-| Kubernetes Cluster |
-+--------------------------------------------------------------+
-| Node 1 Node 2 Node N |
-| +------------------+ +------------------+ +------------------+
-| | eBPF DaemonSet | | eBPF DaemonSet | | eBPF DaemonSet |
-| | (Component 1) | | (Component 1) | | (Component 1) |
-| |------------------| |------------------| |------------------|
-| | - Load eBPF | | - Load eBPF | | - Load eBPF |
-| | - Export Maps | | - Export Maps | | - Export Maps |
-| | - Kernel Hooks | | - Kernel Hooks | | - Kernel Hooks |
-| +---------|--------+ +---------|--------+ +---------|--------+
-| | Kernel Telemetry & Kernel Control |
-+------------|---------------------------------------------------+
-| Pluggable Interface (REST / WebSocket)
-v
+Component 3 — Runtime-Aware Scheduling
 
-+--------------------------------------------------------------+
-| Orchestration Modules |
-+--------------------------------------------------------------+
-| Component 2: Intelligent Routing Module |
-| Component 3: Runtime-Aware Scheduling Module |
-| Component 4: Federated Multi-Cluster Control Module |
-+--------------------------------------------------------------+
-^
-| Daemon API Surface
-+------------|--------------------------------------------------+
-| UI Dashboards |
-| Telemetry, Routing, Scheduling, Federation |
-+--------------------------------------------------------------+
+Component 4 — Federated Multi-Cluster Coordination
 
+Component 1 serves as the foundation by loading and managing eBPF programs, exposing kernel metrics, and offering a control API. Components 2–4 integrate on top of it through plugins and standard APIs.
 
----
-
-## Repository Structure
-
+2. Repository Structure
 k8s-runtime-aware-ebpf-orchestration/
 │
-├── daemon/ Core Daemon (Component 1)
-│ ├── cmd/daemon/ Entrypoint for daemon
-│ ├── pkg/
-│ │ ├── api/ REST API for modules
-│ │ ├── loader/ eBPF loader logic
-│ │ ├── telemetry/ Map readers and collectors
-│ │ ├── plugins/ Plugin interfaces (Components 2–4)
-│ │ │ ├── routing/
-│ │ │ ├── scheduling/
-│ │ │ └── federation/
-│ │ └── util/
-│ └── go.mod
+├── daemon/                                # Component 1 daemon service
+│   ├── cmd/daemon/                        # Daemon entrypoint
+│   ├── pkg/
+│   │   ├── api/                           # HTTP APIs
+│   │   ├── loader/                        # eBPF loader
+│   │   ├── telemetry/                     # Data collectors
+│   │   ├── plugins/                       # Plugin interfaces for other components
+│   │   │   ├── routing/
+│   │   │   ├── scheduling/
+│   │   │   └── federation/
+│   │   └── util/
+│   └── go.mod
 │
-├── ebpf/ All eBPF programs
-│ ├── common/ Shared maps and structs
-│ ├── component-1-daemon/
-│ ├── component-2-routing/
-│ ├── component-3-scheduling/
-│ └── component-4-federation/
+├── ebpf/                                  # eBPF kernel programs
+│   ├── common/                            # Shared structs and maps
+│   ├── component-1-daemon/                # Daemon BPF programs
+│   ├── component-2-routing/               # Routing BPF logic
+│   ├── component-3-scheduling/            # Scheduler telemetry logic
+│   └── component-4-federation/
 │
-├── k8s/ Kubernetes deployment files
-│ └── daemonset.yaml
+├── k8s/                                   # Kubernetes manifests
+│   └── daemonset.yaml
 │
-├── ui/ Web dashboards
-│ ├── component-1-daemon-ui/
-│ ├── component-2-routing-ui/
-│ ├── component-3-scheduler-ui/
-│ └── component-4-federation-ui/
+├── ui/                                    # Dashboards for each component
+│   ├── component-1-daemon-ui/
+│   ├── component-2-routing-ui/
+│   ├── component-3-scheduler-ui/
+│   └── component-4-federation-ui/
 │
-├── scripts/ Build & helper scripts
-│ ├── build-ebpf.sh
-│ ├── load-ebpf.sh
-│ └── dev-setup.sh
+├── scripts/                               # Build and development scripts
+│   ├── build-ebpf.sh
+│   ├── load-ebpf.sh
+│   └── dev-setup.sh
 │
-├── examples/ Test microservices
-│ ├── service-a/
-│ └── service-b/
+├── examples/                              # Test microservices
+│   ├── service-a/
+│   └── service-b/
 │
-└── docs/ Documentation for each component
-├── architecture.md
-├── component-1-daemon/
-├── component-2-routing/
-├── component-3-scheduler/
-└── component-4-federation/
+└── docs/                                  # Component-specific documentation
+    ├── architecture.md
+    ├── component-1-daemon/
+    ├── component-2-routing/
+    ├── component-3-scheduler/
+    └── component-4-federation/
 
+3. Branching Strategy (Correct and Clean)
 
----
+This project uses a structured Git workflow to support multi-component development.
 
-## Branching Strategy
+Primary Branches
 
-main Stable production-ready branch
-develop Active ongoing integration branch
+main
+Production-ready, stable code only.
+
+develop
+Integration branch where all components merge before going to main.
+
+Feature Branches
+
+Each component has its own long-lived feature branch:
 
 feature/component-1-daemon
 feature/component-2-routing
@@ -113,52 +88,126 @@ feature/component-3-scheduler
 feature/component-4-federation
 feature/ui-dashboard
 
+Workflow
 
-Development workflow:
+Developer checks out from develop
 
-1. Create feature branch  
-2. Commit and push changes  
-3. Merge to develop  
-4. After review, merge develop → main  
+Creates component-specific feature branch
 
----
+Works on code, commits, and pushes
 
-## Building the System
+Opens Pull Request → merge into develop
 
-### Build eBPF artifacts
+Once all components are stable, merge develop → main
 
-```bash
+Commands (copy/paste)
+
+Create a new branch:
+
+git checkout develop
+git pull
+git checkout -b feature/component-1-daemon
+
+
+Push first time:
+
+git push -u origin feature/component-1-daemon
+
+
+Merge into develop:
+
+git checkout develop
+git pull
+git merge feature/component-1-daemon
+git push
+
+
+Merge develop → main:
+
+git checkout main
+git merge develop
+git push
+
+
+This workflow ensures:
+
+Component teams do not break each other
+
+Component 1 remains the foundational base
+
+Integration happens cleanly
+
+Main always stays stable
+
+4. Build Instructions
+Build eBPF Programs
 ./scripts/build-ebpf.sh
 
 Run Daemon Locally
-
 go run daemon/cmd/daemon/main.go
 
-Deployment on Kubernetes
 
-Apply the DaemonSet:
+Expected to see:
+
+Daemon started...
+eBPF programs loaded...
+HTTP server running at :8080
+
+5. Kubernetes Deployment
+
+Apply DaemonSet:
 
 kubectl apply -f k8s/daemonset.yaml
 
-Verify pods:
 
-kubectl get pods -n kube-system -l app=ebpf-daemon
+Verify daemon pods:
 
-Testing with Example Microservices
-Start example services
+kubectl get pods -A | grep ebpf
+
+6. Testing Using Microservices
+
+Start example test services:
 
 python3 examples/service-a/app.py
 python3 examples/service-b/app.py
 
-Generate traffic for telemetry
+
+Generate traffic:
 
 curl http://localhost:5000
 curl http://localhost:5001
 
-Access UI Dashboards
+7. Component Responsibilities (Summary)
+Component 1 – eBPF Daemon Layer
 
-Each component's UI runs separately in the ui/ directory.
-Summary
+Manages kernel eBPF programs
 
-This repository provides a complete platform for sidecar-less service connectivity, runtime-aware routing, syscall-informed scheduling, and multi-cluster telemetry synchronization. Component 1 (the daemon) serves as the universal kernel-level interface, while Components 2–4 extend orchestration intelligence using data generated and exposed from the eBPF layer.
+Exposes metrics via REST
 
+Hosts plugin interfaces
+
+Coordinates routing, scheduling, federation
+
+Component 2 – Intelligent Routing
+
+Updates BPF maps for dynamic flow redirection
+
+Uses latency, retransmissions, and congestion
+
+Component 3 – Runtime-Aware Scheduling
+
+Provides node scoring based on kernel telemetry
+
+Integrates with K8s scheduler extender
+
+Component 4 – Federated Multi-Cluster Control
+
+Shares telemetry across clusters
+
+Coordinates decisions globally
+
+8. Summary
+
+This repository provides a next-generation, eBPF-based orchestration framework for Kubernetes. The system replaces sidecar proxies with a lightweight kernel-level architecture and enables advanced routing, scheduling, and multi-cluster decision making using real-time telemetry.
+
+Component 1 forms the foundation, while Components 2–4 build specialized intelligence on top of it. The branching strategy, repository structure, and modular design support scalable development for research and production use.
