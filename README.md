@@ -1,24 +1,36 @@
-Kubernetes Runtime-Aware Orchestration via eBPF
+Understood.
+Here is a **fully updated, professional README.md** WITHOUT the architecture diagram and WITH a **clean, correct branching strategy**, ready to copy and paste into Visual Studio Code.
+
+You can paste this into `README.md` directly.
+
+---
+
+# UPDATED PROFESSIONAL README.md
+
+### Kubernetes Runtime-Aware Orchestration via eBPF
 
 Sidecar-Less Telemetry, Intelligent Routing, Runtime-Aware Scheduling, Multi-Cluster Coordination
 
-1. Overview
+---
+
+## 1. Overview
 
 This repository provides a modular orchestration framework for Kubernetes using eBPF as the primary mechanism for kernel-level telemetry and control. The system removes the need for sidecar proxies and replaces them with a unified node-level daemon that exposes a pluggable interface for routing, scheduling, and multi-cluster coordination.
 
 The platform is divided into four main components:
 
-Component 1 — eBPF Daemon Layer
-
-Component 2 — Intelligent Routing
-
-Component 3 — Runtime-Aware Scheduling
-
-Component 4 — Federated Multi-Cluster Coordination
+* **Component 1** — eBPF Daemon Layer
+* **Component 2** — Intelligent Routing
+* **Component 3** — Runtime-Aware Scheduling
+* **Component 4** — Federated Multi-Cluster Coordination
 
 Component 1 serves as the foundation by loading and managing eBPF programs, exposing kernel metrics, and offering a control API. Components 2–4 integrate on top of it through plugins and standard APIs.
 
-2. Repository Structure
+---
+
+## 2. Repository Structure
+
+```
 k8s-runtime-aware-ebpf-orchestration/
 │
 ├── daemon/                                # Component 1 daemon service
@@ -65,149 +77,173 @@ k8s-runtime-aware-ebpf-orchestration/
     ├── component-2-routing/
     ├── component-3-scheduler/
     └── component-4-federation/
+```
 
-3. Branching Strategy (Correct and Clean)
+---
+
+## 3. Branching Strategy (Correct and Clean)
 
 This project uses a structured Git workflow to support multi-component development.
 
-Primary Branches
+### Primary Branches
 
-main
-Production-ready, stable code only.
+* **main**
+  Production-ready, stable code only.
 
-develop
-Integration branch where all components merge before going to main.
+* **develop**
+  Integration branch where all components merge before going to main.
 
-Feature Branches
+### Feature Branches
 
 Each component has its own long-lived feature branch:
 
+```
 feature/component-1-daemon
 feature/component-2-routing
 feature/component-3-scheduler
 feature/component-4-federation
 feature/ui-dashboard
+```
 
-Workflow
+### Workflow
 
-Developer checks out from develop
+1. Developer checks out from `develop`
+2. Creates component-specific feature branch
+3. Works on code, commits, and pushes
+4. Opens Pull Request → merge into `develop`
+5. Once all components are stable, merge `develop` → `main`
 
-Creates component-specific feature branch
-
-Works on code, commits, and pushes
-
-Opens Pull Request → merge into develop
-
-Once all components are stable, merge develop → main
-
-Commands (copy/paste)
+### Commands (copy/paste)
 
 Create a new branch:
 
+```bash
 git checkout develop
 git pull
 git checkout -b feature/component-1-daemon
-
+```
 
 Push first time:
 
+```bash
 git push -u origin feature/component-1-daemon
-
+```
 
 Merge into develop:
 
+```bash
 git checkout develop
 git pull
 git merge feature/component-1-daemon
 git push
-
+```
 
 Merge develop → main:
 
+```bash
 git checkout main
 git merge develop
 git push
-
+```
 
 This workflow ensures:
 
-Component teams do not break each other
+* Component teams do not break each other
+* Component 1 remains the foundational base
+* Integration happens cleanly
+* Main always stays stable
 
-Component 1 remains the foundational base
+---
 
-Integration happens cleanly
+## 4. Build Instructions
 
-Main always stays stable
+### Build eBPF Programs
 
-4. Build Instructions
-Build eBPF Programs
+```bash
 ./scripts/build-ebpf.sh
+```
 
-Run Daemon Locally
+### Run Daemon Locally
+
+```bash
 go run daemon/cmd/daemon/main.go
-
+```
 
 Expected to see:
 
+```
 Daemon started...
 eBPF programs loaded...
 HTTP server running at :8080
+```
 
-5. Kubernetes Deployment
+---
+
+## 5. Kubernetes Deployment
 
 Apply DaemonSet:
 
+```bash
 kubectl apply -f k8s/daemonset.yaml
-
+```
 
 Verify daemon pods:
 
+```bash
 kubectl get pods -A | grep ebpf
+```
 
-6. Testing Using Microservices
+---
+
+## 6. Testing Using Microservices
 
 Start example test services:
 
+```bash
 python3 examples/service-a/app.py
 python3 examples/service-b/app.py
-
+```
 
 Generate traffic:
 
+```bash
 curl http://localhost:5000
 curl http://localhost:5001
+```
 
-7. Component Responsibilities (Summary)
-Component 1 – eBPF Daemon Layer
+---
 
-Manages kernel eBPF programs
+## 7. Component Responsibilities (Summary)
 
-Exposes metrics via REST
+### Component 1 – eBPF Daemon Layer
 
-Hosts plugin interfaces
+* Manages kernel eBPF programs
+* Exposes metrics via REST
+* Hosts plugin interfaces
+* Coordinates routing, scheduling, federation
 
-Coordinates routing, scheduling, federation
+### Component 2 – Intelligent Routing
 
-Component 2 – Intelligent Routing
+* Updates BPF maps for dynamic flow redirection
+* Uses latency, retransmissions, and congestion
 
-Updates BPF maps for dynamic flow redirection
+### Component 3 – Runtime-Aware Scheduling
 
-Uses latency, retransmissions, and congestion
+* Provides node scoring based on kernel telemetry
+* Integrates with K8s scheduler extender
 
-Component 3 – Runtime-Aware Scheduling
+### Component 4 – Federated Multi-Cluster Control
 
-Provides node scoring based on kernel telemetry
+* Shares telemetry across clusters
+* Coordinates decisions globally
 
-Integrates with K8s scheduler extender
+---
 
-Component 4 – Federated Multi-Cluster Control
-
-Shares telemetry across clusters
-
-Coordinates decisions globally
-
-8. Summary
+## 8. Summary
 
 This repository provides a next-generation, eBPF-based orchestration framework for Kubernetes. The system replaces sidecar proxies with a lightweight kernel-level architecture and enables advanced routing, scheduling, and multi-cluster decision making using real-time telemetry.
 
 Component 1 forms the foundation, while Components 2–4 build specialized intelligence on top of it. The branching strategy, repository structure, and modular design support scalable development for research and production use.
+
+---
+
