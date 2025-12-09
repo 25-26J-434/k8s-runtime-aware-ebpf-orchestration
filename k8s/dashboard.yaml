@@ -1,0 +1,48 @@
+# eBPF Telemetry Dashboard Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ebpf-dashboard
+  namespace: ebpf-telemetry
+  labels:
+    app: ebpf-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ebpf-dashboard
+  template:
+    metadata:
+      labels:
+        app: ebpf-dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: ebpf-dashboard:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ebpf-dashboard
+  namespace: ebpf-telemetry
+  labels:
+    app: ebpf-dashboard
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
+  selector:
+    app: ebpf-dashboard
+

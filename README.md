@@ -70,7 +70,7 @@ This project implements a sidecar-less service mesh architecture for Kubernetes 
 
 ## How It Works: eBPF Data Collection Pipeline
 
-### 1️⃣ **Kernel-Level Instrumentation** (Zero Application Changes)
+### 1. **Kernel-Level Instrumentation** (Zero Application Changes)
 
 The system uses **eBPF (Extended Berkeley Packet Filter)** to instrument the Linux kernel at runtime:
 
@@ -96,7 +96,7 @@ int dns_end_probe(struct sock *sk) {
 - Captures **real network latency** from kernel network stack
 - Works for **all pods** without modification
 
-### 2️⃣ **Userspace Collection** (Go Daemon)
+### 2. **Userspace Collection** (Go Daemon)
 
 The Go daemon reads events from the eBPF ring buffer:
 
@@ -122,7 +122,7 @@ func StartDNSLatencyCollector() {
 - Aggregates metrics per pod and node
 - Calculates min/max/avg statistics
 
-### 3️⃣ **REST API Exposure** (HTTP/JSON)
+### 3. **REST API Exposure** (HTTP/JSON)
 
 Metrics are exposed via RESTful API for other components:
 
@@ -151,7 +151,7 @@ GET /metrics                   // Prometheus format
 }
 ```
 
-### 4️⃣ **Frontend Visualization** (React Dashboard)
+### 4. **Frontend Visualization** (React Dashboard)
 
 Real-time dashboard consumes the API:
 
@@ -168,16 +168,16 @@ const { metrics } = useMetrics(3000);
 
 ## Components
 
-### Component 1: eBPF Daemon Layer (This Repository) ✅ **IMPLEMENTED**
+### Component 1: eBPF Daemon Layer (This Repository) **IMPLEMENTED**
 - **Purpose:** Sidecar-less telemetry collection
 - **Technology:** eBPF (C) + Go + Kubernetes DaemonSet
 - **Features:**
-  - ✅ DNS latency measurement via kprobe on `udp_sendmsg`/`udp_recvmsg`
-  - ✅ TCP RTT measurement via kprobe on `tcp_connect`/`tcp_finish_connect`
-  - ✅ Per-pod and node-level metrics aggregation
-  - ✅ REST API (JSON + Prometheus formats)
-  - ✅ Kubernetes API integration for pod discovery
-  - ✅ React dashboard with real-time graphs
+  - DNS latency measurement via kprobe on `udp_sendmsg`/`udp_recvmsg`
+  - TCP RTT measurement via kprobe on `tcp_connect`/`tcp_finish_connect`
+  - Per-pod and node-level metrics aggregation
+  - REST API (JSON + Prometheus formats)
+  - Kubernetes API integration for pod discovery
+  - React dashboard with real-time graphs
 
 ### Component 2: Intelligent Traffic Routing (Planned)
 - Dynamic traffic routing based on real-time telemetry
@@ -395,15 +395,15 @@ curl http://localhost:8080/api/cluster/topology | jq '.nodes[0].name'
 }
 ```
 
-## 🎉 You're Now Running!
+## You're Now Running!
 
 You should now have:
 
-✅ **Kind Cluster**: Running with eBPF support  
-✅ **eBPF Daemon**: Collecting DNS latency from kernel  
-✅ **Sample Services**: 3 pods generating DNS traffic  
-✅ **REST API**: Available at `http://localhost:8080`  
-✅ **React Dashboard**: Available at `http://localhost:5000`
+**Kind Cluster**: Running with eBPF support  
+**eBPF Daemon**: Collecting DNS latency from kernel  
+**Sample Services**: 3 pods generating DNS traffic  
+**REST API**: Available at `http://localhost:8080`  
+**React Dashboard**: Available at `http://localhost:5000`
 
 **Dashboard Features:**
 - Real-time DNS latency graphs per node
@@ -412,7 +412,7 @@ You should now have:
 - Live metric updates every 3 seconds
 - Dark theme UI
 
-## 🔧 Using Make Commands (Alternative)
+## Using Make Commands (Alternative)
 
 If you prefer using Make:
 
@@ -435,7 +435,7 @@ make undeploy                # Remove deployments
 kind delete cluster --name ebpf-cluster  # Delete cluster
 ```
 
-## 🧪 Testing Different Services
+## Testing Different Services
 
 ### Deploy Your Own Services
 
@@ -472,7 +472,7 @@ kubectl scale deployment pod-a --replicas=3 -n dns-test
 watch -n 1 'curl -s http://localhost:8080/metrics/json | jq .dns.total_events'
 ```
 
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 ### Daemon Not Starting
 
@@ -605,7 +605,7 @@ npm run dev
 }
 ```
 
-## 🔌 Using This Data in Other Components
+## Using This Data in Other Components
 
 ### **Example 1: Intelligent Traffic Routing**
 
@@ -683,7 +683,7 @@ const bestCluster = clusters.reduce((prev, curr) =>
 );
 ```
 
-## 🎯 Key Advantages for Component Developers
+## Key Advantages for Component Developers
 
 1. **No Kernel Access Required**: Components consume data via REST API
 2. **Language Agnostic**: HTTP/JSON works with any programming language
@@ -850,7 +850,7 @@ sudo bpftool map dump name dns_events
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## 📊 Data Types and Precision
+## Data Types and Precision
 
 | Data Point | Captured At | Precision | Source |
 |------------|-------------|-----------|--------|
@@ -862,14 +862,14 @@ sudo bpftool map dump name dns_events
 | **Namespace** | K8s API | String | Pod metadata |
 
 **Important Notes:**
-- ✅ **Latency data** comes from **kernel timestamps** (not API queries)
-- ✅ **Zero application instrumentation** required
-- ✅ **Sub-microsecond precision** for latency measurements
-- 🔵 **Kubernetes API** only used for mapping IPs to pod names (enrichment)
+- **Latency data** comes from **kernel timestamps** (not API queries)
+- **Zero application instrumentation** required
+- **Sub-microsecond precision** for latency measurements
+- **Kubernetes API** only used for mapping IPs to pod names (enrichment)
 
 ## Roadmap
 
-- [x] **Component 1: eBPF Daemon Layer** ✅ **COMPLETED**
+- [x] **Component 1: eBPF Daemon Layer** **COMPLETED**
   - [x] DNS latency collection via kernel probes
   - [x] RTT collection via TCP instrumentation
   - [x] Per-pod metrics aggregation
@@ -896,7 +896,7 @@ sudo bpftool map dump name dns_events
   - [ ] Historical data storage
   - [ ] Policy enforcement engine
 
-## 🧹 Cleanup
+## Cleanup
 
 ### Stop Everything and Clean Up
 
@@ -932,7 +932,7 @@ kubectl config use-context docker-desktop && \
 echo "Cleanup complete!"
 ```
 
-## 📊 Monitoring and Debugging
+## Monitoring and Debugging
 
 ### View Live Metrics
 
