@@ -1,0 +1,35 @@
+# Kind cluster configuration for eBPF development
+# Simplified single-node configuration for reliability
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ebpf-cluster
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # NodePort range for services
+      - containerPort: 30000
+        hostPort: 30000
+        protocol: TCP
+      - containerPort: 30001
+        hostPort: 30001
+        protocol: TCP
+      # eBPF daemon API
+      - containerPort: 30080
+        hostPort: 8081
+        protocol: TCP
+    extraMounts:
+      # Mount /sys for eBPF
+      - hostPath: /sys
+        containerPath: /sys
+        readOnly: true
+networking:
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/16"
+
+

@@ -2,25 +2,149 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: ebpf-daemon
+  namespace: ebpf-telemetry
+  labels:
+    app: ebpf-daemon
+    component: telemetry
 spec:
   selector:
     matchLabels:
       app: ebpf-daemon
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
   template:
     metadata:
       labels:
         app: ebpf-daemon
+        component: telemetry
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
     spec:
       hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: ebpf-daemon
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
       containers:
-      - name: ebpf-daemon
-        image: ebpf/daemon:latest
-        securityContext:
-          privileged: true
-        volumeMounts:
-        - name: bpffs
-          mountPath: /sys/fs/bpf
+        - name: daemon
+          image: ebpf-daemon:latest
+          imagePullPolicy: Never
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - SYS_ADMIN
+                - SYS_PTRACE
+                - NET_ADMIN
+                - BPF
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: bpf
+              mountPath: /sys/fs/bpf
+            - name: debugfs
+              mountPath: /sys/kernel/debug
+            - name: modules
+              mountPath: /lib/modules
+              readOnly: true
+            - name: kernel-src
+              mountPath: /usr/src
+              readOnly: true
       volumes:
-      - name: bpffs
-        hostPath:
-          path: /sys/fs/bpf
+        - name: bpf
+          hostPath:
+            path: /sys/fs/bpf
+            type: DirectoryOrCreate
+        - name: debugfs
+          hostPath:
+            path: /sys/kernel/debug
+            type: Directory
+        - name: modules
+          hostPath:
+            path: /lib/modules
+            type: Directory
+        - name: kernel-src
+          hostPath:
+            path: /usr/src
+            type: DirectoryOrCreate
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ebpf-daemon
+  namespace: ebpf-telemetry
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ebpf-daemon
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "pods", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ebpf-daemon
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ebpf-daemon
+subjects:
+  - kind: ServiceAccount
+    name: ebpf-daemon
+    namespace: ebpf-telemetry
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ebpf-daemon
+  namespace: ebpf-telemetry
+  labels:
+    app: ebpf-daemon
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  selector:
+    app: ebpf-daemon
