@@ -55,11 +55,12 @@ type PodStats struct {
 }
 
 type RTTStats struct {
-	TotalEvents uint64  `json:"total_events"`
-	AvgRTTUs    float64 `json:"avg_rtt_us"`
-	LastRTTUs   float64 `json:"last_rtt_us"`
-	MaxRTTUs    float64 `json:"max_rtt_us"`
-	MinRTTUs    float64 `json:"min_rtt_us"`
+	TotalEvents uint64              `json:"total_events"`
+	AvgRTTUs    float64             `json:"avg_rtt_us"`
+	LastRTTUs   float64             `json:"last_rtt_us"`
+	MaxRTTUs    float64             `json:"max_rtt_us"`
+	MinRTTUs    float64             `json:"min_rtt_us"`
+	Pods        map[string]PodStats `json:"pods,omitempty"`
 }
 
 func StartServer() {
@@ -96,6 +97,9 @@ func StartServer() {
 	// Per-pod DNS metrics endpoint
 	http.HandleFunc("/api/dns/pods", corsMiddleware(handlePodDNSMetrics))
 
+	// Per-pod RTT metrics endpoint
+	http.HandleFunc("/api/rtt/pods", corsMiddleware(handlePodRTTMetrics))
+
 	// Cluster topology endpoints
 	http.HandleFunc("/api/cluster/topology", corsMiddleware(handleClusterTopology))
 	http.HandleFunc("/api/cluster/services", corsMiddleware(handleClusterServices))
@@ -108,6 +112,7 @@ func StartServer() {
 	log.Println("[API]   GET /metrics/json            - JSON metrics")
 	log.Println("[API]   GET /api/metrics             - Unified metrics (extensible)")
 	log.Println("[API]   GET /api/dns/pods            - Per-pod DNS metrics")
+	log.Println("[API]   GET /api/rtt/pods            - Per-pod RTT metrics")
 	log.Println("[API]   GET /api/cluster/topology    - Cluster topology")
 	log.Println("[API]   GET /api/cluster/services    - Services info")
 
@@ -120,20 +125,37 @@ func handleJSONMetrics(w http.ResponseWriter, r *http.Request) {
 	dnsMetrics := telemetry.GetDNSMetrics()
 	rttMetrics := telemetry.GetRTTMetrics()
 	podDNSMetrics := telemetry.GetPodDNSMetrics()
+	podRTTMetrics := telemetry.GetPodRTTMetrics()
 
 	// Build per-pod DNS stats
-	podStats := make(map[string]PodStats)
+	podDNSStats := make(map[string]PodStats)
 	for podKey, metrics := range podDNSMetrics {
 		avgLatency := float64(0)
 		if metrics.TotalEvents > 0 {
 			avgLatency = float64(metrics.TotalLatencyNs) / float64(metrics.TotalEvents) / 1000
 		}
-		podStats[podKey] = PodStats{
+		podDNSStats[podKey] = PodStats{
 			TotalEvents:   metrics.TotalEvents,
 			AvgLatencyUs:  avgLatency,
 			LastLatencyUs: float64(metrics.LastLatencyNs) / 1000,
 			MaxLatencyUs:  float64(metrics.MaxLatencyNs) / 1000,
 			MinLatencyUs:  safeMinValue(metrics.MinLatencyNs) / 1000,
+		}
+	}
+
+	// Build per-pod RTT stats
+	podRTTStats := make(map[string]PodStats)
+	for podKey, metrics := range podRTTMetrics {
+		avgRTT := float64(0)
+		if metrics.TotalEvents > 0 {
+			avgRTT = float64(metrics.TotalRTTNs) / float64(metrics.TotalEvents) / 1000
+		}
+		podRTTStats[podKey] = PodStats{
+			TotalEvents:   metrics.TotalEvents,
+			AvgLatencyUs:  avgRTT,
+			LastLatencyUs: float64(metrics.LastRTTNs) / 1000,
+			MaxLatencyUs:  float64(metrics.MaxRTTNs) / 1000,
+			MinLatencyUs:  safeMinValue(metrics.MinRTTNs) / 1000,
 		}
 	}
 
@@ -145,7 +167,7 @@ func handleJSONMetrics(w http.ResponseWriter, r *http.Request) {
 			LastLatencyUs: float64(dnsMetrics.LastLatencyNs) / 1000,
 			MaxLatencyUs:  float64(dnsMetrics.MaxLatencyNs) / 1000,
 			MinLatencyUs:  safeMinValue(dnsMetrics.MinLatencyNs) / 1000,
-			Pods:          podStats,
+			Pods:          podDNSStats,
 		},
 		RTT: RTTStats{
 			TotalEvents: rttMetrics.TotalEvents,
@@ -153,6 +175,7 @@ func handleJSONMetrics(w http.ResponseWriter, r *http.Request) {
 			LastRTTUs:   float64(rttMetrics.LastRTTNs) / 1000,
 			MaxRTTUs:    float64(rttMetrics.MaxRTTNs) / 1000,
 			MinRTTUs:    safeMinValue(rttMetrics.MinRTTNs) / 1000,
+			Pods:        podRTTStats,
 		},
 	}
 
@@ -164,6 +187,7 @@ func handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
 	dnsMetrics := telemetry.GetDNSMetrics()
 	rttMetrics := telemetry.GetRTTMetrics()
 	podDNSMetrics := telemetry.GetPodDNSMetrics()
+	podRTTMetrics := telemetry.GetPodRTTMetrics()
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
@@ -206,7 +230,19 @@ func handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "ebpf_rtt_ns{stat=\"min\"} %d\n", safeMinValueUint(rttMetrics.MinRTTNs))
 
 	avgRTT := calculateAvg(rttMetrics.TotalRTTNs, rttMetrics.TotalEvents)
-	fmt.Fprintf(w, "ebpf_rtt_ns{stat=\"avg\"} %.2f\n", avgRTT)
+	fmt.Fprintf(w, "ebpf_rtt_ns{stat=\"avg\"} %.2f\n\n", avgRTT)
+
+	// Per-pod RTT metrics
+	for podKey, metrics := range podRTTMetrics {
+		avgPodRTT := float64(0)
+		if metrics.TotalEvents > 0 {
+			avgPodRTT = float64(metrics.TotalRTTNs) / float64(metrics.TotalEvents)
+		}
+		fmt.Fprintf(w, "ebpf_rtt_ns{pod=\"%s\",stat=\"avg\"} %.2f\n", podKey, avgPodRTT)
+		fmt.Fprintf(w, "ebpf_rtt_ns{pod=\"%s\",stat=\"last\"} %d\n", podKey, metrics.LastRTTNs)
+		fmt.Fprintf(w, "ebpf_rtt_ns{pod=\"%s\",stat=\"max\"} %d\n", podKey, metrics.MaxRTTNs)
+		fmt.Fprintf(w, "ebpf_rtt_ns{pod=\"%s\",stat=\"min\"} %d\n", podKey, safeMinValueUint(metrics.MinRTTNs))
+	}
 }
 
 func calculateAvg(total, count uint64) float64 {
@@ -249,6 +285,34 @@ func handlePodDNSMetrics(w http.ResponseWriter, r *http.Request) {
 			"last_latency_us": float64(metrics.LastLatencyNs) / 1000,
 			"max_latency_us":  float64(metrics.MaxLatencyNs) / 1000,
 			"min_latency_us":  safeMinValue(metrics.MinLatencyNs) / 1000,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"pods": response,
+	})
+}
+
+// handlePodRTTMetrics returns per-pod RTT metrics
+func handlePodRTTMetrics(w http.ResponseWriter, r *http.Request) {
+	podRTTMetrics := telemetry.GetPodRTTMetrics()
+
+	// Convert to response format
+	response := make(map[string]interface{})
+	for podKey, metrics := range podRTTMetrics {
+		avgRTT := float64(0)
+		if metrics.TotalEvents > 0 {
+			avgRTT = float64(metrics.TotalRTTNs) / float64(metrics.TotalEvents) / 1000
+		}
+		response[podKey] = map[string]interface{}{
+			"namespace":      metrics.Namespace,
+			"pod_name":       metrics.PodName,
+			"total_events":   metrics.TotalEvents,
+			"avg_rtt_us":     avgRTT,
+			"last_rtt_us":    float64(metrics.LastRTTNs) / 1000,
+			"max_rtt_us":     float64(metrics.MaxRTTNs) / 1000,
+			"min_rtt_us":     safeMinValue(metrics.MinRTTNs) / 1000,
 		}
 	}
 

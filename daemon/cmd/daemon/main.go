@@ -28,6 +28,18 @@ func main() {
 		log.Fatalf("[Main] Failed to load DNS latency BPF: %v", err)
 	}
 
+	// Load RTT BPF program
+	log.Println("[Main] Loading RTT BPF program...")
+	if err := loader.LoadRTTBPF(); err != nil {
+		log.Printf("[Main] WARNING: Failed to load RTT BPF: %v", err)
+		log.Println("[Main] Continuing without RTT collection...")
+	} else {
+		// Attach RTT probes
+		if err := loader.AttachRTTProbes(); err != nil {
+			log.Printf("[Main] WARNING: Failed to attach RTT probes: %v", err)
+		}
+	}
+
 	// Get node name for metrics
 	nodeName := os.Getenv("NODE_NAME")
 	if nodeName == "" {
@@ -51,7 +63,20 @@ func main() {
 	go telemetry.StartDNSLatencyCollector()
 	go telemetry.StartRTTCollector()
 
-	// Start API server in background
+	// [Optional] Start other components that use telemetry data
+	// Uncomment to enable example routing component:
+	//
+	// import "github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/plugins/routing"
+	// router := routing.NewRouter(nodeName)
+	// go router.Start()
+	//
+	// Components can call telemetry functions directly:
+	//   - telemetry.GetPodDNSMetrics()
+	//   - telemetry.GetPodRTTMetrics()
+	//   - telemetry.GlobalRegistry.Get(type).Subscribe()
+	// No HTTP, no ports, just simple function calls!
+
+	// Start API server for external consumers (dashboard, Prometheus, etc.)
 	go api.StartServer()
 
 	log.Println("[Main] eBPF Daemon is running. Press Ctrl+C to exit.")

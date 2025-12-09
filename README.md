@@ -515,9 +515,113 @@ cd frontend
 npm run dev
 ```
 
-## API Endpoints for Component Integration
+## Component Integration
 
-### **Core Metrics Endpoints**
+### **For Internal Components: Direct Function Calls (Recommended)**
+
+Components in this repository can directly import the telemetry package and call functions - **no HTTP, no ports, no configuration needed**:
+
+```go
+package mycomponent
+
+import (
+    "log"
+    "github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
+)
+
+// Example 1: Get current metrics
+func SelectBestPod(serviceName string) string {
+    // Direct function call - fast, type-safe, no network
+    podDNS := telemetry.GetPodDNSMetrics()
+    podRTT := telemetry.GetPodRTTMetrics()
+    
+    bestPod := ""
+    minLatency := float64(99999999)
+    
+    for podKey, dns := range podDNS {
+        rtt := podRTT[podKey]
+        
+        avgDNS := float64(dns.TotalLatencyNs) / float64(dns.TotalEvents)
+        avgRTT := float64(0)
+        if rtt.TotalEvents > 0 {
+            avgRTT = float64(rtt.TotalRTTNs) / float64(rtt.TotalEvents)
+        }
+        
+        combinedLatency := avgDNS + avgRTT
+        if combinedLatency < minLatency {
+            minLatency = combinedLatency
+            bestPod = podKey
+        }
+    }
+    
+    log.Printf("Selected: %s (latency: %.2fms)", bestPod, minLatency/1e6)
+    return bestPod
+}
+
+// Example 2: Subscribe for real-time updates
+func WatchMetrics() {
+    collector, ok := telemetry.GlobalRegistry.Get(telemetry.MetricTypeDNS)
+    if !ok {
+        return
+    }
+    
+    updatesChan := collector.Subscribe()
+    defer collector.Unsubscribe(updatesChan)
+    
+    for metric := range updatesChan {
+        // Receive push updates as events happen
+        if podMetric, ok := metric.(telemetry.PodMetric); ok {
+            log.Printf("Pod %s latency update: %+v", podMetric.PodName, podMetric.Value)
+            // Make immediate decisions
+        }
+    }
+}
+```
+
+**Available Functions:**
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `GetDNSMetrics()` | `DNSMetrics` | Node-level DNS stats |
+| `GetPodDNSMetrics()` | `map[string]PodDNSMetrics` | Per-pod DNS (key: "namespace/pod") |
+| `GetRTTMetrics()` | `RTTMetrics` | Node-level RTT stats |
+| `GetPodRTTMetrics()` | `map[string]PodRTTMetrics` | Per-pod RTT (key: "namespace/pod") |
+| `GlobalRegistry.Get(type)` | `Collector` | Get collector for subscriptions |
+| `collector.Subscribe()` | `<-chan Metric` | Real-time metric stream (push) |
+
+**Integration Steps:**
+
+1. Import the package:
+   ```go
+   import "github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
+   ```
+
+2. Call functions directly - that's it! No HTTP client, no port configuration needed.
+
+3. To start your component in the same binary, edit `daemon/cmd/daemon/main.go`:
+   ```go
+   import "yourpackage/routing"
+   
+   func main() {
+       // ... load eBPF ...
+       go telemetry.StartDNSLatencyCollector()
+       go telemetry.StartRTTCollector()
+       
+       // Start your component
+       router := routing.NewRouter()
+       go router.Start()
+       
+       // ... rest ...
+   }
+   ```
+
+See `ARCHITECTURE.md` for detailed design and more examples.
+
+---
+
+### **For External Tools: HTTP API Endpoints**
+
+For external consumers (dashboards, monitoring tools, other applications):
 
 | Endpoint | Method | Description | Use Case |
 |----------|--------|-------------|----------|
@@ -526,6 +630,7 @@ npm run dev
 | `/metrics` | GET | Prometheus format | Monitoring systems (Grafana, Prometheus) |
 | `/metrics/json` | GET | JSON format with pod details | Dashboards, custom tools |
 | `/api/dns/pods` | GET | Per-pod DNS metrics | Routing decisions, scheduling |
+| `/api/rtt/pods` | GET | Per-pod RTT metrics | Performance monitoring |
 | `/api/cluster/topology` | GET | Cluster structure | Service mesh, load balancing |
 
 ### **Sample API Responses**
