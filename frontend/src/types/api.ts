@@ -41,7 +41,7 @@ export interface MetricsResponse {
         last_latency_us: number;
         max_latency_us: number;
         min_latency_us: number;
-        pods?: Record<string, PodDNSStats>;
+        pods?: Record<string, PodStats>;
     };
     rtt: {
         total_events: number;
@@ -49,10 +49,19 @@ export interface MetricsResponse {
         last_rtt_us: number;
         max_rtt_us: number;
         min_rtt_us: number;
+        pods?: Record<string, PodStats>;
     };
 }
 
 export interface PodDNSStats {
+    total_events: number;
+    avg_latency_us: number;
+    last_latency_us: number;
+    max_latency_us: number;
+    min_latency_us: number;
+}
+
+export interface PodStats {
     total_events: number;
     avg_latency_us: number;
     last_latency_us: number;

@@ -15,12 +15,19 @@ import (
 //go:embed bpf/dns_latency.o
 var dnsObj []byte
 
+//go:embed bpf/rtt.o
+var rttObj []byte
+
 var DNSSpec *ebpf.CollectionSpec
 var DNSObjs *ebpf.Collection
+var RTTSpec *ebpf.CollectionSpec
+var RTTObjs *ebpf.Collection
 
 // Store links for cleanup
 var dnsStartLink link.Link
 var dnsEndLink link.Link
+var rttConnectLink link.Link
+var rttFinishLink link.Link
 
 func LoadDNSLatencyBPF() error {
 	log.Println("[Loader] Loading DNS Latency BPF program...")
@@ -90,6 +97,79 @@ func AttachDNSProbes() error {
 	return nil
 }
 
+// LoadRTTBPF loads the RTT eBPF program
+func LoadRTTBPF() error {
+	log.Println("[Loader] Loading RTT BPF program...")
+
+	if len(rttObj) == 0 {
+		log.Println("[Loader] WARNING: RTT BPF object is empty - RTT collection disabled")
+		return fmt.Errorf("embedded RTT BPF object is empty - ensure rtt.o is compiled")
+	}
+
+	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(rttObj))
+	if err != nil {
+		return fmt.Errorf("failed to load RTT collection spec: %w", err)
+	}
+	RTTSpec = spec
+
+	log.Println("[Loader] Available RTT programs:")
+	for name := range spec.Programs {
+		log.Printf("  - %s", name)
+	}
+
+	objs, err := ebpf.NewCollection(RTTSpec)
+	if err != nil {
+		return fmt.Errorf("failed to create RTT collection: %w", err)
+	}
+	RTTObjs = objs
+
+	// Add RTT ring buffer to DNS objects for shared access
+	if RTTObjs.Maps["rtt_events"] != nil && DNSObjs != nil {
+		DNSObjs.Maps["rtt_events"] = RTTObjs.Maps["rtt_events"]
+		log.Println("[Loader] Merged rtt_events map into DNS collection for collector access")
+	}
+
+	log.Println("[Loader] RTT BPF programs loaded successfully")
+	return nil
+}
+
+// AttachRTTProbes attaches the kprobes to TCP kernel functions
+func AttachRTTProbes() error {
+	log.Println("[Loader] Attaching RTT kprobes...")
+
+	// Attach kprobe to tcp_connect
+	connectProg := RTTObjs.Programs["tcp_connect_probe"]
+	if connectProg == nil {
+		return fmt.Errorf("program 'tcp_connect_probe' not found")
+	}
+
+	var err error
+	rttConnectLink, err = link.Kprobe("tcp_connect", connectProg, nil)
+	if err != nil {
+		return fmt.Errorf("failed to attach kprobe to tcp_connect: %w", err)
+	}
+	log.Println("[Loader] Attached kprobe to tcp_connect")
+
+	// Attach kprobe to tcp_finish_connect
+	finishProg := RTTObjs.Programs["tcp_finish_connect_probe"]
+	if finishProg == nil {
+		log.Println("[Loader] WARNING: tcp_finish_connect_probe not found, trying alternative...")
+		// RTT collection may still work with just tcp_connect
+		return nil
+	}
+
+	rttFinishLink, err = link.Kprobe("tcp_finish_connect", finishProg, nil)
+	if err != nil {
+		log.Printf("[Loader] WARNING: Failed to attach tcp_finish_connect: %v", err)
+		// Continue anyway - some kernel versions may not have this function
+		return nil
+	}
+	log.Println("[Loader] Attached kprobe to tcp_finish_connect")
+
+	log.Println("[Loader] All RTT kprobes attached successfully")
+	return nil
+}
+
 // Close cleans up all resources
 func Close() {
 	log.Println("[Loader] Cleaning up...")
@@ -100,8 +180,17 @@ func Close() {
 	if dnsEndLink != nil {
 		dnsEndLink.Close()
 	}
+	if rttConnectLink != nil {
+		rttConnectLink.Close()
+	}
+	if rttFinishLink != nil {
+		rttFinishLink.Close()
+	}
 	if DNSObjs != nil {
 		DNSObjs.Close()
+	}
+	if RTTObjs != nil {
+		RTTObjs.Close()
 	}
 
 	log.Println("[Loader] Cleanup complete")

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -20,7 +22,7 @@ type RTTEvent struct {
 	RTTNs   uint64 // Round-trip time in nanoseconds
 }
 
-// RTTMetrics holds aggregated RTT metrics
+// RTTMetrics holds aggregated RTT metrics (node-level)
 type RTTMetrics struct {
 	TotalEvents   uint64
 	TotalRTTNs    uint64
@@ -29,13 +31,26 @@ type RTTMetrics struct {
 	MinRTTNs      uint64
 }
 
+// PodRTTMetrics holds per-pod RTT metrics
+type PodRTTMetrics struct {
+	PodName      string
+	Namespace    string
+	TotalEvents  uint64
+	TotalRTTNs   uint64
+	LastRTTNs    uint64
+	MaxRTTNs     uint64
+	MinRTTNs     uint64
+}
+
 var rttMetrics RTTMetrics
+var podRTTMetrics = make(map[string]*PodRTTMetrics) // keyed by "namespace/podname"
+var podRTTMetricsMutex sync.RWMutex
 
 func init() {
 	rttMetrics.MinRTTNs = ^uint64(0) // Max uint64
 }
 
-// GetRTTMetrics returns the current RTT metrics
+// GetRTTMetrics returns the current node-level RTT metrics
 func GetRTTMetrics() RTTMetrics {
 	return RTTMetrics{
 		TotalEvents: atomic.LoadUint64(&rttMetrics.TotalEvents),
@@ -44,6 +59,26 @@ func GetRTTMetrics() RTTMetrics {
 		MaxRTTNs:    atomic.LoadUint64(&rttMetrics.MaxRTTNs),
 		MinRTTNs:    atomic.LoadUint64(&rttMetrics.MinRTTNs),
 	}
+}
+
+// GetPodRTTMetrics returns a copy of all per-pod RTT metrics
+func GetPodRTTMetrics() map[string]PodRTTMetrics {
+	podRTTMetricsMutex.RLock()
+	defer podRTTMetricsMutex.RUnlock()
+
+	result := make(map[string]PodRTTMetrics)
+	for key, metrics := range podRTTMetrics {
+		result[key] = PodRTTMetrics{
+			PodName:     metrics.PodName,
+			Namespace:   metrics.Namespace,
+			TotalEvents: atomic.LoadUint64(&metrics.TotalEvents),
+			TotalRTTNs:  atomic.LoadUint64(&metrics.TotalRTTNs),
+			LastRTTNs:   atomic.LoadUint64(&metrics.LastRTTNs),
+			MaxRTTNs:    atomic.LoadUint64(&metrics.MaxRTTNs),
+			MinRTTNs:    atomic.LoadUint64(&metrics.MinRTTNs),
+		}
+	}
+	return result
 }
 
 // StartRTTCollector reads RTT events from the eBPF ring buffer
@@ -117,6 +152,7 @@ func parseRTTEvent(data []byte) RTTEvent {
 }
 
 func updateRTTMetrics(event RTTEvent) {
+	// Update node-level metrics
 	atomic.AddUint64(&rttMetrics.TotalEvents, 1)
 	atomic.AddUint64(&rttMetrics.TotalRTTNs, event.RTTNs)
 	atomic.StoreUint64(&rttMetrics.LastRTTNs, event.RTTNs)
@@ -127,6 +163,39 @@ func updateRTTMetrics(event RTTEvent) {
 
 	if event.RTTNs < atomic.LoadUint64(&rttMetrics.MinRTTNs) {
 		atomic.StoreUint64(&rttMetrics.MinRTTNs, event.RTTNs)
+	}
+
+	// Update per-pod metrics (using source IP)
+	ipStr := intToIP(event.SAddr)
+	ipToPodMapMutex.RLock()
+	podKey := ipToPodMap[ipStr]
+	ipToPodMapMutex.RUnlock()
+
+	if podKey != "" {
+		podRTTMetricsMutex.Lock()
+		if podRTTMetrics[podKey] == nil {
+			// Initialize new pod metrics
+			parts := strings.Split(podKey, "/")
+			podRTTMetrics[podKey] = &PodRTTMetrics{
+				Namespace: parts[0],
+				PodName:   parts[1],
+				MinRTTNs:  ^uint64(0),
+			}
+		}
+		podMetrics := podRTTMetrics[podKey]
+		podRTTMetricsMutex.Unlock()
+
+		// Update pod-specific metrics
+		atomic.AddUint64(&podMetrics.TotalEvents, 1)
+		atomic.AddUint64(&podMetrics.TotalRTTNs, event.RTTNs)
+		atomic.StoreUint64(&podMetrics.LastRTTNs, event.RTTNs)
+
+		if event.RTTNs > atomic.LoadUint64(&podMetrics.MaxRTTNs) {
+			atomic.StoreUint64(&podMetrics.MaxRTTNs, event.RTTNs)
+		}
+		if event.RTTNs < atomic.LoadUint64(&podMetrics.MinRTTNs) {
+			atomic.StoreUint64(&podMetrics.MinRTTNs, event.RTTNs)
+		}
 	}
 }
 
