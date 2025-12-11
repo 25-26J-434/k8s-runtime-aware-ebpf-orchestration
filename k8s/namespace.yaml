@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ebpf-telemetry
+  labels:
+    app.kubernetes.io/name: ebpf-telemetry
+    app.kubernetes.io/component: telemetry
+
