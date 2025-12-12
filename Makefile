@@ -14,6 +14,7 @@ EXAMPLES_DIR := examples
 DAEMON_IMAGE := ebpf-daemon
 SERVICE_A_IMAGE := service-a
 SERVICE_B_IMAGE := service-b
+TCP_CLIENT_IMAGE := tcp-client
 IMAGE_TAG ?= latest
 
 all: build
@@ -37,6 +38,7 @@ build-images: build-ebpf ## Build all Docker images
 	docker build -t $(DAEMON_IMAGE):$(IMAGE_TAG) $(DAEMON_DIR)
 	docker build -t $(SERVICE_A_IMAGE):$(IMAGE_TAG) $(EXAMPLES_DIR)/service-a
 	docker build -t $(SERVICE_B_IMAGE):$(IMAGE_TAG) $(EXAMPLES_DIR)/service-b
+	docker build -t $(TCP_CLIENT_IMAGE):$(IMAGE_TAG) $(EXAMPLES_DIR)/tcp-client
 	@echo "Images built successfully"
 
 push-images: build-images ## Push images to registry (if using remote registry)
@@ -77,6 +79,7 @@ deploy-all: deploy-daemon deploy-test-services ## Deploy everything
 	kubectl -n ebpf-telemetry wait --for=condition=ready pod -l app=ebpf-daemon --timeout=120s
 	kubectl -n test-services wait --for=condition=ready pod -l app=service-a --timeout=60s
 	kubectl -n test-services wait --for=condition=ready pod -l app=service-b --timeout=60s
+	kubectl -n test-services wait --for=condition=ready pod -l app=tcp-client --timeout=60s
 	@echo "All pods ready!"
 
 undeploy: ## Remove all deployments
@@ -96,6 +99,7 @@ kind-load-images: build-images ## Load images into kind
 	kind load docker-image $(DAEMON_IMAGE):$(IMAGE_TAG) --name ebpf-cluster
 	kind load docker-image $(SERVICE_A_IMAGE):$(IMAGE_TAG) --name ebpf-cluster
 	kind load docker-image $(SERVICE_B_IMAGE):$(IMAGE_TAG) --name ebpf-cluster
+	kind load docker-image $(TCP_CLIENT_IMAGE):$(IMAGE_TAG) --name ebpf-cluster
 	@echo "Images loaded!"
 
 ## Monitoring and debugging

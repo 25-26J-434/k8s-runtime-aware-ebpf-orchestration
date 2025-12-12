@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -23,13 +23,15 @@ ChartJS.register(
     Filler
 );
 
-interface DNSLatencyChartProps {
-    currentLatency: number;
+interface TCPIssuesChartProps {
+    retransmissions: number;
+    packetLoss: number;
     title?: string;
 }
 
-export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLatencyChartProps) {
-    const [dataPoints, setDataPoints] = useState<number[]>([]);
+export function TCPIssuesChart({ retransmissions, packetLoss, title = 'TCP Issues' }: TCPIssuesChartProps) {
+    const [retransData, setRetransData] = useState<number[]>([]);
+    const [lossData, setLossData] = useState<number[]>([]);
     const [labels, setLabels] = useState<string[]>([]);
     const maxPoints = 20;
 
@@ -37,8 +39,13 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
         const now = new Date();
         const timeLabel = now.toLocaleTimeString();
 
-        setDataPoints(prev => {
-            const newData = [...prev, currentLatency];
+        setRetransData(prev => {
+            const newData = [...prev, retransmissions];
+            return newData.slice(-maxPoints);
+        });
+
+        setLossData(prev => {
+            const newData = [...prev, packetLoss];
             return newData.slice(-maxPoints);
         });
 
@@ -46,16 +53,27 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
             const newLabels = [...prev, timeLabel];
             return newLabels.slice(-maxPoints);
         });
-    }, [currentLatency]);
+    }, [retransmissions, packetLoss]);
 
     const data = {
         labels,
         datasets: [
             {
-                label: 'Latency (μs)',
-                data: dataPoints,
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                label: 'Retransmissions',
+                data: retransData,
+                borderColor: '#f59e0b',
+                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                borderWidth: 2,
+            },
+            {
+                label: 'Packet Loss',
+                data: lossData,
+                borderColor: '#ef4444',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
                 fill: true,
                 tension: 0.4,
                 pointRadius: 3,
@@ -70,7 +88,14 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                display: false,
+                display: true,
+                position: 'top' as const,
+                labels: {
+                    color: '#e4e4e7',
+                    font: {
+                        size: 11,
+                    }
+                }
             },
             title: {
                 display: true,
@@ -115,9 +140,7 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
                     font: {
                         size: 10,
                     },
-                    callback: function(value: number | string) {
-                        return value + ' μs';
-                    }
+                    stepSize: 1,
                 }
             }
         }
@@ -129,5 +152,4 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
         </div>
     );
 }
-
 

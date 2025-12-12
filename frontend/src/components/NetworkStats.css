@@ -61,9 +61,18 @@
   color: #e4e4e7;
 }
 
+.stat-sublabel {
+  font-size: 0.7rem;
+  color: #71717a;
+  font-weight: 500;
+  font-style: italic;
+  margin-top: 0.2rem;
+}
+
 @media (max-width: 768px) {
   .stats-grid {
     grid-template-columns: 1fr;
   }
 }
+
 

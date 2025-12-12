@@ -16,18 +16,14 @@ export function NetworkStats() {
     const dnsValues = metrics.dns.pods 
         ? Object.values(metrics.dns.pods).map(p => p.avg_latency_us)
         : [];
-    
-    const rttValues = metrics.rtt.pods
-        ? Object.values(metrics.rtt.pods).map(p => p.avg_latency_us)
-        : [];
 
+    // Calculate DNS latency percentiles
+    // P50 (Median): 50% of values are below this, 50% are above
+    // P95: 95% of values are below this, 5% are above (worst-case performance)
+    // P99: 99% of values are below this, 1% are above (extreme worst-case)
     const dnsP50 = calculatePercentile(dnsValues, 50);
     const dnsP95 = calculatePercentile(dnsValues, 95);
     const dnsP99 = calculatePercentile(dnsValues, 99);
-    
-    const rttP50 = calculatePercentile(rttValues, 50);
-    const rttP95 = calculatePercentile(rttValues, 95);
-    const rttP99 = calculatePercentile(rttValues, 99);
 
     return (
         <div className="network-stats">
@@ -35,42 +31,24 @@ export function NetworkStats() {
                 <h3>DNS Latency Distribution</h3>
                 <div className="stats-grid">
                     <div className="stat-item">
-                        <span className="stat-label">P50 (Median)</span>
+                        <span className="stat-label">Typical Response Time</span>
                         <span className="stat-value">{dnsP50.toFixed(2)} μs</span>
+                        <span className="stat-sublabel">50% of requests are faster</span>
                     </div>
                     <div className="stat-item">
-                        <span className="stat-label">P95</span>
+                        <span className="stat-label">Worst Case (95%)</span>
                         <span className="stat-value">{dnsP95.toFixed(2)} μs</span>
+                        <span className="stat-sublabel">95% of requests are faster</span>
                     </div>
                     <div className="stat-item">
-                        <span className="stat-label">P99</span>
+                        <span className="stat-label">Extreme Cases (99%)</span>
                         <span className="stat-value">{dnsP99.toFixed(2)} μs</span>
+                        <span className="stat-sublabel">99% of requests are faster</span>
                     </div>
                     <div className="stat-item">
-                        <span className="stat-label">Max</span>
+                        <span className="stat-label">Slowest Request</span>
                         <span className="stat-value">{metrics.dns.max_latency_us.toFixed(2)} μs</span>
-                    </div>
-                </div>
-            </div>
-
-            <div className="stats-card">
-                <h3>RTT Latency Distribution</h3>
-                <div className="stats-grid">
-                    <div className="stat-item">
-                        <span className="stat-label">P50 (Median)</span>
-                        <span className="stat-value">{rttP50.toFixed(2)} μs</span>
-                    </div>
-                    <div className="stat-item">
-                        <span className="stat-label">P95</span>
-                        <span className="stat-value">{rttP95.toFixed(2)} μs</span>
-                    </div>
-                    <div className="stat-item">
-                        <span className="stat-label">P99</span>
-                        <span className="stat-value">{rttP99.toFixed(2)} μs</span>
-                    </div>
-                    <div className="stat-item">
-                        <span className="stat-label">Max</span>
-                        <span className="stat-value">{metrics.rtt.max_rtt_us.toFixed(2)} μs</span>
+                        <span className="stat-sublabel">Maximum observed latency</span>
                     </div>
                 </div>
             </div>
@@ -83,20 +61,21 @@ export function NetworkStats() {
                         <span className="stat-value">{metrics.dns.total_events.toLocaleString()}</span>
                     </div>
                     <div className="stat-item">
-                        <span className="stat-label">Total TCP Connections</span>
-                        <span className="stat-value">{metrics.rtt.total_events.toLocaleString()}</span>
-                    </div>
-                    <div className="stat-item">
                         <span className="stat-label">Avg DNS Latency</span>
                         <span className="stat-value">{metrics.dns.avg_latency_us.toFixed(2)} μs</span>
                     </div>
                     <div className="stat-item">
-                        <span className="stat-label">Avg RTT Latency</span>
-                        <span className="stat-value">{metrics.rtt.avg_rtt_us.toFixed(2)} μs</span>
+                        <span className="stat-label">Min DNS Latency</span>
+                        <span className="stat-value">{metrics.dns.min_latency_us.toFixed(2)} μs</span>
+                    </div>
+                    <div className="stat-item">
+                        <span className="stat-label">Max DNS Latency</span>
+                        <span className="stat-value">{metrics.dns.max_latency_us.toFixed(2)} μs</span>
                     </div>
                 </div>
             </div>
         </div>
     );
 }
+
 

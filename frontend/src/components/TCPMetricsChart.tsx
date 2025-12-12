@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -23,13 +23,15 @@ ChartJS.register(
     Filler
 );
 
-interface DNSLatencyChartProps {
-    currentLatency: number;
+interface TCPMetricsChartProps {
+    currentSRTT: number; // in microseconds
+    currentMinRTT: number; // in microseconds
     title?: string;
 }
 
-export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLatencyChartProps) {
-    const [dataPoints, setDataPoints] = useState<number[]>([]);
+export function TCPMetricsChart({ currentSRTT, currentMinRTT, title = 'TCP RTT Metrics' }: TCPMetricsChartProps) {
+    const [srttData, setSrttData] = useState<number[]>([]);
+    const [minRttData, setMinRttData] = useState<number[]>([]);
     const [labels, setLabels] = useState<string[]>([]);
     const maxPoints = 20;
 
@@ -37,8 +39,13 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
         const now = new Date();
         const timeLabel = now.toLocaleTimeString();
 
-        setDataPoints(prev => {
-            const newData = [...prev, currentLatency];
+        setSrttData(prev => {
+            const newData = [...prev, currentSRTT / 1000]; // Convert to ms
+            return newData.slice(-maxPoints);
+        });
+
+        setMinRttData(prev => {
+            const newData = [...prev, currentMinRTT / 1000]; // Convert to ms
             return newData.slice(-maxPoints);
         });
 
@@ -46,16 +53,27 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
             const newLabels = [...prev, timeLabel];
             return newLabels.slice(-maxPoints);
         });
-    }, [currentLatency]);
+    }, [currentSRTT, currentMinRTT]);
 
     const data = {
         labels,
         datasets: [
             {
-                label: 'Latency (μs)',
-                data: dataPoints,
+                label: 'SRTT (ms)',
+                data: srttData,
                 borderColor: '#3b82f6',
                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                borderWidth: 2,
+            },
+            {
+                label: 'Min RTT (ms)',
+                data: minRttData,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
                 fill: true,
                 tension: 0.4,
                 pointRadius: 3,
@@ -70,7 +88,14 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                display: false,
+                display: true,
+                position: 'top' as const,
+                labels: {
+                    color: '#e4e4e7',
+                    font: {
+                        size: 11,
+                    }
+                }
             },
             title: {
                 display: true,
@@ -116,7 +141,7 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
                         size: 10,
                     },
                     callback: function(value: number | string) {
-                        return value + ' μs';
+                        return value + ' ms';
                     }
                 }
             }
@@ -129,5 +154,4 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
         </div>
     );
 }
-
 
