@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom';
 import { Navigation } from './components/Navigation';
+import { Landing } from './pages/Landing';
 import { Dashboard } from './pages/Dashboard';
 import { Routing } from './pages/Routing';
 import { Scheduling } from './pages/Scheduling';
@@ -9,12 +10,32 @@ import './App.css';
 function App() {
     return (
         <div className="app">
-            <Navigation />
             <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/routing" element={<Routing />} />
-                <Route path="/scheduling" element={<Scheduling />} />
-                <Route path="/federation" element={<Federation />} />
+                <Route path="/" element={<Landing />} />
+                <Route path="/dashboard" element={
+                    <>
+                        <Navigation />
+                        <Dashboard />
+                    </>
+                } />
+                <Route path="/routing" element={
+                    <>
+                        <Navigation />
+                        <Routing />
+                    </>
+                } />
+                <Route path="/scheduling" element={
+                    <>
+                        <Navigation />
+                        <Scheduling />
+                    </>
+                } />
+                <Route path="/federation" element={
+                    <>
+                        <Navigation />
+                        <Federation />
+                    </>
+                } />
             </Routes>
         </div>
     );

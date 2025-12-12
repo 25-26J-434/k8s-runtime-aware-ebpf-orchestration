@@ -18,10 +18,15 @@ var dnsObj []byte
 //go:embed bpf/rtt.o
 var rttObj []byte
 
+//go:embed bpf/tcp_metrics.o
+var tcpMetricsObj []byte
+
 var DNSSpec *ebpf.CollectionSpec
 var DNSObjs *ebpf.Collection
 var RTTSpec *ebpf.CollectionSpec
 var RTTObjs *ebpf.Collection
+var TCPMetricsSpec *ebpf.CollectionSpec
+var TCPMetricsObjs *ebpf.Collection
 
 // Store links for cleanup
 var dnsStartLink link.Link
@@ -137,36 +142,61 @@ func LoadRTTBPF() error {
 func AttachRTTProbes() error {
 	log.Println("[Loader] Attaching RTT kprobes...")
 
-	// Attach kprobe to tcp_connect
-	connectProg := RTTObjs.Programs["tcp_connect_probe"]
+	// Attach kprobe to tcp_v4_connect (marks start of IPv4 connection)
+	// Try tcp_v4_connect first, fallback to tcp_connect if not available
+	connectProg := RTTObjs.Programs["tcp_v4_connect_probe"]
 	if connectProg == nil {
-		return fmt.Errorf("program 'tcp_connect_probe' not found")
+		// Fallback to tcp_connect if tcp_v4_connect_probe not found
+		connectProg = RTTObjs.Programs["tcp_connect_probe"]
+		if connectProg == nil {
+			return fmt.Errorf("neither 'tcp_v4_connect_probe' nor 'tcp_connect_probe' found")
+		}
+		log.Println("[Loader] Using tcp_connect (fallback)")
 	}
 
 	var err error
-	rttConnectLink, err = link.Kprobe("tcp_connect", connectProg, nil)
-	if err != nil {
-		return fmt.Errorf("failed to attach kprobe to tcp_connect: %w", err)
+	if RTTObjs.Programs["tcp_v4_connect_probe"] != nil {
+		rttConnectLink, err = link.Kprobe("tcp_v4_connect", connectProg, nil)
+		if err != nil {
+			log.Printf("[Loader] WARNING: Failed to attach tcp_v4_connect: %v, trying tcp_connect", err)
+			// Fallback to tcp_connect
+			connectProg = RTTObjs.Programs["tcp_connect_probe"]
+			if connectProg != nil {
+				rttConnectLink, err = link.Kprobe("tcp_connect", connectProg, nil)
+			}
+		} else {
+			log.Println("[Loader] Attached kprobe to tcp_v4_connect")
+		}
+	} else {
+		rttConnectLink, err = link.Kprobe("tcp_connect", connectProg, nil)
+		if err == nil {
+			log.Println("[Loader] Attached kprobe to tcp_connect")
+		}
 	}
-	log.Println("[Loader] Attached kprobe to tcp_connect")
 
-	// Attach kprobe to tcp_finish_connect
+	if err != nil {
+		return fmt.Errorf("failed to attach kprobe to tcp_v4_connect/tcp_connect: %w", err)
+	}
+
+	// Attach kprobe to tcp_finish_connect (marks end of connection establishment)
 	finishProg := RTTObjs.Programs["tcp_finish_connect_probe"]
 	if finishProg == nil {
-		log.Println("[Loader] WARNING: tcp_finish_connect_probe not found, trying alternative...")
-		// RTT collection may still work with just tcp_connect
-		return nil
+		log.Println("[Loader] ERROR: tcp_finish_connect_probe not found - RTT measurement requires both probes")
+		return fmt.Errorf("tcp_finish_connect_probe program not found")
 	}
 
 	rttFinishLink, err = link.Kprobe("tcp_finish_connect", finishProg, nil)
 	if err != nil {
-		log.Printf("[Loader] WARNING: Failed to attach tcp_finish_connect: %v", err)
-		// Continue anyway - some kernel versions may not have this function
-		return nil
+		log.Printf("[Loader] ERROR: Failed to attach tcp_finish_connect: %v", err)
+		log.Println("[Loader] RTT measurement requires both tcp_connect and tcp_finish_connect")
+		// Clean up the first probe if second fails
+		rttConnectLink.Close()
+		return fmt.Errorf("failed to attach tcp_finish_connect: %w", err)
 	}
 	log.Println("[Loader] Attached kprobe to tcp_finish_connect")
 
 	log.Println("[Loader] All RTT kprobes attached successfully")
+	log.Println("[Loader] RTT measurement: tcp_connect -> tcp_finish_connect (connection establishment time)")
 	return nil
 }
 
