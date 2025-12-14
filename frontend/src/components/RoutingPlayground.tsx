@@ -134,6 +134,13 @@ export function RoutingPlayground() {
         ? `kubectl -n ${selectedSource.namespace} exec ${selectedSource.name} -- curl -s http://${selectedTarget.ip ?? '<target-ip>'}:5001/health`
         : 'Select a source and target pod to generate a routing command.';
 
+    const handleRun = () => {
+        if (!selectedSource || !selectedTarget) return;
+        const msg = `Run this in your terminal:\n\n${command}`;
+        console.log('Run command:', command);
+        alert(msg);
+    };
+
     return (
         <div className="routing-playground">
             <div className="routing-row">
@@ -249,6 +256,13 @@ export function RoutingPlayground() {
                     disabled={!bestTarget}
                 >
                     Use lowest-latency target
+                </button>
+                <button
+                    className="routing-button secondary"
+                    onClick={handleRun}
+                    disabled={!selectedSource || !selectedTarget}
+                >
+                    Run command (copy)
                 </button>
                 <div className="routing-status">
                     {loading ? 'Loading telemetry…' : error ? `Error: ${error}` : 'Live telemetry'}

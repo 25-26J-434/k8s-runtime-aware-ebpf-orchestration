@@ -1,5 +1,6 @@
 import { RoutingPlayground } from '../components/RoutingPlayground';
 import { RoutingCharts } from '../components/RoutingCharts';
+import { IntentRuleBuilder } from '../components/IntentRuleBuilder';
 import './Page.css';
 
 export function Routing() {
@@ -15,6 +16,7 @@ export function Routing() {
             <div className="page-content">
                 <RoutingPlayground />
                 <RoutingCharts />
+                <IntentRuleBuilder />
 
                 <div className="feature-card">
                     <h2>Component Overview</h2>
