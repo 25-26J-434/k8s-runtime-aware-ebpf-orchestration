@@ -56,6 +56,13 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: service-a
 ---
 apiVersion: v1
 kind: Service
@@ -119,6 +126,13 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: service-b
 ---
 apiVersion: v1
 kind: Service
@@ -163,4 +177,3 @@ spec:
                   done
                   echo "Traffic generation complete"
           restartPolicy: OnFailure
-

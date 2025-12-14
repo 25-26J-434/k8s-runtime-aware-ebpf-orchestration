@@ -2,6 +2,7 @@ package routing
 
 import (
 	"log"
+	"math"
 	"time"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
@@ -88,10 +89,10 @@ func (r *LatencyBasedRouter) analyzeMetrics() {
 
 	log.Printf("[Routing] Analyzing %d pods...", len(podDNS))
 
-	// Find best and worst performing pods
+	// Find best and worst performing pods on this node
 	bestPod := ""
 	worstPod := ""
-	minLatency := float64(999999999)
+	minLatency := math.MaxFloat64
 	maxLatency := float64(0)
 
 	for podKey, dns := range podDNS {
@@ -126,6 +127,9 @@ func (r *LatencyBasedRouter) analyzeMetrics() {
 		log.Printf("[Routing] BEST: %s (%.2fms)", bestPod, minLatency/1e6)
 		log.Printf("[Routing] WORST: %s (%.2fms)", worstPod, maxLatency/1e6)
 	}
+
+	// Build a node-level view to reason about node-to-node routing paths
+	r.analyzeNodeToNodePaths()
 }
 
 // SelectEndpoint selects the best endpoint for a service based on latency
@@ -136,7 +140,7 @@ func (r *LatencyBasedRouter) SelectEndpoint(serviceName string) string {
 	podRTT := telemetry.GetPodRTTMetrics()
 
 	bestPod := ""
-	minLatency := float64(999999999)
+	minLatency := math.MaxFloat64
 
 	for podKey, dns := range podDNS {
 		if dns.TotalEvents == 0 {
@@ -166,8 +170,119 @@ func (r *LatencyBasedRouter) SelectEndpoint(serviceName string) string {
 	return bestPod
 }
 
+// SelectRemoteEndpoint chooses the lowest-latency pod that is NOT on the current node.
+// Falls back to the default selector if no remote data is available.
+func (r *LatencyBasedRouter) SelectRemoteEndpoint(serviceName string) string {
+	allPodMetrics := telemetry.GlobalRegistry.GetAllPodMetrics()
+	bestPod := ""
+	bestNode := ""
+	bestLatency := math.MaxFloat64
+
+	for podKey, metrics := range allPodMetrics {
+		dnsMetric, ok := metrics[telemetry.MetricTypeDNS]
+		if !ok {
+			continue
+		}
+		if dnsValue, ok := dnsMetric.Value.(telemetry.DNSMetricValue); ok {
+			if dnsValue.TotalEvents == 0 || dnsMetric.NodeName == r.nodeName {
+				continue
+			}
+
+			avgDNS := float64(dnsValue.TotalLatencyNs) / float64(dnsValue.TotalEvents)
+			avgRTT := float64(0)
+
+			if rttMetric, ok := metrics[telemetry.MetricTypeRTT]; ok {
+				if rttValue, ok := rttMetric.Value.(telemetry.RTTMetricValue); ok && rttValue.TotalEvents > 0 {
+					avgRTT = float64(rttValue.TotalRTTNs) / float64(rttValue.TotalEvents)
+				}
+			}
+
+			combined := avgDNS + avgRTT
+			if combined < bestLatency {
+				bestLatency = combined
+				bestPod = podKey
+				bestNode = dnsMetric.NodeName
+			}
+		}
+	}
+
+	if bestPod == "" {
+		log.Printf("[Routing] No remote endpoints found, falling back to any node for %s", serviceName)
+		return r.SelectEndpoint(serviceName)
+	}
+
+	log.Printf("[Routing] Selected remote endpoint: %s on node %s (%.2fms)", bestPod, bestNode, bestLatency/1e6)
+	return bestPod
+}
+
 // Stop gracefully stops the router
 func (r *LatencyBasedRouter) Stop() {
 	close(r.stopChan)
 }
 
+// analyzeNodeToNodePaths groups pod metrics by node to surface cross-node choices.
+func (r *LatencyBasedRouter) analyzeNodeToNodePaths() {
+	allPodMetrics := telemetry.GlobalRegistry.GetAllPodMetrics()
+	if len(allPodMetrics) == 0 {
+		log.Println("[Routing] No pod metrics available for node-to-node analysis yet")
+		return
+	}
+
+	type nodeSummary struct {
+		bestPod     string
+		bestLatency float64
+		pods        int
+	}
+
+	nodeStats := make(map[string]*nodeSummary)
+	bestNode := ""
+	bestNodeLatency := math.MaxFloat64
+
+	for podKey, metrics := range allPodMetrics {
+		dnsMetric, ok := metrics[telemetry.MetricTypeDNS]
+		if !ok {
+			continue
+		}
+		dnsValue, ok := dnsMetric.Value.(telemetry.DNSMetricValue)
+		if !ok || dnsValue.TotalEvents == 0 {
+			continue
+		}
+
+		avgDNS := float64(dnsValue.TotalLatencyNs) / float64(dnsValue.TotalEvents)
+		avgRTT := float64(0)
+
+		if rttMetric, ok := metrics[telemetry.MetricTypeRTT]; ok {
+			if rttValue, ok := rttMetric.Value.(telemetry.RTTMetricValue); ok && rttValue.TotalEvents > 0 {
+				avgRTT = float64(rttValue.TotalRTTNs) / float64(rttValue.TotalEvents)
+			}
+		}
+
+		combined := avgDNS + avgRTT
+		nodeName := dnsMetric.NodeName
+
+		if nodeStats[nodeName] == nil {
+			nodeStats[nodeName] = &nodeSummary{
+				bestLatency: math.MaxFloat64,
+			}
+		}
+
+		nodeStats[nodeName].pods++
+		if combined < nodeStats[nodeName].bestLatency {
+			nodeStats[nodeName].bestLatency = combined
+			nodeStats[nodeName].bestPod = podKey
+		}
+	}
+
+	for node, summary := range nodeStats {
+		log.Printf("[Routing] Node %s → best pod %s (%.2fms across %d pods)", node, summary.bestPod, summary.bestLatency/1e6, summary.pods)
+
+		if summary.bestLatency < bestNodeLatency {
+			bestNodeLatency = summary.bestLatency
+			bestNode = node
+		}
+	}
+
+	if bestNode != "" && bestNode != r.nodeName {
+		log.Printf("[Routing] Best node candidate is %s (local node: %s) – consider node-to-node routing", bestNode, r.nodeName)
+	}
+}

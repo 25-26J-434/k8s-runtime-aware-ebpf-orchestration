@@ -10,12 +10,13 @@ const metricLabels: Record<MetricKey, string> = {
     retransmits: 'Packet retransmissions',
 };
 
+const TARGET_NAMESPACE = 'test-services';
+
 export function IntentRuleBuilder() {
     const [intentName, setIntentName] = useState('low-latency');
     const [metric, setMetric] = useState<MetricKey>('dns_latency_us');
     const [threshold, setThreshold] = useState(100);
     const [action, setAction] = useState('reroute');
-    const [namespace, setNamespace] = useState('test-services');
     const [service, setService] = useState('service-b');
     const [fallbackService, setFallbackService] = useState('service-b');
     const [nodeScope, setNodeScope] = useState('ebpf-cluster-control-plane');
@@ -23,7 +24,6 @@ export function IntentRuleBuilder() {
     const [afterLatency] = useState(180);
     const [toast, setToast] = useState<string | null>(null);
 
-    const [namespaceOptions, setNamespaceOptions] = useState<string[]>(['test-services', 'dns-test', 'default']);
     const [serviceOptions, setServiceOptions] = useState<string[]>(['service-a', 'service-b', 'service-b-alt']);
     const [nodeOptions, setNodeOptions] = useState<string[]>(['ebpf-cluster-control-plane', 'ebpf-cluster-worker']);
 
@@ -38,24 +38,6 @@ export function IntentRuleBuilder() {
                 ]);
 
                 if (ignore) return;
-
-                const nsSet = new Set<string>(['test-services', 'dns-test', 'default']);
-                if (metrics?.dns?.pods) {
-                    Object.keys(metrics.dns.pods).forEach(k => {
-                        const ns = k.split('/')[0];
-                        if (ns) nsSet.add(ns);
-                    });
-                }
-                if (services.length > 0) {
-                    services.forEach(s => {
-                        if (s.namespace) nsSet.add(s.namespace);
-                    });
-                }
-                const nsArr = Array.from(nsSet);
-                setNamespaceOptions(nsArr);
-                if (!nsArr.includes(namespace)) {
-                    setNamespace(nsArr[0]);
-                }
 
                 const svcSet = new Set<string>(['service-a', 'service-b', 'service-b-alt']);
                 services.forEach(s => svcSet.add(s.name));
@@ -80,18 +62,18 @@ export function IntentRuleBuilder() {
 
         loadOptions();
         return () => { ignore = true; };
-    }, [namespace, service, nodeScope]);
+    }, [service, nodeScope]);
 
     const policy = useMemo(() => ({
         intent: intentName,
         metric,
         threshold,
         action,
-        namespace,
+        namespace: TARGET_NAMESPACE,
         service,
         fallback: fallbackService,
         node: nodeScope,
-    }), [intentName, metric, threshold, action, namespace, service, fallbackService, nodeScope]);
+    }), [intentName, metric, threshold, action, service, fallbackService, nodeScope]);
 
     const beforeViolation = beforeLatency > threshold;
     const afterViolation = afterLatency > threshold;
@@ -140,15 +122,6 @@ export function IntentRuleBuilder() {
                     <select value={action} onChange={(e) => setAction(e.target.value)} className="intent-select">
                         <option value="reroute">Reroute</option>
                         <option value="alert">Alert only</option>
-                    </select>
-                </div>
-
-                <div className="intent-field">
-                    <label>Namespace</label>
-                    <select value={namespace} onChange={(e) => setNamespace(e.target.value)} className="intent-select">
-                        {namespaceOptions.map(ns => (
-                            <option key={ns} value={ns}>{ns}</option>
-                        ))}
                     </select>
                 </div>
 

@@ -25,9 +25,10 @@ type PodRow = {
     maxLatency: number;
 };
 
+const TARGET_NAMESPACE = 'test-services';
+
 export function RoutingCharts() {
     const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
-    const [namespace, setNamespace] = useState<string>('test-services');
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -56,7 +57,7 @@ export function RoutingCharts() {
         if (!metrics?.dns?.pods) return [];
         const rows: PodRow[] = [];
         Object.entries(metrics.dns.pods).forEach(([key, value]) => {
-            if (!key.startsWith(`${namespace}/`)) return;
+            if (!key.startsWith(`${TARGET_NAMESPACE}/`)) return;
             const stats = value as PodStats;
             rows.push({
                 key,
@@ -66,16 +67,6 @@ export function RoutingCharts() {
             });
         });
         return rows.sort((a, b) => a.avgLatency - b.avgLatency);
-    }, [metrics, namespace]);
-
-    const namespaces = useMemo(() => {
-        if (!metrics?.dns?.pods) return ['test-services'];
-        const set = new Set<string>();
-        Object.keys(metrics.dns.pods).forEach(key => {
-            const ns = key.split('/')[0];
-            set.add(ns);
-        });
-        return Array.from(set);
     }, [metrics]);
 
     const chartData = useMemo(() => {
@@ -118,25 +109,12 @@ export function RoutingCharts() {
                     <h2>Routing Telemetry Snapshot</h2>
                     <p>Compare per-pod DNS latency to pick the best target.</p>
                 </div>
-                <div className="charts-controls">
-                    <label>
-                        Namespace
-                        <select
-                            value={namespace}
-                            onChange={(e) => setNamespace(e.target.value)}
-                        >
-                            {namespaces.map(ns => (
-                                <option key={ns} value={ns}>{ns}</option>
-                            ))}
-                        </select>
-                    </label>
-                </div>
             </div>
 
             {error && <div className="charts-error">Error loading metrics: {error}</div>}
 
             {podRows.length === 0 ? (
-                <div className="charts-empty">No pod metrics yet for namespace "{namespace}".</div>
+                <div className="charts-empty">No pod metrics yet for namespace "{TARGET_NAMESPACE}".</div>
             ) : (
                 <div className="chart-wrapper">
                     <ReactChart type="bar" data={chartData} options={{

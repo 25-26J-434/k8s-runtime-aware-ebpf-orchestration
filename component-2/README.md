@@ -1,13 +1,13 @@
 # Component 2 – Intent-Aware Traffic Routing
 
-This guide isolates Component 2 so you can continue building the intent-aware/same-node routing logic on top of the telemetry provided by Component 1.
+This guide isolates Component 2 so you can continue building the intent-aware routing logic (same-node **and** node-to-node) on top of the telemetry provided by Component 1.
 
 ## Where Component 2 Lives
 
 ```
 component-2/
   README.md             # This file – high-level flow for routing work
-  manifests/            # (future) Overlays specific to routing tests
+  manifests/            # Overlays specific to routing tests (e.g., multi-node Kind)
   experiments/          # (future) Test plans, captures, lab notes
 daemon/pkg/plugins/routing/
   latency_router.go     # Sample latency-based router using telemetry
@@ -47,6 +47,27 @@ kubectl describe pod -n kube-system -l k8s-app=cilium | sed -n '1,160p'
 
 Once `cilium status` is green, all pod-to-pod traffic (including same-node) is routed via Cilium’s eBPF datapath.
 
+### Node-to-node setup (multi-node Kind + Cilium)
+
+When you need real cross-node datapaths, spin up the multi-node Kind overlay in `component-2/manifests/kind-config-multi-node.yaml` (1 control-plane, 2 workers, `/sys` mounted for eBPF). This keeps the cluster name the same (`ebpf-cluster`) so you can reuse images and manifests.
+
+```bash
+kind delete cluster --name ebpf-cluster 2>/dev/null || true
+kind create cluster --config component-2/manifests/kind-config-multi-node.yaml --name ebpf-cluster
+kubectl config use-context kind-ebpf-cluster
+
+# Install Cilium for node-to-node routing
+cilium install
+cilium status --wait
+```
+
+Deploy the same test services; the added topology spread constraints ensure replicas land on different nodes so traffic crosses nodes:
+
+```bash
+kubectl apply -f k8s/test-services.yaml
+kubectl get pods -n test-services -o wide  # service-a/service-b replicas should spread across workers
+```
+
 ## Deploy Telemetry Daemon (Component 1 prerequisite)
 
 Component 2 reads metrics from the daemon; make sure it is running on the cluster above.
@@ -83,7 +104,7 @@ kubectl -n ebpf-telemetry logs -l app=ebpf-daemon -f | grep "[Routing]"
 
 ## Traffic to Exercise Routing
 
-Use the existing test workloads to generate pod-to-pod traffic on the same node:
+Use the existing test workloads to generate pod-to-pod traffic. With the multi-node Kind config, the pods are spread to force node-to-node paths:
 
 ```bash
 kubectl apply -f k8s/test-services.yaml
@@ -98,6 +119,12 @@ Once traffic is flowing, the router will see live DNS/RTT metrics via direct fun
 - Add manifests under `component-2/manifests/` for routing-specific experiments (e.g., multiple services per node, taints/tolerations).
 - Capture experiment notes under `component-2/experiments/` (commands run, metrics observed, conclusions).
 - If you switch CNIs (e.g., Cilium) for eBPF data plane experiments, still keep the Kind cluster anchored to `k8s/kind-config.yaml` for consistency; adjust only the CNI install step.
+
+## Node-aware endpoint selection (code)
+
+- `latency_router.go` now groups telemetry by node to surface the best pod per node and highlights when another node outperforms the local one.
+- `SelectRemoteEndpoint(serviceName)` returns the lowest-latency pod on a **different** node, falling back to `SelectEndpoint` when only local data exists.
+- Use the multi-node Kind config plus `k8s/test-services.yaml` (with topology spread) to exercise node-to-node routing paths.
 
 ## Using REST to drive routing decisions (same-node example)
 
@@ -128,4 +155,4 @@ kubectl -n test-services exec deploy/service-a -- sh -c "apt-get update && apt-g
 kubectl -n test-services exec deploy/service-a -- curl -s "http://$IP:5001/health"
 ```
 
-Because the project’s Kind cluster (`k8s/kind-config.yaml`, `ebpf-cluster`) is single-node, all pod traffic is automatically same-node; with Cilium installed, that traffic is handled by Cilium’s eBPF datapath.
+By default (`k8s/kind-config.yaml`) the cluster is single-node, so traffic stays local; switch to `component-2/manifests/kind-config-multi-node.yaml` to observe node-to-node paths with Cilium handling the cross-node routing.

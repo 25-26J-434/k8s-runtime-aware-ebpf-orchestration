@@ -7,6 +7,7 @@ export function TopPerformers() {
     if (!metrics || !metrics.dns.pods) return null;
 
     const pods = Object.entries(metrics.dns.pods)
+        .filter(([key]) => key.startsWith('test-services/'))
         .map(([key, stats]) => ({
             key,
             name: key.split('/')[1],
@@ -28,7 +29,6 @@ export function TopPerformers() {
                             <div className="performer-rank">{index + 1}</div>
                             <div className="performer-info">
                                 <div className="performer-name">{pod.name}</div>
-                                <div className="performer-namespace">{pod.namespace}</div>
                             </div>
                             <div className="performer-metric">
                                 <span className="performer-value">{pod.avg_latency_us.toFixed(2)}</span>
@@ -47,7 +47,6 @@ export function TopPerformers() {
                             <div className="performer-rank">{index + 1}</div>
                             <div className="performer-info">
                                 <div className="performer-name">{pod.name}</div>
-                                <div className="performer-namespace">{pod.namespace}</div>
                             </div>
                             <div className="performer-metric">
                                 <span className="performer-value">{pod.avg_latency_us.toFixed(2)}</span>
@@ -60,4 +59,3 @@ export function TopPerformers() {
         </div>
     );
 }
-

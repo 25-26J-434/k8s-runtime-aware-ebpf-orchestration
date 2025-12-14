@@ -1,0 +1,38 @@
+# Kind cluster configuration for node-to-node routing experiments
+# Reuses the same cluster name as the single-node config (ebpf-cluster) but
+# spreads workloads across two workers so traffic crosses nodes.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ebpf-cluster
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 30000
+        hostPort: 30000
+        protocol: TCP
+      - containerPort: 30001
+        hostPort: 30001
+        protocol: TCP
+      - containerPort: 30080
+        hostPort: 8081
+        protocol: TCP
+    extraMounts:
+      - hostPath: /sys
+        containerPath: /sys
+  - role: worker
+    extraMounts:
+      - hostPath: /sys
+        containerPath: /sys
+  - role: worker
+    extraMounts:
+      - hostPath: /sys
+        containerPath: /sys
+networking:
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/16"
