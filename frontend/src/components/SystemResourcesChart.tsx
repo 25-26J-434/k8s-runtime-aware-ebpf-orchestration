@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -23,13 +23,15 @@ ChartJS.register(
     Filler
 );
 
-interface DNSLatencyChartProps {
-    currentLatency: number;
+interface SystemResourcesChartProps {
+    cpuUsage: number; // percentage
+    memoryUsage: number; // percentage
     title?: string;
 }
 
-export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLatencyChartProps) {
-    const [dataPoints, setDataPoints] = useState<number[]>([]);
+export function SystemResourcesChart({ cpuUsage, memoryUsage, title = 'System Resources' }: SystemResourcesChartProps) {
+    const [cpuData, setCpuData] = useState<number[]>([]);
+    const [memoryData, setMemoryData] = useState<number[]>([]);
     const [labels, setLabels] = useState<string[]>([]);
     const maxPoints = 20;
 
@@ -37,8 +39,13 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
         const now = new Date();
         const timeLabel = now.toLocaleTimeString();
 
-        setDataPoints(prev => {
-            const newData = [...prev, currentLatency];
+        setCpuData(prev => {
+            const newData = [...prev, cpuUsage];
+            return newData.slice(-maxPoints);
+        });
+
+        setMemoryData(prev => {
+            const newData = [...prev, memoryUsage];
             return newData.slice(-maxPoints);
         });
 
@@ -46,16 +53,27 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
             const newLabels = [...prev, timeLabel];
             return newLabels.slice(-maxPoints);
         });
-    }, [currentLatency]);
+    }, [cpuUsage, memoryUsage]);
 
     const data = {
         labels,
         datasets: [
             {
-                label: 'Latency (μs)',
-                data: dataPoints,
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                label: 'CPU Usage (%)',
+                data: cpuData,
+                borderColor: '#ef4444',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                borderWidth: 2,
+            },
+            {
+                label: 'Memory Usage (%)',
+                data: memoryData,
+                borderColor: '#8b5cf6',
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
                 fill: true,
                 tension: 0.4,
                 pointRadius: 3,
@@ -70,7 +88,14 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                display: false,
+                display: true,
+                position: 'top' as const,
+                labels: {
+                    color: '#e4e4e7',
+                    font: {
+                        size: 11,
+                    }
+                }
             },
             title: {
                 display: true,
@@ -107,6 +132,7 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
             y: {
                 display: true,
                 beginAtZero: true,
+                max: 100,
                 grid: {
                     color: 'rgba(255, 255, 255, 0.05)',
                 },
@@ -116,7 +142,7 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
                         size: 10,
                     },
                     callback: function(value: number | string) {
-                        return value + ' μs';
+                        return value + '%';
                     }
                 }
             }
@@ -129,5 +155,4 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
         </div>
     );
 }
-
 

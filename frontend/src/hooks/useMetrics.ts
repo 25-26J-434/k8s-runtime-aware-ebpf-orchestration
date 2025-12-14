@@ -9,6 +9,8 @@ export function useMetrics(refreshInterval = 3000) {
 
     useEffect(() => {
         let mounted = true;
+        let lastErrorLog = 0;
+        const ERROR_LOG_INTERVAL = 30000; // Only log errors every 30 seconds
 
         const fetchMetrics = async () => {
             try {
@@ -16,10 +18,19 @@ export function useMetrics(refreshInterval = 3000) {
                 if (mounted) {
                     setMetrics(data);
                     setError(null);
+                    lastErrorLog = 0; // Reset error logging on successful fetch
                 }
-            } catch (err) {
+            } catch (err: any) {
+                // Only set error if component is still mounted
                 if (mounted) {
                     setError(err as Error);
+
+                    // Throttle error logging
+                    const now = Date.now();
+                    if (now - lastErrorLog > ERROR_LOG_INTERVAL) {
+                        console.error('Failed to fetch metrics:', err.message || err);
+                        lastErrorLog = now;
+                    }
                 }
             } finally {
                 if (mounted) {

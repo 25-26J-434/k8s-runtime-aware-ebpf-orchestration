@@ -6,21 +6,20 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// CORS middleware to allow cross-origin requests
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Set CORS headers
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-		// Handle preflight requests
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -64,43 +63,28 @@ type RTTStats struct {
 }
 
 func StartServer() {
-	// Initialize Kubernetes client
 	if err := InitKubernetesClient(); err != nil {
 		log.Printf("[API] Warning: Kubernetes client initialization failed: %v", err)
 		log.Println("[API] Cluster topology endpoints will not be available")
 	} else {
-		// Start periodic pod IP mapping refresh for DNS metrics
 		go refreshPodIPMappingPeriodically()
 	}
 
-	// Health check endpoint
 	http.HandleFunc("/health", corsMiddleware(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "OK")
 	}))
 
-	// Ready check endpoint
 	http.HandleFunc("/ready", corsMiddleware(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "Ready")
 	}))
 
-	// JSON metrics endpoint
 	http.HandleFunc("/metrics/json", corsMiddleware(handleJSONMetrics))
-
-	// Prometheus metrics endpoint
 	http.HandleFunc("/metrics", corsMiddleware(handlePrometheusMetrics))
-
-	// Unified metrics endpoint (new extensible API)
 	http.HandleFunc("/api/metrics", corsMiddleware(handleUnifiedMetrics))
-
-	// Per-pod DNS metrics endpoint
 	http.HandleFunc("/api/dns/pods", corsMiddleware(handlePodDNSMetrics))
-
-	// Per-pod RTT metrics endpoint
 	http.HandleFunc("/api/rtt/pods", corsMiddleware(handlePodRTTMetrics))
-
-	// Cluster topology endpoints
 	http.HandleFunc("/api/cluster/topology", corsMiddleware(handleClusterTopology))
 	http.HandleFunc("/api/cluster/services", corsMiddleware(handleClusterServices))
 
@@ -124,8 +108,10 @@ func StartServer() {
 func handleJSONMetrics(w http.ResponseWriter, r *http.Request) {
 	dnsMetrics := telemetry.GetDNSMetrics()
 	rttMetrics := telemetry.GetRTTMetrics()
+	_ = telemetry.GetTCPMetrics()
 	podDNSMetrics := telemetry.GetPodDNSMetrics()
 	podRTTMetrics := telemetry.GetPodRTTMetrics()
+	_ = telemetry.GetPodTCPMetrics()
 
 	// Build per-pod DNS stats
 	podDNSStats := make(map[string]PodStats)
@@ -186,8 +172,10 @@ func handleJSONMetrics(w http.ResponseWriter, r *http.Request) {
 func handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
 	dnsMetrics := telemetry.GetDNSMetrics()
 	rttMetrics := telemetry.GetRTTMetrics()
+	_ = telemetry.GetTCPMetrics() // TCP metrics available via unified endpoint
 	podDNSMetrics := telemetry.GetPodDNSMetrics()
 	podRTTMetrics := telemetry.GetPodRTTMetrics()
+	_ = telemetry.GetPodTCPMetrics() // TCP metrics available via unified endpoint
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
@@ -375,14 +363,34 @@ func updatePodIPMappingFromK8s() {
 		return
 	}
 
+	// Get node name - only map pods on this node
+	nodeName := os.Getenv("NODE_NAME")
+	
 	ctx := context.Background()
-	pods, err := k8sClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		log.Printf("[API] Failed to list pods for IP mapping: %v", err)
-		return
+	var pods *corev1.PodList
+	var err error
+	
+	if nodeName != "" {
+		// Only get pods on this node
+		pods, err = k8sClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName),
+		})
+		if err != nil {
+			log.Printf("[API] Failed to list pods for IP mapping: %v", err)
+			return
+		}
+		log.Printf("[API] Mapping pods for node: %s (%d pods)", nodeName, len(pods.Items))
+	} else {
+		// Fallback: get all pods if NODE_NAME not set
+		log.Printf("[API] Warning: NODE_NAME not set, mapping all pods")
+		pods, err = k8sClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			log.Printf("[API] Failed to list pods for IP mapping: %v", err)
+			return
+		}
 	}
 
-	// Build IP -> "namespace/podname" mapping
+	// Build IP -> "namespace/podname" mapping (only for pods on this node)
 	mapping := make(map[string]string)
 	for _, pod := range pods.Items {
 		if pod.Status.PodIP != "" {

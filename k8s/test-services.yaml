@@ -56,13 +56,6 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: service-a
 ---
 apiVersion: v1
 kind: Service
@@ -126,13 +119,6 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: service-b
 ---
 apiVersion: v1
 kind: Service
@@ -177,3 +163,64 @@ spec:
                   done
                   echo "Traffic generation complete"
           restartPolicy: OnFailure
+---
+# TCP Client - Makes continuous TCP connections to test RTT measurement
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tcp-client
+  namespace: test-services
+  labels:
+    app: tcp-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tcp-client
+  template:
+    metadata:
+      labels:
+        app: tcp-client
+    spec:
+      containers:
+        - name: tcp-client
+          image: tcp-client:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5002
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tcp-client
+  namespace: test-services
+  labels:
+    app: tcp-client
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5002
+      targetPort: 5002
+      name: http
+  selector:
+    app: tcp-client
+

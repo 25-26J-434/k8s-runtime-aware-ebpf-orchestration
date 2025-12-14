@@ -1,17 +1,137 @@
-import type { MetricsResponse, ClusterTopology, Service } from '../types/api';
+import type { MetricsResponse, ClusterTopology, Service, UnifiedMetricsResponse } from '../types/api';
 
 const API_BASE = '';  // Proxy handles routing
 
+// Transform unified metrics to expected format
+function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
+    const node = data.node || {};
+    const pods = data.pods || {};
+    
+    // Extract DNS metrics
+    const dnsNode = node.dns_latency || {};
+    const dnsPods: Record<string, any> = {};
+    Object.entries(pods).forEach(([podKey, podMetrics]) => {
+        if (podMetrics.dns_latency) {
+            const dns = podMetrics.dns_latency;
+            dnsPods[podKey] = {
+                total_events: dns.total_events || 0,
+                avg_latency_us: (dns.avg_latency_ns || 0) / 1000,
+                last_latency_us: (dns.last_latency_ns || 0) / 1000,
+                max_latency_us: (dns.max_latency_ns || 0) / 1000,
+                min_latency_us: (dns.min_latency_ns || 0) / 1000,
+            };
+        }
+    });
+    
+    // Extract RTT metrics
+    const rttNode = node.rtt || {};
+    const rttPods: Record<string, any> = {};
+    Object.entries(pods).forEach(([podKey, podMetrics]) => {
+        if (podMetrics.rtt) {
+            const rtt = podMetrics.rtt;
+            rttPods[podKey] = {
+                total_events: rtt.total_events || 0,
+                avg_latency_us: (rtt.avg_rtt_ns || 0) / 1000,
+                last_latency_us: (rtt.last_rtt_ns || 0) / 1000,
+                max_latency_us: (rtt.max_rtt_ns || 0) / 1000,
+                min_latency_us: (rtt.min_rtt_ns || 0) / 1000,
+            };
+        }
+    });
+    
+    return {
+        timestamp: data.timestamp,
+        node_name: data.node_name,
+        node_ip: data.node_ip,
+        dns: {
+            total_events: dnsNode.total_events || 0,
+            avg_latency_us: (dnsNode.avg_latency_ns || 0) / 1000,
+            last_latency_us: (dnsNode.last_latency_ns || 0) / 1000,
+            max_latency_us: (dnsNode.max_latency_ns || 0) / 1000,
+            min_latency_us: (dnsNode.min_latency_ns || 0) / 1000,
+            pods: dnsPods,
+        },
+        rtt: {
+            total_events: rttNode.total_events || 0,
+            avg_rtt_us: (rttNode.avg_rtt_ns || 0) / 1000,
+            last_rtt_us: (rttNode.last_rtt_ns || 0) / 1000,
+            max_rtt_us: (rttNode.max_rtt_ns || 0) / 1000,
+            min_rtt_us: (rttNode.min_rtt_ns || 0) / 1000,
+            pods: rttPods,
+        },
+        tcp: {
+            total_events: (node.tcp_metrics as any)?.total_events || 0,
+            avg_srtt_us: (node.tcp_metrics as any)?.avg_srtt_us || 0,
+            last_srtt_us: (node.tcp_metrics as any)?.last_srtt_us || 0,
+            last_min_rtt_us: (node.tcp_metrics as any)?.last_min_rtt_us || 0,
+            retransmissions: (node.tcp_metrics as any)?.retransmissions || 0,
+            packet_loss: (node.tcp_metrics as any)?.packet_loss || 0,
+            bad_handshakes: (node.tcp_metrics as any)?.bad_handshakes || 0,
+            last_cwnd: (node.tcp_metrics as any)?.last_cwnd || 0,
+            recent_events: (node.tcp_metrics as any)?.recent_events || [], // Include recent events for timeline
+            pods: (() => {
+                const tcpPods: Record<string, any> = {};
+                Object.entries(pods).forEach(([podKey, podMetrics]) => {
+                    if (podMetrics.tcp_metrics) {
+                        const tcp = podMetrics.tcp_metrics;
+                        tcpPods[podKey] = {
+                            total_events: tcp.total_events || 0,
+                            avg_srtt_us: tcp.avg_srtt_us || 0,
+                            last_srtt_us: tcp.last_srtt_us || 0,
+                            last_min_rtt_us: tcp.last_min_rtt_us || 0,
+                            retransmissions: tcp.retransmissions || 0,
+                            packet_loss: tcp.packet_loss || 0,
+                            bad_handshakes: tcp.bad_handshakes || 0,
+                            last_cwnd: tcp.last_cwnd || 0,
+                            recent_events: tcp.recent_events || [], // Include pod-level recent events
+                        };
+                    }
+                });
+                return tcpPods;
+            })(),
+        },
+        // Include new metrics
+        node_system: node.node_system || undefined,
+        packet_distribution: node.packet_distribution || undefined,
+        service_health: node.service_health || undefined,
+        nat_metadata: node.nat_metadata || undefined,
+    };
+}
+
 export const api = {
     async getMetrics(): Promise<MetricsResponse> {
-        const response = await fetch(`${API_BASE}/metrics/json`);
-        if (!response.ok) throw new Error('Failed to fetch metrics');
+        const response = await fetch(`${API_BASE}/api/metrics`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch metrics: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        // Transform unified metrics format to expected format
+        return transformUnifiedMetrics(data);
+    },
+    
+    async getUnifiedMetrics(): Promise<UnifiedMetricsResponse> {
+        const response = await fetch(`${API_BASE}/api/metrics`);
+        if (!response.ok) throw new Error('Failed to fetch unified metrics');
         return response.json();
     },
 
     async getClusterTopology(): Promise<ClusterTopology> {
-        const response = await fetch(`${API_BASE}/api/cluster/topology`);
-        if (!response.ok) throw new Error('Failed to fetch cluster topology');
+        const response = await fetch(`${API_BASE}/api/cluster/topology`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch cluster topology: ${response.status} ${response.statusText}`);
+        }
         return response.json();
     },
 

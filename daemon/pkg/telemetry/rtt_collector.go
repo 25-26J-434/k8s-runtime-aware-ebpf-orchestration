@@ -16,30 +16,30 @@ import (
 
 // RTTEvent represents a TCP RTT measurement from the kernel
 type RTTEvent struct {
-	Pid     uint32
-	SAddr   uint32 // Source IP (network byte order)
-	DAddr   uint32 // Destination IP (network byte order)
-	RTTNs   uint64 // Round-trip time in nanoseconds
+	Pid   uint32
+	SAddr uint32 // Source IP (network byte order)
+	DAddr uint32 // Destination IP (network byte order)
+	RTTNs uint64 // Round-trip time in nanoseconds
 }
 
 // RTTMetrics holds aggregated RTT metrics (node-level)
 type RTTMetrics struct {
-	TotalEvents   uint64
-	TotalRTTNs    uint64
-	LastRTTNs     uint64
-	MaxRTTNs      uint64
-	MinRTTNs      uint64
+	TotalEvents uint64
+	TotalRTTNs  uint64
+	LastRTTNs   uint64
+	MaxRTTNs    uint64
+	MinRTTNs    uint64
 }
 
 // PodRTTMetrics holds per-pod RTT metrics
 type PodRTTMetrics struct {
-	PodName      string
-	Namespace    string
-	TotalEvents  uint64
-	TotalRTTNs   uint64
-	LastRTTNs    uint64
-	MaxRTTNs     uint64
-	MinRTTNs     uint64
+	PodName     string
+	Namespace   string
+	TotalEvents uint64
+	TotalRTTNs  uint64
+	LastRTTNs   uint64
+	MaxRTTNs    uint64
+	MinRTTNs    uint64
 }
 
 var rttMetrics RTTMetrics
@@ -85,17 +85,17 @@ func GetPodRTTMetrics() map[string]PodRTTMetrics {
 func StartRTTCollector() {
 	log.Println("[RTT Collector] Starting RTT Collector...")
 
-	// Wait for loader to initialize
-	for loader.DNSObjs == nil {
-		log.Println("[RTT Collector] Waiting for BPF objects to load...")
+	// Wait for loader to initialize RTT objects
+	for loader.RTTObjs == nil {
+		log.Println("[RTT Collector] Waiting for RTT BPF objects to load...")
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Check if RTT events map exists (will be added later)
-	rbMap := loader.DNSObjs.Maps["rtt_events"]
+	// Check if RTT events map exists in RTTObjs
+	rbMap := loader.RTTObjs.Maps["rtt_events"]
 	if rbMap == nil {
-		log.Println("[RTT Collector] NOTICE: rtt_events map not found - RTT collection not enabled")
-		log.Println("[RTT Collector] RTT collection requires separate BPF program with TCP tracing")
+		log.Println("[RTT Collector] NOTICE: rtt_events map not found in RTTObjs - RTT collection not enabled")
+		log.Println("[RTT Collector] RTT collection requires RTT BPF program to be loaded")
 		return
 	}
 
@@ -125,17 +125,19 @@ func StartRTTCollector() {
 			continue
 		}
 
-		// Parse the event
 		event := parseRTTEvent(record.RawSample)
 
-		// Update metrics
+		rttMs := float64(event.RTTNs) / 1e6
+		if rttMs < 0.1 || rttMs > 60000 {
+			log.Printf("[RTT] Skipping unrealistic RTT: %.2fms (PID=%d)", rttMs, event.Pid)
+			continue
+		}
+
 		updateRTTMetrics(event)
 
-		// Convert IPs to readable format
 		srcIP := intToIP(event.SAddr)
 		dstIP := intToIP(event.DAddr)
 		rttUs := float64(event.RTTNs) / 1000.0
-		rttMs := rttUs / 1000.0
 
 		log.Printf("[RTT] PID=%d %s -> %s RTT=%.2fμs (%.3fms)",
 			event.Pid, srcIP, dstIP, rttUs, rttMs)
@@ -165,7 +167,6 @@ func updateRTTMetrics(event RTTEvent) {
 		atomic.StoreUint64(&rttMetrics.MinRTTNs, event.RTTNs)
 	}
 
-	// Update per-pod metrics (using source IP)
 	ipStr := intToIP(event.SAddr)
 	ipToPodMapMutex.RLock()
 	podKey := ipToPodMap[ipStr]
@@ -174,7 +175,6 @@ func updateRTTMetrics(event RTTEvent) {
 	if podKey != "" {
 		podRTTMetricsMutex.Lock()
 		if podRTTMetrics[podKey] == nil {
-			// Initialize new pod metrics
 			parts := strings.Split(podKey, "/")
 			podRTTMetrics[podKey] = &PodRTTMetrics{
 				Namespace: parts[0],
@@ -185,7 +185,6 @@ func updateRTTMetrics(event RTTEvent) {
 		podMetrics := podRTTMetrics[podKey]
 		podRTTMetricsMutex.Unlock()
 
-		// Update pod-specific metrics
 		atomic.AddUint64(&podMetrics.TotalEvents, 1)
 		atomic.AddUint64(&podMetrics.TotalRTTNs, event.RTTNs)
 		atomic.StoreUint64(&podMetrics.LastRTTNs, event.RTTNs)
@@ -203,3 +202,94 @@ func intToIP(ip uint32) string {
 	return fmt.Sprintf("%s", net.IPv4(byte(ip), byte(ip>>8), byte(ip>>16), byte(ip>>24)))
 }
 
+// RTTCollector implements the Collector interface for RTT metrics
+type RTTCollector struct {
+	nodeName string
+	mu       sync.RWMutex
+}
+
+func NewRTTCollector(nodeName string) *RTTCollector {
+	return &RTTCollector{
+		nodeName: nodeName,
+	}
+}
+
+func (c *RTTCollector) GetType() MetricType {
+	return MetricTypeRTT
+}
+
+func (c *RTTCollector) GetNodeMetrics() NodeMetric {
+	rttMetrics := GetRTTMetrics()
+
+	avgRTT := float64(0)
+	if rttMetrics.TotalEvents > 0 {
+		avgRTT = float64(rttMetrics.TotalRTTNs) / float64(rttMetrics.TotalEvents)
+	}
+
+	return NodeMetric{
+		Type:      MetricTypeRTT,
+		Timestamp: time.Now(),
+		NodeName:  c.nodeName,
+		Value: RTTMetricValue{
+			TotalEvents: rttMetrics.TotalEvents,
+			TotalRTTNs:  rttMetrics.TotalRTTNs,
+			AvgRTTNs:    avgRTT,
+			MinRTTNs:    rttMetrics.MinRTTNs,
+			MaxRTTNs:    rttMetrics.MaxRTTNs,
+			LastRTTNs:   rttMetrics.LastRTTNs,
+		},
+	}
+}
+
+func (c *RTTCollector) GetPodMetrics() map[string]PodMetric {
+	podRTTMetrics := GetPodRTTMetrics()
+	result := make(map[string]PodMetric)
+
+	for podKey, metrics := range podRTTMetrics {
+		parts := strings.Split(podKey, "/")
+		if len(parts) != 2 {
+			continue
+		}
+
+		avgRTT := float64(0)
+		if metrics.TotalEvents > 0 {
+			avgRTT = float64(metrics.TotalRTTNs) / float64(metrics.TotalEvents)
+		}
+
+		result[podKey] = PodMetric{
+			Type:      MetricTypeRTT,
+			Timestamp: time.Now(),
+			Namespace: parts[0],
+			PodName:   parts[1],
+			NodeName:  c.nodeName,
+			Value: RTTMetricValue{
+				TotalEvents: metrics.TotalEvents,
+				TotalRTTNs:  metrics.TotalRTTNs,
+				AvgRTTNs:    avgRTT,
+				MinRTTNs:    metrics.MinRTTNs,
+				MaxRTTNs:    metrics.MaxRTTNs,
+				LastRTTNs:   metrics.LastRTTNs,
+			},
+		}
+	}
+
+	return result
+}
+
+func (c *RTTCollector) Subscribe() <-chan Metric {
+	return nil
+}
+
+func (c *RTTCollector) Unsubscribe(ch <-chan Metric) {
+}
+
+var globalRTTCollector *RTTCollector
+
+func InitRTTCollector(nodeName string) {
+	globalRTTCollector = NewRTTCollector(nodeName)
+	if err := GlobalRegistry.Register(globalRTTCollector); err != nil {
+		log.Printf("[RTT Collector] WARNING: Failed to register RTT collector: %v", err)
+	} else {
+		log.Println("[RTT Collector] Registered with global registry")
+	}
+}

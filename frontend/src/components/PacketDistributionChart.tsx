@@ -1,65 +1,62 @@
-import { useEffect, useRef, useState } from 'react';
-import { Line } from 'react-chartjs-2';
+import { useEffect, useState } from 'react';
+import { Bar } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
     CategoryScale,
     LinearScale,
-    PointElement,
-    LineElement,
+    BarElement,
     Title,
     Tooltip,
-    Legend,
-    Filler
+    Legend
 } from 'chart.js';
 
 ChartJS.register(
     CategoryScale,
     LinearScale,
-    PointElement,
-    LineElement,
+    BarElement,
     Title,
     Tooltip,
-    Legend,
-    Filler
+    Legend
 );
 
-interface DNSLatencyChartProps {
-    currentLatency: number;
+interface PacketDistributionChartProps {
+    packetsByProtocol: Record<string, number>;
     title?: string;
 }
 
-export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLatencyChartProps) {
-    const [dataPoints, setDataPoints] = useState<number[]>([]);
-    const [labels, setLabels] = useState<string[]>([]);
-    const maxPoints = 20;
+export function PacketDistributionChart({ packetsByProtocol, title = 'Packet Distribution by Protocol' }: PacketDistributionChartProps) {
+    const [chartData, setChartData] = useState<{ labels: string[], values: number[] }>({ labels: [], values: [] });
 
     useEffect(() => {
-        const now = new Date();
-        const timeLabel = now.toLocaleTimeString();
-
-        setDataPoints(prev => {
-            const newData = [...prev, currentLatency];
-            return newData.slice(-maxPoints);
+        const protocols = Object.keys(packetsByProtocol);
+        const counts = Object.values(packetsByProtocol);
+        
+        setChartData({
+            labels: protocols.map(p => p.toUpperCase()),
+            values: counts as number[]
         });
-
-        setLabels(prev => {
-            const newLabels = [...prev, timeLabel];
-            return newLabels.slice(-maxPoints);
-        });
-    }, [currentLatency]);
+    }, [packetsByProtocol]);
 
     const data = {
-        labels,
+        labels: chartData.labels,
         datasets: [
             {
-                label: 'Latency (μs)',
-                data: dataPoints,
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                fill: true,
-                tension: 0.4,
-                pointRadius: 3,
-                pointHoverRadius: 5,
+                label: 'Packets',
+                data: chartData.values,
+                backgroundColor: [
+                    'rgba(59, 130, 246, 0.8)',
+                    'rgba(139, 92, 246, 0.8)',
+                    'rgba(16, 185, 129, 0.8)',
+                    'rgba(245, 158, 11, 0.8)',
+                    'rgba(239, 68, 68, 0.8)',
+                ],
+                borderColor: [
+                    '#3b82f6',
+                    '#8b5cf6',
+                    '#10b981',
+                    '#f59e0b',
+                    '#ef4444',
+                ],
                 borderWidth: 2,
             }
         ]
@@ -97,10 +94,8 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
                 },
                 ticks: {
                     color: '#71717a',
-                    maxRotation: 45,
-                    minRotation: 45,
                     font: {
-                        size: 10,
+                        size: 11,
                     }
                 }
             },
@@ -116,18 +111,25 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
                         size: 10,
                     },
                     callback: function(value: number | string) {
-                        return value + ' μs';
+                        return value.toLocaleString();
                     }
                 }
             }
         }
     };
 
+    if (chartData.labels.length === 0) {
+        return (
+            <div style={{ height: '250px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717a' }}>
+                No packet data available
+            </div>
+        );
+    }
+
     return (
         <div style={{ height: '250px', width: '100%' }}>
-            <Line data={data} options={options} />
+            <Bar data={data} options={options} />
         </div>
     );
 }
-
 

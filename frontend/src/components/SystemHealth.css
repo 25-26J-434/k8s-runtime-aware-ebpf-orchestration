@@ -75,3 +75,87 @@
   color: #e4e4e7;
 }
 
+/* Health Thresholds */
+.health-thresholds {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.thresholds-header {
+  margin-bottom: 1rem;
+}
+
+.thresholds-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.thresholds-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.threshold-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.threshold-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  margin-bottom: 0.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.threshold-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: rgba(20, 25, 45, 0.4);
+  border-left: 3px solid;
+  font-size: 0.75rem;
+}
+
+.threshold-item.excellent {
+  border-left-color: #10b981;
+}
+
+.threshold-item.good {
+  border-left-color: #3b82f6;
+}
+
+.threshold-item.warning {
+  border-left-color: #f59e0b;
+}
+
+.threshold-item.critical {
+  border-left-color: #ef4444;
+}
+
+.threshold-status {
+  font-weight: 700;
+  color: #e4e4e7;
+}
+
+.threshold-range {
+  font-weight: 600;
+  color: #94a3b8;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+@media (max-width: 768px) {
+  .thresholds-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

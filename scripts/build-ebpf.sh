@@ -197,6 +197,38 @@ if [ -f "$COMPONENT_DIR/rtt.c" ]; then
     fi
 fi
 
+# Build Socket Count eBPF program (if exists)
+if [ -f "$COMPONENT_DIR/socket_count.c" ]; then
+    echo "[BUILD] Compiling socket_count.c..."
+    clang $CLANG_FLAGS \
+        -c "$COMPONENT_DIR/socket_count.c" \
+        -o "$COMPONENT_DIR/socket_count.o" 2>&1 || {
+        echo "[WARN] Socket count program compilation failed"
+        echo "[WARN] Continuing without socket count..."
+    }
+    
+    if [ -f "$COMPONENT_DIR/socket_count.o" ]; then
+        cp "$COMPONENT_DIR/socket_count.o" "$OUTPUT_DIR/socket_count.o"
+        echo "[OK] Copied socket_count.o to $OUTPUT_DIR"
+    fi
+fi
+
+# Build TCP Metrics eBPF program (if exists)
+if [ -f "$COMPONENT_DIR/tcp_metrics.c" ]; then
+    echo "[BUILD] Compiling tcp_metrics.c..."
+    clang $CLANG_FLAGS \
+        -c "$COMPONENT_DIR/tcp_metrics.c" \
+        -o "$COMPONENT_DIR/tcp_metrics.o" 2>&1 || {
+        echo "[WARN] TCP metrics program compilation failed"
+        echo "[WARN] Continuing without TCP metrics..."
+    }
+    
+    if [ -f "$COMPONENT_DIR/tcp_metrics.o" ]; then
+        cp "$COMPONENT_DIR/tcp_metrics.o" "$OUTPUT_DIR/tcp_metrics.o"
+        echo "[OK] Copied tcp_metrics.o to $OUTPUT_DIR"
+    fi
+fi
+
 # Verify the compiled objects
 echo ""
 echo "[VERIFY] Checking compiled eBPF objects..."
