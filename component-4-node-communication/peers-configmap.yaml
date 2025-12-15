@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: node-daemon-peers
+  namespace: kube-system
+data:
+  peers.txt: |
+    172.18.0.3
+    172.18.0.4
+    172.18.0.5

@@ -147,4 +147,32 @@ export const api = {
         if (!response.ok) throw new Error('Failed to fetch pod DNS metrics');
         return response.json();
     },
+
+    // Node Communication APIs (Component 4)
+    async sendBroadcast(message: any): Promise<void> {
+        const response = await fetch(`${API_BASE}/broadcast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(message),
+        });
+        if (!response.ok) throw new Error('Failed to send broadcast');
+    },
+
+    async sendUnicast(target: string, message: any): Promise<void> {
+        const response = await fetch(`${API_BASE}/unicast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...message, targets: [target] }),
+        });
+        if (!response.ok) throw new Error('Failed to send unicast');
+    },
+
+    async sendMulticast(targets: string[], message: any): Promise<void> {
+        const response = await fetch(`${API_BASE}/multicast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...message, targets }),
+        });
+        if (!response.ok) throw new Error('Failed to send multicast');
+    },
 };
