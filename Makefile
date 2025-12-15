@@ -89,6 +89,19 @@ undeploy: ## Remove all deployments
 
 ## Kind cluster helpers
 
+# kind-setup: ## Setup kind cluster
+# 	@echo "=== Setting up kind cluster ==="
+# 	kind create cluster --name research-cluster --config=$(K8S_DIR)/kind-config.yaml || true
+# 	@echo "Kind cluster ready!"
+
+# kind-load-images: build-images ## Load images into kind
+# 	@echo "=== Loading images into kind ==="
+# 	kind load docker-image $(DAEMON_IMAGE):$(IMAGE_TAG) --name research-cluster
+# 	kind load docker-image $(SERVICE_A_IMAGE):$(IMAGE_TAG) --name research-cluster
+# 	kind load docker-image $(SERVICE_B_IMAGE):$(IMAGE_TAG) --name research-cluster
+# 	kind load docker-image $(TCP_CLIENT_IMAGE):$(IMAGE_TAG) --name research-cluster
+# 	@echo "Images loaded!"
+
 kind-setup: ## Setup kind cluster
 	@echo "=== Setting up kind cluster ==="
 	kind create cluster --name ebpf-cluster --config=$(K8S_DIR)/kind-config.yaml || true
