@@ -1,0 +1,68 @@
+apiVersion: cilium.io/v2
+kind: CiliumEnvoyConfig
+metadata:
+  name: service-a-intelligent
+  namespace: test-services
+spec:
+  services:
+    - name: service-a
+      namespace: test-services
+      ports:
+        - 5000
+  resources:
+    - "@type": type.googleapis.com/envoy.config.listener.v3.Listener
+      name: service-a-listener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 5000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: backend
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route:
+                            weighted_clusters:
+                              clusters:
+                                - name: service-a-cluster
+                                  weight: 70
+                                - name: service-b-cluster
+                                  weight: 30
+                http_filters:
+                  - name: envoy.filters.http.router
+
+    - "@type": type.googleapis.com/envoy.config.cluster.v3.Cluster
+      name: service-a-cluster
+      type: LOGICAL_DNS
+      connect_timeout: 2s
+      load_assignment:
+        cluster_name: service-a-cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: service-a.test-services.svc.cluster.local
+                      port_value: 5000
+
+    - "@type": type.googleapis.com/envoy.config.cluster.v3.Cluster
+      name: service-b-cluster
+      type: LOGICAL_DNS
+      connect_timeout: 2s
+      load_assignment:
+        cluster_name: service-b-cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: service-b.test-services.svc.cluster.local
+                      port_value: 5001

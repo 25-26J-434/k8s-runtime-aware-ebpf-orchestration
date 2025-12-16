@@ -1,0 +1,22 @@
+{
+  "policy_name": "prefer-low-rtt-service-a",
+  "target_service": "service-a",
+  "namespace": "test-services",
+  "metric": "rtt_us",
+  "thresholds": {
+    "prefer_below": 100000,
+    "degrade_above": 150000
+  },
+  "backends": [
+    {
+      "name": "service-a",
+      "weight_if_preferred": 70,
+      "weight_if_degraded": 30
+    },
+    {
+      "name": "service-b",
+      "weight_if_preferred": 70,
+      "weight_if_degraded": 30
+    }
+  ]
+}
