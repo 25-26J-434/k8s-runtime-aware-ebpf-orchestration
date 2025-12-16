@@ -1,434 +1,634 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import './Page.css';
-import { useClusterInfo } from '../hooks/useClusterInfo';
+import './Federation.css';
 import { api } from '../services/api';
+import type { CommLogEntry, CommStats } from '../types/api';
 
-interface CommunicationLog {
-    id: string;
-    timestamp: string;
-    type: 'SENT' | 'RECEIVED';
-    commType: 'BROADCAST' | 'UNICAST' | 'MULTICAST';
-    from: string;
-    to: string[];
-    event: string;
-    payload: any;
-    success: boolean;
+type OutboundCommMode = 'BROADCAST' | 'UNICAST' | 'MULTICAST';
+
+interface ClusterNode {
+    name: string;
+    ip: string;
+    status: string;
+    role?: string;
+    podCount: number;
+    runningPods: number;
+    kernelVersion?: string;
+    osImage?: string;
 }
 
+const COMMUNICATION_MODES: Array<{
+    value: OutboundCommMode;
+    icon: string;
+    title: string;
+    description: string;
+}> = [
+    { value: 'BROADCAST', icon: '📡', title: 'Broadcast', description: 'Notify every node simultaneously.' },
+    { value: 'UNICAST', icon: '🎯', title: 'Unicast', description: 'Deliver to a single, targeted peer.' },
+    { value: 'MULTICAST', icon: '🔀', title: 'Multicast', description: 'Fan out to a curated set of peers.' },
+];
+
+const EVENT_OPTIONS = ['HANDSHAKE', 'SCHEDULING', 'STATE_UPDATE', 'METRIC_UPDATE', 'DISCOVERY'] as const;
+
+const DEFAULT_PAYLOAD = `{
+  "message": "Hello peers",
+  "priority": "info"
+}`;
+
+const LOG_FETCH_LIMIT = 60;
+const LOG_REFRESH_INTERVAL = 5000;
+const FAILURE_RESULTS = new Set(['failed', 'partial', 'no_peers', 'no_targets']);
+
+const parseMessagePayload = (input: string): Record<string, unknown> => {
+    if (!input.trim()) {
+        return {};
+    }
+    try {
+        return JSON.parse(input);
+    } catch {
+        return { message: input };
+    }
+};
+
+const formatTime = (value: string) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return value;
+    }
+    return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+};
+
 export function Federation() {
-    const { clusterInfo } = useClusterInfo();
-    const [logs, setLogs] = useState<CommunicationLog[]>([]);
+    const [nodes, setNodes] = useState<ClusterNode[]>([]);
+    const [loadingNodes, setLoadingNodes] = useState(true);
+    const [topologyError, setTopologyError] = useState<string | null>(null);
+    const [stats, setStats] = useState<CommStats | null>(null);
+    const [statsError, setStatsError] = useState<string | null>(null);
+    const [messageType, setMessageType] = useState<OutboundCommMode>('BROADCAST');
+    const [eventType, setEventType] = useState<typeof EVENT_OPTIONS[number]>(EVENT_OPTIONS[0]);
+    const [messagePayload, setMessagePayload] = useState(DEFAULT_PAYLOAD);
     const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
-    const [messageType, setMessageType] = useState<'BROADCAST' | 'UNICAST' | 'MULTICAST'>('BROADCAST');
-    const [messagePayload, setMessagePayload] = useState('');
-    const [eventType, setEventType] = useState('HANDSHAKE');
     const [sending, setSending] = useState(false);
-    const [lastSentTime, setLastSentTime] = useState<string>('');
+    const [consoleError, setConsoleError] = useState<string | null>(null);
+    const [logScope, setLogScope] = useState<'local' | 'cluster'>('local');
+    const [logEntries, setLogEntries] = useState<CommLogEntry[]>([]);
+    const [logsLoading, setLogsLoading] = useState(false);
+    const [logsError, setLogsError] = useState<string | null>(null);
+    const [autoRefreshLogs, setAutoRefreshLogs] = useState(true);
 
-    // Get real cluster nodes and add 2 simulated nodes for demonstration
-    const realNodes = clusterInfo?.nodes || [];
-    const simulatedNodes = [
-        { name: 'node-2', ip: '172.18.0.3', status: 'Ready', role: 'worker', pods: [] },
-        { name: 'node-3', ip: '172.18.0.4', status: 'Ready', role: 'worker', pods: [] },
-    ];
-    
-    const nodes = [...realNodes, ...simulatedNodes];
-    const totalNodes = nodes.length;
-    const readyNodes = nodes.filter(n => n.status === 'Ready').length;
+    const nodeMap = useMemo(() => {
+        const map = new Map<string, ClusterNode>();
+        nodes.forEach((node) => map.set(node.ip, node));
+        return map;
+    }, [nodes]);
 
-    const addLog = (log: CommunicationLog) => {
-        setLogs(prev => [log, ...prev].slice(0, 50));
+    const summary = useMemo(() => {
+        const totalNodes = nodes.length;
+        const readyNodes = nodes.filter((node) => node.status === 'Ready').length;
+        const totalPods = nodes.reduce((acc, node) => acc + node.podCount, 0);
+        const runningPods = nodes.reduce((acc, node) => acc + node.runningPods, 0);
+
+        return {
+            totalNodes,
+            readyNodes,
+            totalPods,
+            runningPods,
+            messageCount: stats?.total ?? 0,
+            broadcastCount: stats?.broadcast ?? 0,
+            unicastCount: stats?.unicast ?? 0,
+            multicastCount: stats?.multicast ?? 0,
+            peerCount: stats?.peer_count ?? 0,
+            lastUpdate: stats?.last_update ?? null,
+        };
+    }, [nodes, stats]);
+
+    const fetchTopology = useCallback(async () => {
+        try {
+            setLoadingNodes(true);
+            const topology = await api.getClusterTopology();
+            const normalized: ClusterNode[] = (topology.nodes || []).map((node) => {
+                const pods = node.pods || [];
+                const runningPods = pods.filter((pod) => pod.status === 'Running').length;
+                return {
+                    name: node.name,
+                    ip: (node as any).ip || 'unknown',
+                    status: node.status || 'Unknown',
+                    role: (node as any).role || 'worker',
+                    podCount: pods.length,
+                    runningPods,
+                    kernelVersion: (node as any).kernel_version,
+                    osImage: (node as any).os_image,
+                };
+            });
+            normalized.sort((a, b) => a.name.localeCompare(b.name));
+            setNodes(normalized);
+            setTopologyError(null);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to load cluster topology';
+            setTopologyError(message);
+        } finally {
+            setLoadingNodes(false);
+        }
+    }, []);
+
+    const fetchStats = useCallback(async () => {
+        try {
+            const data = await api.getCommStats();
+            setStats(data);
+            setStatsError(null);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to load communication stats';
+            setStatsError(message);
+        }
+    }, []);
+
+    const fetchCommLogs = useCallback(
+        async (options?: { silent?: boolean }) => {
+            const silent = options?.silent ?? false;
+            if (!silent) {
+                setLogsLoading(true);
+            }
+            try {
+                const entries = await api.getCommLogs(logScope, LOG_FETCH_LIMIT);
+                setLogEntries(entries);
+                setLogsError(null);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Failed to load communication logs';
+                setLogsError(message);
+            } finally {
+                if (!silent) {
+                    setLogsLoading(false);
+                }
+            }
+        },
+        [logScope],
+    );
+
+    useEffect(() => {
+        fetchTopology();
+        const interval = setInterval(fetchTopology, 15000);
+        return () => clearInterval(interval);
+    }, [fetchTopology]);
+
+    useEffect(() => {
+        fetchStats();
+        const interval = setInterval(fetchStats, 8000);
+        return () => clearInterval(interval);
+    }, [fetchStats]);
+
+    useEffect(() => {
+        fetchCommLogs();
+    }, [fetchCommLogs]);
+
+    useEffect(() => {
+        if (!autoRefreshLogs) {
+            return;
+        }
+        const interval = setInterval(() => {
+            fetchCommLogs({ silent: true });
+        }, LOG_REFRESH_INTERVAL);
+        return () => clearInterval(interval);
+    }, [autoRefreshLogs, fetchCommLogs]);
+
+    const formatList = (values: string[]) => Array.from(new Set(values.filter(Boolean))).join(', ');
+
+    const handleModeChange = (mode: OutboundCommMode) => {
+        setMessageType(mode);
+        setSelectedNodes((prev) => {
+            if (mode === 'BROADCAST') {
+                return new Set<string>();
+            }
+            if (mode === 'UNICAST') {
+                const [first] = Array.from(prev);
+                return first ? new Set<string>([first]) : new Set<string>();
+            }
+            return new Set(prev);
+        });
     };
 
-    const handleSendMessage = async () => {
-        setSending(true);
-        try {
-            let payload: any = {};
-            try {
-                payload = messagePayload ? JSON.parse(messagePayload) : {};
-            } catch {
-                payload = { message: messagePayload };
-            }
-
-            const message = {
-                event: eventType,
-                payload,
-                action: 'NONE',
-            };
-
-            const timestamp = new Date().toISOString();
-            const targetNodesList = Array.from(selectedNodes);
-            
-            const logEntry: CommunicationLog = {
-                id: `${Date.now()}-${Math.random()}`,
-                timestamp,
-                type: 'SENT',
-                commType: messageType,
-                from: nodes[0]?.name || 'Dashboard',
-                to: messageType === 'BROADCAST' ? ['ALL NODES'] : targetNodesList,
-                event: eventType,
-                payload,
-                success: false,
-            };
-
-            try {
-                if (messageType === 'BROADCAST') {
-                    await api.sendBroadcast(message);
-                } else if (messageType === 'UNICAST' && targetNodesList.length > 0) {
-                    await api.sendUnicast(targetNodesList[0], message);
-                } else if (messageType === 'MULTICAST' && targetNodesList.length > 0) {
-                    await api.sendMulticast(targetNodesList, message);
+    const handleToggleNode = (ip: string) => {
+        if (messageType === 'BROADCAST') {
+            return;
+        }
+        setSelectedNodes((prev) => {
+            const next = new Set(prev);
+            if (next.has(ip)) {
+                next.delete(ip);
+            } else {
+                if (messageType === 'UNICAST') {
+                    next.clear();
                 }
-                logEntry.success = true;
-                setLastSentTime(new Date().toLocaleTimeString());
-            } catch (err) {
-                console.error('Send failed:', err);
-                logEntry.payload = { ...logEntry.payload, error: String(err) };
+                next.add(ip);
             }
+            return next;
+        });
+    };
 
-            addLog(logEntry);
-            setMessagePayload('');
+    const canSend = messageType === 'BROADCAST' || selectedNodes.size > 0;
+
+    const handleSendMessage = async () => {
+        if (!canSend || sending) {
+            return;
+        }
+        setSending(true);
+        setConsoleError(null);
+
+        const targetIps = Array.from(selectedNodes);
+        const targetLabels =
+            messageType === 'BROADCAST'
+                ? ['All nodes']
+                : targetIps.map((ip) => nodeMap.get(ip)?.name || ip);
+        const payload = parseMessagePayload(messagePayload);
+
+        const messageBody: Record<string, unknown> = {
+            event: eventType,
+            payload,
+            action: 'NONE',
+        };
+        if (messageType !== 'BROADCAST' && targetLabels.length > 0) {
+            messageBody.target_nodes = targetLabels;
+        }
+
+        try {
+            if (messageType === 'BROADCAST') {
+                await api.sendBroadcast(messageBody);
+            } else if (messageType === 'UNICAST') {
+                if (targetIps.length === 0) {
+                    throw new Error('Select a single node to send a unicast message.');
+                }
+                await api.sendUnicast(targetIps[0], messageBody);
+            } else {
+                await api.sendMulticast(targetIps, messageBody);
+            }
+            await fetchStats();
             if (messageType === 'UNICAST') {
                 setSelectedNodes(new Set());
             }
         } catch (error) {
-            console.error('Failed to send message:', error);
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            setConsoleError(message);
         } finally {
             setSending(false);
+            await fetchCommLogs({ silent: true });
         }
     };
-
-    const toggleTargetNode = (nodeIp: string) => {
-        setSelectedNodes(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(nodeIp)) {
-                newSet.delete(nodeIp);
-            } else {
-                if (messageType === 'UNICAST') {
-                    newSet.clear();
-                }
-                newSet.add(nodeIp);
-            }
-            return newSet;
-        });
-    };
-
-    const getNodeIcon = (status: string) => status === 'Ready' ? '✅' : '⚠️';
-    
-    const getCommTypeColor = (type: string) => {
-        switch (type) {
-            case 'BROADCAST': return '#6366f1';
-            case 'UNICAST': return '#10b981';
-            case 'MULTICAST': return '#f59e0b';
-            default: return '#6b7280';
-        }
-    };
-
-    const canSend = messageType === 'BROADCAST' || selectedNodes.size > 0;
 
     return (
         <div className="page-container">
             <div className="page-header">
                 <div className="page-title-section">
-                    <h1 className="page-title">🌐 Node-to-Node Communication</h1>
-                    <p className="page-subtitle">P2P messaging and coordination across cluster nodes (Component 4)</p>
-                </div>
-                <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-                    <div style={{ padding: '0.75rem 1.5rem', background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>Total Nodes</div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{totalNodes}</div>
-                    </div>
-                    <div style={{ padding: '0.75rem 1.5rem', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>Ready Nodes</div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#10b981' }}>{readyNodes}</div>
-                    </div>
-                    <div style={{ padding: '0.75rem 1.5rem', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '8px' }}>
-                        <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>Messages Sent</div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#f59e0b' }}>{logs.filter(l => l.success).length}</div>
-                    </div>
-                    {lastSentTime && (
-                        <div style={{ padding: '0.75rem 1.5rem', background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.3)', borderRadius: '8px' }}>
-                            <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>Last Sent</div>
-                            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#8b5cf6' }}>{lastSentTime}</div>
-                        </div>
-                    )}
+                    <h1 className="page-title">Node Federation Control</h1>
+                    <p className="page-subtitle">
+                        Coordinate runtime-aware messaging between daemon instances and monitor Component 4 activity.
+                    </p>
                 </div>
             </div>
 
             <div className="page-content">
-                {/* Interactive Node Grid */}
-                <div className="feature-card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                        <h2>🖥️ Cluster Nodes</h2>
-                        <span style={{ fontSize: '0.9rem', opacity: 0.7 }}>
-                            {messageType !== 'BROADCAST' && `Selected: ${selectedNodes.size}`}
-                        </span>
+                <section className="feature-card">
+                    <div className="section-header">
+                        <h2>Cluster Snapshot</h2>
+                        <div className="section-actions">
+                            <span className={`status-pill ${loadingNodes ? 'is-syncing' : ''}`}>
+                                {loadingNodes ? 'Refreshing' : 'Live'}
+                            </span>
+                            <button className="action-button" onClick={fetchTopology} disabled={loadingNodes}>
+                                Refresh Nodes
+                            </button>
+                        </div>
                     </div>
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-                        gap: '1rem',
-                    }}>
-                        {nodes.map((node) => {
-                            const isSelected = selectedNodes.has(node.ip);
-                            return (
-                                <div 
-                                    key={node.name} 
-                                    onClick={() => messageType !== 'BROADCAST' && toggleTargetNode(node.ip)}
-                                    style={{
-                                        background: isSelected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.1)',
-                                        border: `2px solid ${isSelected ? '#10b981' : 'rgba(99, 102, 241, 0.3)'}`,
-                                        borderRadius: '12px',
-                                        padding: '1.25rem',
-                                        cursor: messageType !== 'BROADCAST' ? 'pointer' : 'default',
-                                        transition: 'all 0.3s ease',
-                                        transform: isSelected ? 'scale(1.02)' : 'scale(1)',
-                                        boxShadow: isSelected ? '0 4px 12px rgba(16, 185, 129, 0.3)' : 'none',
-                                    }}
-                                >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <span style={{ fontSize: '1.75rem' }}>{getNodeIcon(node.status)}</span>
-                                            <div>
-                                                <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{node.name}</div>
-                                                <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>{node.role || 'worker'}</div>
+                    <div className="federation-summary">
+                        <div className="summary-card">
+                            <span className="summary-card__label">Cluster Nodes</span>
+                            <span className="summary-card__value">{summary.totalNodes}</span>
+                            <span className="summary-card__detail">{summary.readyNodes} reporting ready</span>
+                        </div>
+                        <div className="summary-card">
+                            <span className="summary-card__label">Workload Pods</span>
+                            <span className="summary-card__value">{summary.runningPods}</span>
+                            <span className="summary-card__detail">{summary.totalPods} total scheduled</span>
+                        </div>
+                        <div className="summary-card">
+                            <span className="summary-card__label">Comm. Activity</span>
+                            <span className="summary-card__value">{summary.messageCount}</span>
+                            <span className="summary-card__detail">
+                                {summary.broadcastCount} broadcast · {summary.unicastCount} unicast · {summary.multicastCount} multicast
+                            </span>
+                        </div>
+                        <div className="summary-card">
+                            <span className="summary-card__label">Peers Discovered</span>
+                            <span className="summary-card__value">{summary.peerCount}</span>
+                            <span className="summary-card__detail">
+                                {summary.lastUpdate ? `Updated ${formatTime(summary.lastUpdate)}` : 'Awaiting activity'}
+                            </span>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="feature-card">
+                    <div className="section-header">
+                        <h2>Cluster Nodes</h2>
+                        <div className="section-actions">
+                            {messageType !== 'BROADCAST' && (
+                                <span className="status-pill">
+                                    Targets · {selectedNodes.size}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    {topologyError && <div className="error-banner">{topologyError}</div>}
+                    {!nodes.length && !loadingNodes ? (
+                        <div className="empty-state">No nodes reported yet. Ensure the daemonset is running.</div>
+                    ) : (
+                        <div className="node-grid">
+                            {nodes.map((node) => {
+                                const isSelected = selectedNodes.has(node.ip);
+                                const statusClass = node.status === 'Ready' ? 'is-ready' : 'is-warning';
+                                const selectable = messageType !== 'BROADCAST';
+                                return (
+                                    <button
+                                        type="button"
+                                        key={node.name}
+                                        onClick={() => handleToggleNode(node.ip)}
+                                        className={`node-card${selectable ? ' is-selectable' : ''}${isSelected ? ' is-selected' : ''}`}
+                                    >
+                                        <div className="node-card__header">
+                                            <div className="node-card__identity">
+                                                <div className="node-card__icon">🖥️</div>
+                                                <div>
+                                                    <div className="node-card__name">{node.name}</div>
+                                                    <div className="node-card__meta">{node.role}</div>
+                                                </div>
                                             </div>
+                                            <span className={`node-card__status ${statusClass}`}>
+                                                {node.status}
+                                            </span>
                                         </div>
-                                        {isSelected && <span style={{ fontSize: '1.5rem' }}>✓</span>}
-                                    </div>
-                                    <div style={{ display: 'grid', gap: '0.4rem', fontSize: '0.9rem' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <span style={{ opacity: 0.7 }}>IP Address:</span>
-                                            <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>{node.ip}</code>
+                                        <div className="node-card__kv">
+                                            <div className="node-card__kv-row">
+                                                <span className="node-card__kv-label">IP</span>
+                                                <span className="node-card__kv-value">{node.ip}</span>
+                                            </div>
+                                            <div className="node-card__kv-row">
+                                                <span className="node-card__kv-label">Pods</span>
+                                                <span className="node-card__kv-value">{node.runningPods}/{node.podCount} running</span>
+                                            </div>
+                                            {node.kernelVersion && (
+                                                <div className="node-card__kv-row">
+                                                    <span className="node-card__kv-label">Kernel</span>
+                                                    <span className="node-card__kv-value">{node.kernelVersion}</span>
+                                                </div>
+                                            )}
+                                            {node.osImage && (
+                                                <div className="node-card__kv-row">
+                                                    <span className="node-card__kv-label">OS</span>
+                                                    <span className="node-card__kv-value">{node.osImage}</span>
+                                                </div>
+                                            )}
                                         </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <span style={{ opacity: 0.7 }}>Status:</span>
-                                            <span style={{ color: node.status === 'Ready' ? '#10b981' : '#ef4444', fontWeight: 'bold' }}>{node.status}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <span style={{ opacity: 0.7 }}>Running Pods:</span>
-                                            <span style={{ fontWeight: 'bold' }}>{node.pods?.length || 0}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
+
+                <section className="feature-card">
+                    <div className="section-header">
+                        <h2>Communication Console</h2>
+                        <div className="section-actions">
+                            <button className="action-button" onClick={fetchStats}>
+                                Refresh Stats
+                            </button>
+                        </div>
                     </div>
-                </div>
+                    {statsError && <div className="error-banner">{statsError}</div>}
+                    <div className="mode-selector">
+                        {COMMUNICATION_MODES.map((mode) => (
+                            <button
+                                key={mode.value}
+                                type="button"
+                                className={`mode-card${messageType === mode.value ? ' is-active' : ''}`}
+                                onClick={() => handleModeChange(mode.value)}
+                            >
+                                <span className="mode-card__icon">{mode.icon}</span>
+                                <span className="mode-card__title">{mode.title}</span>
+                                <span className="mode-card__help">{mode.description}</span>
+                            </button>
+                        ))}
+                    </div>
 
-                {/* Enhanced Communication Control */}
-                <div className="feature-card">
-                    <h2>📤 Send Message</h2>
-                    <div style={{ display: 'grid', gap: '1.25rem', marginTop: '1rem' }}>
-                        {/* Communication Type */}
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '0.75rem', fontWeight: 'bold' }}>Communication Type</label>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
-                                {[
-                                    { type: 'BROADCAST' as const, icon: '📡', desc: 'All nodes' },
-                                    { type: 'UNICAST' as const, icon: '🎯', desc: 'One node' },
-                                    { type: 'MULTICAST' as const, icon: '🔀', desc: 'Multiple nodes' },
-                                ].map(({ type, icon, desc }) => (
-                                    <button
-                                        key={type}
-                                        onClick={() => {
-                                            setMessageType(type);
-                                            if (type === 'BROADCAST') setSelectedNodes(new Set());
-                                        }}
-                                        style={{
-                                            padding: '1rem',
-                                            background: messageType === type ? getCommTypeColor(type) : `${getCommTypeColor(type)}20`,
-                                            border: `2px solid ${getCommTypeColor(type)}`,
-                                            borderRadius: '8px',
-                                            color: 'white',
-                                            cursor: 'pointer',
-                                            fontWeight: 'bold',
-                                            textAlign: 'center',
-                                        }}
-                                    >
-                                        <div style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>{icon}</div>
-                                        <div>{type}</div>
-                                        <div style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: '0.25rem' }}>{desc}</div>
-                                    </button>
-                                ))}
-                            </div>
+                    <div style={{ marginTop: '1.5rem' }}>
+                        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#cbd5ff' }}>
+                            Event Type
+                        </h3>
+                        <div className="event-selector">
+                            {EVENT_OPTIONS.map((option) => (
+                                <button
+                                    key={option}
+                                    type="button"
+                                    className={`event-chip${eventType === option ? ' is-active' : ''}`}
+                                    onClick={() => setEventType(option)}
+                                >
+                                    {option}
+                                </button>
+                            ))}
                         </div>
+                    </div>
 
-                        {/* Event Type */}
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '0.75rem', fontWeight: 'bold' }}>Event Type</label>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.5rem' }}>
-                                {['HANDSHAKE', 'SCHEDULING', 'STATE_UPDATE', 'METRIC_UPDATE', 'DISCOVERY'].map(event => (
-                                    <button
-                                        key={event}
-                                        onClick={() => setEventType(event)}
-                                        style={{
-                                            padding: '0.6rem',
-                                            background: eventType === event ? '#8b5cf6' : 'rgba(139, 92, 246, 0.2)',
-                                            border: `1px solid ${eventType === event ? '#8b5cf6' : 'rgba(139, 92, 246, 0.4)'}`,
-                                            borderRadius: '6px',
-                                            color: 'white',
-                                            cursor: 'pointer',
-                                            fontSize: '0.85rem',
-                                        }}
-                                    >
-                                        {event}
-                                    </button>
-                                ))}
-                            </div>
+                    {messageType !== 'BROADCAST' && (
+                        <div className="selected-targets" style={{ marginTop: '1.5rem' }}>
+                            <span className="selected-targets__label">
+                                {messageType === 'UNICAST' ? 'Single target required' : 'Multicast targets'}
+                            </span>
+                            <span className="selected-targets__value">
+                                {selectedNodes.size === 0
+                                    ? 'Select nodes from the grid above to build the target list.'
+                                    : Array.from(selectedNodes)
+                                          .map((ip) => nodeMap.get(ip)?.name || ip)
+                                          .join(', ')}
+                            </span>
                         </div>
+                    )}
 
-                        {/* Target Nodes Info */}
-                        {messageType !== 'BROADCAST' && (
-                            <div style={{
-                                padding: '1rem',
-                                background: 'rgba(16, 185, 129, 0.1)',
-                                border: '1px solid rgba(16, 185, 129, 0.3)',
-                                borderRadius: '8px',
-                            }}>
-                                <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                                    {messageType === 'UNICAST' ? '🎯 Select ONE target node above' : '🔀 Select MULTIPLE target nodes above'}
-                                </div>
-                                <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>
-                                    {selectedNodes.size === 0 ? 'Click on nodes in the grid above to select them' : `Selected: ${Array.from(selectedNodes).join(', ')}`}
-                                </div>
-                            </div>
-                        )}
+                    <div style={{ marginTop: '1.5rem' }}>
+                        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#cbd5ff' }}>
+                            Message Payload
+                        </h3>
+                        <textarea
+                            className="payload-textarea"
+                            value={messagePayload}
+                            onChange={(event) => setMessagePayload(event.target.value)}
+                            placeholder='{"message": "Hello nodes!", "priority": "high"}'
+                        />
+                    </div>
 
-                        {/* Payload */}
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '0.75rem', fontWeight: 'bold' }}>💬 Message Payload (JSON or text)</label>
-                            <textarea
-                                value={messagePayload}
-                                onChange={(e) => setMessagePayload(e.target.value)}
-                                placeholder='{"message": "Hello nodes!", "priority": "high", "data": {}}'
-                                rows={4}
-                                style={{
-                                    width: '100%',
-                                    padding: '0.75rem',
-                                    background: 'rgba(30, 41, 59, 0.8)',
-                                    border: '1px solid rgba(99, 102, 241, 0.3)',
-                                    borderRadius: '8px',
-                                    color: 'white',
-                                    fontFamily: 'monospace',
-                                    fontSize: '0.9rem',
-                                    resize: 'vertical',
-                                }}
-                            />
-                        </div>
-
-                        {/* Send Button */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
                         <button
+                            type="button"
+                            className="send-button"
                             onClick={handleSendMessage}
                             disabled={!canSend || sending}
-                            style={{
-                                padding: '1rem 2rem',
-                                background: !canSend || sending ? '#6b7280' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                border: 'none',
-                                borderRadius: '8px',
-                                color: 'white',
-                                fontWeight: 'bold',
-                                fontSize: '1.1rem',
-                                cursor: !canSend || sending ? 'not-allowed' : 'pointer',
-                                opacity: !canSend || sending ? 0.5 : 1,
-                            }}
                         >
-                            {sending ? '⏳ Sending...' : `🚀 Send ${messageType}`}
+                            {sending ? 'Sending…' : `Send ${messageType}`}
                         </button>
                     </div>
-                </div>
 
-                {/* Communication Logs */}
-                <div className="feature-card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                        <h2>📝 Communication Logs ({logs.length})</h2>
-                        <button
-                            onClick={() => setLogs([])}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: 'rgba(239, 68, 68, 0.2)',
-                                border: '1px solid #ef4444',
-                                borderRadius: '4px',
-                                color: 'white',
-                                cursor: 'pointer',
-                            }}
-                        >
-                            Clear Logs
-                        </button>
-                    </div>
-                    
-                    <div style={{ maxHeight: '500px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        {logs.length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.5 }}>
-                                No messages sent yet. Send a message to see logs here.
+                    {consoleError && (
+                        <div className="error-banner" style={{ marginTop: '1rem' }}>
+                            {consoleError}
+                        </div>
+                    )}
+
+                    {stats && (
+                        <div className="stats-grid">
+                            <div className="stats-card">
+                                <span className="stats-card__label">Broadcast</span>
+                                <span className="stats-card__value">{stats.broadcast}</span>
+                                <span className="stats-card__hint">Messages fan-out to all peers</span>
                             </div>
-                        ) : (
-                            logs.map((log) => (
-                                <div
-                                    key={log.id}
-                                    style={{
-                                        background: log.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                        border: `1px solid ${log.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                                        borderRadius: '4px',
-                                        padding: '0.75rem',
-                                    }}
+                            <div className="stats-card">
+                                <span className="stats-card__label">Unicast</span>
+                                <span className="stats-card__value">{stats.unicast}</span>
+                                <span className="stats-card__hint">Direct node-to-node deliveries</span>
+                            </div>
+                            <div className="stats-card">
+                                <span className="stats-card__label">Multicast</span>
+                                <span className="stats-card__value">{stats.multicast}</span>
+                                <span className="stats-card__hint">Targeted cohort messaging</span>
+                            </div>
+                            <div className="stats-card">
+                                <span className="stats-card__label">Received</span>
+                                <span className="stats-card__value">{stats.received}</span>
+                                <span className="stats-card__hint">Inbound messages processed</span>
+                            </div>
+                        </div>
+                    )}
+                </section>
+
+                <section className="feature-card">
+                    <div className="section-header">
+                        <h2>Realtime Communication Logs</h2>
+                        <div className="section-actions">
+                            <span className={`status-pill ${logsLoading ? 'is-syncing' : ''}`}>
+                                {logsLoading ? 'Refreshing' : 'Live'}
+                            </span>
+                            <div className="button-group">
+                                <button
+                                    type="button"
+                                    className={`action-button${logScope === 'local' ? ' is-active' : ''}`}
+                                    onClick={() => setLogScope('local')}
                                 >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                        <span style={{ fontWeight: 'bold' }}>
-                                            {log.success ? '✅' : '❌'} {log.commType}
-                                        </span>
-                                        <span style={{ fontSize: '0.85rem', opacity: 0.7 }}>
-                                            {new Date(log.timestamp).toLocaleTimeString()}
-                                        </span>
-                                    </div>
-                                    <div style={{ fontSize: '0.9rem', display: 'grid', gap: '0.25rem' }}>
-                                        <div>Event: <strong>{log.event}</strong></div>
-                                        <div>From: {log.from}</div>
-                                        <div>To: {log.to.join(', ')}</div>
-                                        {Object.keys(log.payload).length > 0 && (
-                                            <div>
-                                                Payload: <pre style={{ display: 'inline', background: 'rgba(0,0,0,0.3)', padding: '0.25rem', borderRadius: '2px', fontSize: '0.85rem' }}>
-                                                    {JSON.stringify(log.payload, null, 2)}
-                                                </pre>
+                                    Local Node
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`action-button${logScope === 'cluster' ? ' is-active' : ''}`}
+                                    onClick={() => setLogScope('cluster')}
+                                >
+                                    Cluster
+                                </button>
+                            </div>
+                            <button
+                                type="button"
+                                className={`action-button${autoRefreshLogs ? ' is-active' : ''}`}
+                                onClick={() => setAutoRefreshLogs((prev) => !prev)}
+                            >
+                                Auto Refresh {autoRefreshLogs ? 'On' : 'Off'}
+                            </button>
+                            <button
+                                type="button"
+                                className="action-button"
+                                onClick={() => fetchCommLogs()}
+                                disabled={logsLoading}
+                            >
+                                {logsLoading ? 'Refreshing…' : 'Refresh Logs'}
+                            </button>
+                        </div>
+                    </div>
+                    {logsError && <div className="error-banner">{logsError}</div>}
+                    {!logEntries.length && !logsLoading ? (
+                        <div className="empty-state">
+                            No communication activity captured yet. Send a message or wait for incoming traffic.
+                        </div>
+                    ) : (
+                        <div className="log-feed">
+                            {logEntries.map((entry, index) => {
+                                const key = entry.id || `${entry.timestamp}-${index}`;
+                                const targets = (entry.targets && entry.targets.length > 0
+                                    ? entry.targets
+                                    : entry.target_ips) || [];
+                                const delivered = (entry.delivered && entry.delivered.length > 0
+                                    ? entry.delivered
+                                    : entry.delivered_ips) || [];
+                                const failed = (entry.failed && entry.failed.length > 0
+                                    ? entry.failed
+                                    : entry.failed_ips) || [];
+                                const isFailure = entry.result ? FAILURE_RESULTS.has(entry.result) : false;
+                                const resultLabel = entry.result ? entry.result.replace(/_/g, ' ') : null;
+                                return (
+                                    <div key={key} className={`log-feed__item${isFailure ? ' is-error' : ''}`}>
+                                        <div className="log-feed__meta">
+                                            <span className="log-feed__title">{entry.event}</span>
+                                            <span>{formatTime(entry.timestamp)}</span>
+                                        </div>
+                                        <div className="log-feed__badges">
+                                            <span className={`badge badge-${entry.direction.toLowerCase()}`}>
+                                                {entry.direction}
+                                            </span>
+                                            <span className="badge">{entry.mode}</span>
+                                            {resultLabel && (
+                                                <span className={`badge badge-result-${entry.result}`}>
+                                                    {resultLabel}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="log-feed__line">
+                                            <strong>{entry.node}</strong>{' '}
+                                            {entry.direction === 'SENT' ? 'sent' : 'processed'} a {entry.mode.toLowerCase()} message
+                                            {entry.direction === 'RECEIVED' && (entry.source || entry.source_ip) && (
+                                                <> from <strong>{entry.source || entry.source_ip}</strong></>
+                                            )}
+                                            .
+                                        </div>
+                                        <div className="log-feed__line log-feed__line--meta">
+                                            <span>Node IP: {entry.node_ip}</span>
+                                            {entry.direction === 'RECEIVED' && entry.source_ip && (
+                                                <span>Source IP: {entry.source_ip}</span>
+                                            )}
+                                            {entry.direction === 'SENT' && delivered.length > 0 && (
+                                                <span>Delivered: {delivered.length}</span>
+                                            )}
+                                        </div>
+                                        {targets.length > 0 && (
+                                            <div className="log-feed__line">
+                                                <span className="log-label">Targets:</span>
+                                                <span>{formatList(targets)}</span>
                                             </div>
                                         )}
+                                        {delivered.length > 0 && (
+                                            <div className="log-feed__line">
+                                                <span className="log-label success">Delivered:</span>
+                                                <span>{formatList(delivered)}</span>
+                                            </div>
+                                        )}
+                                        {failed.length > 0 && (
+                                            <div className="log-feed__line">
+                                                <span className="log-label error">Failed:</span>
+                                                <span>{formatList(failed)}</span>
+                                            </div>
+                                        )}
+                                        {entry.payload && Object.keys(entry.payload).length > 0 && (
+                                            <pre className="log-feed__payload">
+                                                {JSON.stringify(entry.payload, null, 2)}
+                                            </pre>
+                                        )}
                                     </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-
-                {/* Component Info */}
-                <div className="info-grid">
-                    <div className="info-card">
-                        <h3>Features</h3>
-                        <ul>
-                            <li>📡 BROADCAST to all nodes</li>
-                            <li>🎯 UNICAST to specific node</li>
-                            <li>🔀 MULTICAST to groups</li>
-                            <li>📝 Real-time logs</li>
-                            <li>⚡ Event-driven architecture</li>
-                        </ul>
-                    </div>
-
-                    <div className="info-card">
-                        <h3>Use Cases</h3>
-                        <ul>
-                            <li>Coordinate eBPF updates</li>
-                            <li>Share metric aggregations</li>
-                            <li>Distributed consensus</li>
-                            <li>Cross-node health checks</li>
-                            <li>State synchronization</li>
-                        </ul>
-                    </div>
-
-                    <div className="info-card">
-                        <h3>Status</h3>
-                        <div style={{ background: '#10b981', color: 'white', padding: '0.25rem 0.5rem', borderRadius: '4px', display: 'inline-block', marginBottom: '0.5rem' }}>✅ Active</div>
-                        <p>Component 4 is deployed and operational. P2P daemon running on port 8080.</p>
-                    </div>
-                </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
             </div>
         </div>
     );

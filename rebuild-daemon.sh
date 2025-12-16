@@ -6,8 +6,11 @@ echo "  Rebuilding eBPF Daemon"
 echo "========================================="
 
 # Step 1: Clean old binary
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DAEMON_DIR="$ROOT_DIR/daemon"
+
 echo "[1/6] Cleaning old binary..."
-cd ~/Research/k8s-runtime-aware-ebpf-orchestration/daemon
+cd "$DAEMON_DIR"
 rm -f ebpf-daemon
 
 # Step 2: Rebuild Go binary
@@ -17,7 +20,7 @@ ls -lh ebpf-daemon
 
 # Step 3: Build Docker image with timestamp tag to force rebuild
 echo "[3/6] Building Docker image..."
-cd ~/Research/k8s-runtime-aware-ebpf-orchestration
+cd "$ROOT_DIR"
 TIMESTAMP=$(date +%s)
 sudo docker build --build-arg CACHEBUST=$TIMESTAMP -t ebpf-daemon:$TIMESTAMP -t ebpf-daemon:latest daemon
 

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -39,14 +41,15 @@ const (
 
 // -------- MESSAGE FORMAT --------
 type Message struct {
-	Event     EventType         `json:"event"`
-	Type      CommunicationType `json:"type"`
-	Sender    string            `json:"sender"`
-	SenderIP  string            `json:"sender_ip"`
-	Targets   []string          `json:"targets"`
-	Payload   map[string]any    `json:"payload"`
-	Timestamp int64             `json:"timestamp"`
-	Action    ActionType        `json:"action"`
+	Event       EventType         `json:"event"`
+	Type        CommunicationType `json:"type"`
+	Sender      string            `json:"sender"`
+	SenderIP    string            `json:"sender_ip"`
+	Targets     []string          `json:"targets"`
+	TargetNodes []string          `json:"target_nodes"`
+	Payload     map[string]any    `json:"payload"`
+	Timestamp   int64             `json:"timestamp"`
+	Action      ActionType        `json:"action"`
 }
 
 // -------- COMMUNICATION STATS --------
@@ -63,6 +66,12 @@ type CommStats struct {
 	Peers      []string `json:"peers"`
 }
 
+// NodeInfo holds discovered node name and IP
+type NodeInfo struct {
+	Name string `json:"name"`
+	IP   string `json:"ip"`
+}
+
 // Global variables
 var (
 	NODE_NAME string
@@ -70,6 +79,7 @@ var (
 
 	peersLock  sync.RWMutex
 	allNodeIPs []string
+	nodeMap    map[string]string // nodeName -> IP
 
 	statsLock sync.RWMutex
 	commStats CommStats
@@ -114,6 +124,80 @@ func loadPeersFromFileOrEnv(cfg string) []string {
 	return out
 }
 
+// -------- K8S NODE DISCOVERY --------
+func discoverPeersFromK8s() ([]NodeInfo, []string) {
+	token, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
+	if err != nil {
+		return nil, nil
+	}
+
+	caCert, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+	if err != nil {
+		return nil, nil
+	}
+
+	caPool := x509.NewCertPool()
+	if ok := caPool.AppendCertsFromPEM(caCert); !ok {
+		return nil, nil
+	}
+
+	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: caPool}}
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+
+	req, err := http.NewRequest("GET", "https://kubernetes.default.svc/api/v1/nodes", nil)
+	if err != nil {
+		return nil, nil
+	}
+	req.Header.Set("Authorization", "Bearer "+string(token))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil
+	}
+
+	var data struct {
+		Items []struct {
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+			Status struct {
+				Addresses []struct {
+					Type    string `json:"type"`
+					Address string `json:"address"`
+				} `json:"addresses"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil, nil
+	}
+
+	var nodes []NodeInfo
+	var ips []string
+	for _, item := range data.Items {
+		var ip string
+		for _, addr := range item.Status.Addresses {
+			if addr.Type == "InternalIP" && addr.Address != "" {
+				ip = addr.Address
+				break
+			}
+		}
+		if ip == "" {
+			continue
+		}
+		nodes = append(nodes, NodeInfo{Name: item.Metadata.Name, IP: ip})
+		ips = append(ips, ip)
+	}
+
+	return nodes, ips
+}
+
 // -------- SENDER FUNCTION --------
 func sendToNode(ip string, body []byte) {
 	url := "http://" + ip + ":8080/receive"
@@ -126,6 +210,29 @@ func sendToNode(ip string, body []byte) {
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	logf("Sent to node %s", ip)
+}
+
+// resolveTargets converts node names or IPs into IPs using discovered node map.
+func resolveTargets(targets []string) []string {
+	peersLock.RLock()
+	defer peersLock.RUnlock()
+
+	resolved := []string{}
+	for _, t := range targets {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		// If already an IP, use directly
+		if strings.Count(t, ".") == 3 {
+			resolved = append(resolved, t)
+			continue
+		}
+		if ip, ok := nodeMap[t]; ok {
+			resolved = append(resolved, ip)
+		}
+	}
+	return resolved
 }
 
 func sendData(comm CommunicationType, msg Message, targets []string) {
@@ -204,6 +311,11 @@ func broadcastHandler(w http.ResponseWriter, r *http.Request) {
 	var msg Message
 	json.Unmarshal(body, &msg)
 
+	if msg.Event == "" {
+		http.Error(w, "event is required", http.StatusBadRequest)
+		return
+	}
+
 	logf("\n📤 BROADCASTING from %s (%s):", NODE_NAME, NODE_IP)
 	out, _ := json.MarshalIndent(msg, "", "  ")
 	fmt.Println(string(out))
@@ -218,16 +330,27 @@ func unicastHandler(w http.ResponseWriter, r *http.Request) {
 	var msg Message
 	json.Unmarshal(body, &msg)
 
-	if len(msg.Targets) != 1 {
-		w.Write([]byte("ERROR: unicast requires exactly 1 target"))
+	if msg.Event == "" {
+		http.Error(w, "event is required", http.StatusBadRequest)
 		return
 	}
 
-	logf("\n📤 UNICASTING to %s from %s (%s):", msg.Targets[0], NODE_NAME, NODE_IP)
+	targets := msg.Targets
+	if len(targets) == 0 && len(msg.TargetNodes) > 0 {
+		targets = msg.TargetNodes
+	}
+
+	resolved := resolveTargets(targets)
+	if len(resolved) != 1 {
+		http.Error(w, "unicast requires exactly 1 valid target", http.StatusBadRequest)
+		return
+	}
+
+	logf("\n📤 UNICASTING to %s from %s (%s):", resolved[0], NODE_NAME, NODE_IP)
 	out, _ := json.MarshalIndent(msg, "", "  ")
 	fmt.Println(string(out))
 
-	sendData(Unicast, msg, msg.Targets)
+	sendData(Unicast, msg, resolved)
 	w.Write([]byte("OK"))
 }
 
@@ -237,16 +360,27 @@ func multicastHandler(w http.ResponseWriter, r *http.Request) {
 	var msg Message
 	json.Unmarshal(body, &msg)
 
-	if len(msg.Targets) == 0 {
-		w.Write([]byte("ERROR: multicast requires at least 1 target"))
+	if msg.Event == "" {
+		http.Error(w, "event is required", http.StatusBadRequest)
 		return
 	}
 
-	logf("\n📤 MULTICASTING to %v from %s (%s):", msg.Targets, NODE_NAME, NODE_IP)
+	targets := msg.Targets
+	if len(targets) == 0 && len(msg.TargetNodes) > 0 {
+		targets = msg.TargetNodes
+	}
+
+	resolved := resolveTargets(targets)
+	if len(resolved) == 0 {
+		http.Error(w, "multicast requires at least 1 valid target", http.StatusBadRequest)
+		return
+	}
+
+	logf("\n📤 MULTICASTING to %v from %s (%s):", resolved, NODE_NAME, NODE_IP)
 	out, _ := json.MarshalIndent(msg, "", "  ")
 	fmt.Println(string(out))
 
-	sendData(Multicast, msg, msg.Targets)
+	sendData(Multicast, msg, resolved)
 	w.Write([]byte("OK"))
 }
 
@@ -276,18 +410,24 @@ func refreshPeers(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(refreshInterval):
-			peers := loadPeersFromFileOrEnv(peersConfig)
+			nodes, peers := discoverPeersFromK8s()
+			if len(peers) == 0 {
+				peers = loadPeersFromFileOrEnv(peersConfig)
+			}
 			if peers != nil {
 				peersLock.Lock()
 				allNodeIPs = peers
+				nodeMap = map[string]string{}
+				for _, n := range nodes {
+					nodeMap[n.Name] = n.IP
+				}
 				peersLock.Unlock()
 
-				// Update stats
 				statsLock.Lock()
 				commStats.PeerCount = len(peers)
 				commStats.Peers = peers
+				commStats.LastUpdate = time.Now().Format("2006-01-02 15:04:05")
 				statsLock.Unlock()
-				// Silent refresh - no verbose logging
 			}
 		}
 	}
@@ -310,7 +450,20 @@ func main() {
 
 	logf("Starting daemon on %s (%s)", NODE_NAME, NODE_IP)
 
-	allNodeIPs = loadPeersFromFileOrEnv(peersConfig)
+	// Prefer K8s discovery, fallback to peers file
+	nodes, ips := discoverPeersFromK8s()
+	if len(ips) == 0 {
+		// Allow env override for peers config path
+		if envPeers := os.Getenv("PEERS"); envPeers != "" {
+			peersConfig = envPeers
+		}
+		ips = loadPeersFromFileOrEnv(peersConfig)
+	}
+	allNodeIPs = ips
+	nodeMap = map[string]string{}
+	for _, n := range nodes {
+		nodeMap[n.Name] = n.IP
+	}
 	logf("Initial peers: %v", allNodeIPs)
 
 	// Initialize stats with peers

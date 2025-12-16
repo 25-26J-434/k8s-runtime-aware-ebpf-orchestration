@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/api"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/loader"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 )
@@ -51,6 +52,14 @@ func main() {
 		nodeName = "unknown"
 		log.Println("[Main] Warning: NODE_NAME not set, using 'unknown'")
 	}
+
+	nodeIP := os.Getenv("NODE_IP")
+	if nodeIP == "" {
+		log.Println("[Main] Warning: NODE_IP not set - communication subsystem will rely on discovery results")
+	}
+
+	commShutdown := comm.Init(comm.Config{NodeName: nodeName, NodeIP: nodeIP})
+	defer commShutdown()
 
 	log.Println("[Main] Initializing DNS collector...")
 	telemetry.InitDNSCollector(nodeName)

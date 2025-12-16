@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -88,6 +89,9 @@ func StartServer() {
 	http.HandleFunc("/api/cluster/topology", corsMiddleware(handleClusterTopology))
 	http.HandleFunc("/api/cluster/services", corsMiddleware(handleClusterServices))
 
+	// Register in-process communication handlers (broadcast/unicast/multicast/stats/health).
+	comm.RegisterHandlers(nil, corsMiddleware)
+
 	log.Println("[API] Starting HTTP server on :8080")
 	log.Println("[API] Endpoints:")
 	log.Println("[API]   GET /health                  - Health check")
@@ -99,6 +103,11 @@ func StartServer() {
 	log.Println("[API]   GET /api/rtt/pods            - Per-pod RTT metrics")
 	log.Println("[API]   GET /api/cluster/topology    - Cluster topology")
 	log.Println("[API]   GET /api/cluster/services    - Services info")
+	log.Println("[API]   POST /api/comm/broadcast     - Broadcast to cluster peers")
+	log.Println("[API]   POST /api/comm/unicast       - Unicast to a cluster peer")
+	log.Println("[API]   POST /api/comm/multicast     - Multicast to selected peers")
+	log.Println("[API]   GET  /api/comm/stats         - Communication stats")
+	log.Println("[API]   GET  /api/comm/health        - Communication subsystem health")
 
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalf("[API] Server failed: %v", err)
@@ -294,13 +303,13 @@ func handlePodRTTMetrics(w http.ResponseWriter, r *http.Request) {
 			avgRTT = float64(metrics.TotalRTTNs) / float64(metrics.TotalEvents) / 1000
 		}
 		response[podKey] = map[string]interface{}{
-			"namespace":      metrics.Namespace,
-			"pod_name":       metrics.PodName,
-			"total_events":   metrics.TotalEvents,
-			"avg_rtt_us":     avgRTT,
-			"last_rtt_us":    float64(metrics.LastRTTNs) / 1000,
-			"max_rtt_us":     float64(metrics.MaxRTTNs) / 1000,
-			"min_rtt_us":     safeMinValue(metrics.MinRTTNs) / 1000,
+			"namespace":    metrics.Namespace,
+			"pod_name":     metrics.PodName,
+			"total_events": metrics.TotalEvents,
+			"avg_rtt_us":   avgRTT,
+			"last_rtt_us":  float64(metrics.LastRTTNs) / 1000,
+			"max_rtt_us":   float64(metrics.MaxRTTNs) / 1000,
+			"min_rtt_us":   safeMinValue(metrics.MinRTTNs) / 1000,
 		}
 	}
 
@@ -365,11 +374,11 @@ func updatePodIPMappingFromK8s() {
 
 	// Get node name - only map pods on this node
 	nodeName := os.Getenv("NODE_NAME")
-	
+
 	ctx := context.Background()
 	var pods *corev1.PodList
 	var err error
-	
+
 	if nodeName != "" {
 		// Only get pods on this node
 		pods, err = k8sClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{
