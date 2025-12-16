@@ -35,9 +35,10 @@ const DEFAULT_PAYLOAD = `{
   "priority": "info"
 }`;
 
-const LOG_FETCH_LIMIT = 60;
+const LOG_FETCH_LIMIT = 120;
 const LOG_REFRESH_INTERVAL = 5000;
 const FAILURE_RESULTS = new Set(['failed', 'partial', 'no_peers', 'no_targets']);
+const ALL_NODES_OPTION = 'ALL_NODES';
 
 const parseMessagePayload = (input: string): Record<string, unknown> => {
     if (!input.trim()) {
@@ -70,7 +71,7 @@ export function Federation() {
     const [selectedNodes, setSelectedNodes] = useState<Set<string>>(new Set());
     const [sending, setSending] = useState(false);
     const [consoleError, setConsoleError] = useState<string | null>(null);
-    const [logScope, setLogScope] = useState<'local' | 'cluster'>('local');
+    const [logNodeFilter, setLogNodeFilter] = useState<string>(ALL_NODES_OPTION);
     const [logEntries, setLogEntries] = useState<CommLogEntry[]>([]);
     const [logsLoading, setLogsLoading] = useState(false);
     const [logsError, setLogsError] = useState<string | null>(null);
@@ -142,27 +143,24 @@ export function Federation() {
         }
     }, []);
 
-    const fetchCommLogs = useCallback(
-        async (options?: { silent?: boolean }) => {
-            const silent = options?.silent ?? false;
+    const fetchCommLogs = useCallback(async (options?: { silent?: boolean }) => {
+        const silent = options?.silent ?? false;
+        if (!silent) {
+            setLogsLoading(true);
+        }
+        try {
+            const entries = await api.getCommLogs('cluster', LOG_FETCH_LIMIT);
+            setLogEntries(entries);
+            setLogsError(null);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to load communication logs';
+            setLogsError(message);
+        } finally {
             if (!silent) {
-                setLogsLoading(true);
+                setLogsLoading(false);
             }
-            try {
-                const entries = await api.getCommLogs(logScope, LOG_FETCH_LIMIT);
-                setLogEntries(entries);
-                setLogsError(null);
-            } catch (error) {
-                const message = error instanceof Error ? error.message : 'Failed to load communication logs';
-                setLogsError(message);
-            } finally {
-                if (!silent) {
-                    setLogsLoading(false);
-                }
-            }
-        },
-        [logScope],
-    );
+        }
+    }, []);
 
     useEffect(() => {
         fetchTopology();
@@ -191,6 +189,66 @@ export function Federation() {
     }, [autoRefreshLogs, fetchCommLogs]);
 
     const formatList = (values: string[]) => Array.from(new Set(values.filter(Boolean))).join(', ');
+
+    const getNodeLabel = useCallback(
+        (name?: string, ip?: string) => {
+            if (!name && !ip) {
+                return 'Unknown node';
+            }
+            const match = nodes.find((node) => (name && node.name === name) || (ip && node.ip === ip));
+            if (match) {
+                return `${match.name} (${match.ip})`;
+            }
+            if (name && ip) {
+                return `${name} (${ip})`;
+            }
+            if (name) {
+                return name;
+            }
+            return ip || 'Unknown node';
+        },
+        [nodes],
+    );
+
+    const logNodeOptions = useMemo(() => {
+        const unique = new Map<string, string>();
+        logEntries.forEach((entry) => {
+            const key = entry.node || entry.node_ip;
+            if (!key) {
+                return;
+            }
+            unique.set(key, getNodeLabel(entry.node, entry.node_ip));
+        });
+        const options = Array.from(unique.entries())
+            .map(([value, label]) => ({ value, label }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+        return [{ value: ALL_NODES_OPTION, label: 'All Nodes' }, ...options];
+    }, [getNodeLabel, logEntries]);
+
+    useEffect(() => {
+        if (logNodeFilter === ALL_NODES_OPTION) {
+            return;
+        }
+        const stillExists = logNodeOptions.some((option) => option.value === logNodeFilter);
+        if (!stillExists) {
+            setLogNodeFilter(ALL_NODES_OPTION);
+        }
+    }, [logNodeFilter, logNodeOptions]);
+
+    const filteredLogEntries = useMemo(() => {
+        if (logNodeFilter === ALL_NODES_OPTION) {
+            return logEntries;
+        }
+        return logEntries.filter((entry) => entry.node === logNodeFilter || entry.node_ip === logNodeFilter);
+    }, [logEntries, logNodeFilter]);
+
+    const selectedNodeLabel = useMemo(() => {
+        if (logNodeFilter === ALL_NODES_OPTION) {
+            return 'All Nodes';
+        }
+        const match = logNodeOptions.find((option) => option.value === logNodeFilter);
+        return match?.label || 'Selected Node';
+    }, [logNodeFilter, logNodeOptions]);
 
     const handleModeChange = (mode: OutboundCommMode) => {
         setMessageType(mode);
@@ -509,26 +567,24 @@ export function Federation() {
                 <section className="feature-card">
                     <div className="section-header">
                         <h2>Realtime Communication Logs</h2>
-                        <div className="section-actions">
+                        <div className="section-actions log-controls">
                             <span className={`status-pill ${logsLoading ? 'is-syncing' : ''}`}>
                                 {logsLoading ? 'Refreshing' : 'Live'}
                             </span>
-                            <div className="button-group">
-                                <button
-                                    type="button"
-                                    className={`action-button${logScope === 'local' ? ' is-active' : ''}`}
-                                    onClick={() => setLogScope('local')}
+                            <label className="log-node-picker">
+                                <span>Node</span>
+                                <select
+                                    className="log-node-select"
+                                    value={logNodeFilter}
+                                    onChange={(event) => setLogNodeFilter(event.target.value)}
                                 >
-                                    Local Node
-                                </button>
-                                <button
-                                    type="button"
-                                    className={`action-button${logScope === 'cluster' ? ' is-active' : ''}`}
-                                    onClick={() => setLogScope('cluster')}
-                                >
-                                    Cluster
-                                </button>
-                            </div>
+                                    {logNodeOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
                             <button
                                 type="button"
                                 className={`action-button${autoRefreshLogs ? ' is-active' : ''}`}
@@ -547,13 +603,17 @@ export function Federation() {
                         </div>
                     </div>
                     {logsError && <div className="error-banner">{logsError}</div>}
-                    {!logEntries.length && !logsLoading ? (
+                    <div className="log-summary">
+                        <span>{filteredLogEntries.length} entries</span>
+                        <span>{`Source: ${selectedNodeLabel}`}</span>
+                    </div>
+                    {!filteredLogEntries.length && !logsLoading ? (
                         <div className="empty-state">
-                            No communication activity captured yet. Send a message or wait for incoming traffic.
+                            No communication activity captured yet for this node. Send a message or wait for incoming traffic.
                         </div>
                     ) : (
                         <div className="log-feed">
-                            {logEntries.map((entry, index) => {
+                            {filteredLogEntries.map((entry, index) => {
                                 const key = entry.id || `${entry.timestamp}-${index}`;
                                 const targets = (entry.targets && entry.targets.length > 0
                                     ? entry.targets
@@ -566,6 +626,7 @@ export function Federation() {
                                     : entry.failed_ips) || [];
                                 const isFailure = entry.result ? FAILURE_RESULTS.has(entry.result) : false;
                                 const resultLabel = entry.result ? entry.result.replace(/_/g, ' ') : null;
+                                const nodeLabel = getNodeLabel(entry.node, entry.node_ip);
                                 return (
                                     <div key={key} className={`log-feed__item${isFailure ? ' is-error' : ''}`}>
                                         <div className="log-feed__meta">
@@ -584,7 +645,7 @@ export function Federation() {
                                             )}
                                         </div>
                                         <div className="log-feed__line">
-                                            <strong>{entry.node}</strong>{' '}
+                                            <strong>{nodeLabel}</strong>{' '}
                                             {entry.direction === 'SENT' ? 'sent' : 'processed'} a {entry.mode.toLowerCase()} message
                                             {entry.direction === 'RECEIVED' && (entry.source || entry.source_ip) && (
                                                 <> from <strong>{entry.source || entry.source_ip}</strong></>
