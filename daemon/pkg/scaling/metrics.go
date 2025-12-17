@@ -12,22 +12,16 @@ func GetMetricValue(metricType, level string) (float64, error) {
 
 	case "dns_latency":
 		m := telemetry.GetDNSMetrics()
-		if level == "node" {
-			if m.TotalEvents == 0 {
-				return 0, nil
-			}
+		if level == "node" && m.TotalEvents > 0 {
 			return float64(m.TotalLatencyNs) / float64(m.TotalEvents), nil
 		}
 
 	case "rtt":
 		m := telemetry.GetRTTMetrics()
-		if level == "node" {
-			if m.TotalEvents == 0 {
-				return 0, nil
-			}
+		if level == "node" && m.TotalEvents > 0 {
 			return float64(m.TotalRTTNs) / float64(m.TotalEvents), nil
 		}
 	}
 
-	return 0, errors.New("unsupported metric type or level")
+	return 0, errors.New("unsupported metric type or insufficient data")
 }

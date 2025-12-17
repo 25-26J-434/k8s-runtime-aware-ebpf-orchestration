@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scale-test
+  namespace: dns-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scale-test
+  template:
+    metadata:
+      labels:
+        app: scale-test
+    spec:
+      containers:
+      - name: busybox
+        image: busybox
+        command: ["sh", "-c", "while true; do nslookup kubernetes.default; sleep 2; done"]
