@@ -31,6 +31,15 @@ nodes:
         containerPath: /sys/fs/bpf
         readOnly: false
 
+  - role: worker
+    extraMounts:
+      - hostPath: /lib/modules
+        containerPath: /lib/modules
+        readOnly: true
+      - hostPath: /sys/fs/bpf
+        containerPath: /sys/fs/bpf
+        readOnly: false
+
 networking:
   podSubnet: "10.244.0.0/16"
   serviceSubnet: "10.96.0.0/16"
