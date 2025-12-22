@@ -9,6 +9,7 @@ import (
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/api"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/loader"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scheduler"
 )
 
 func main() {
@@ -70,6 +71,9 @@ func main() {
 	log.Println("[Main] Initializing Service Health collector...")
 	k8sClient := api.GetK8sClient()
 	telemetry.InitServiceHealthCollector(nodeName, k8sClient)
+
+	log.Println("[Main] Starting Intelligent Scheduler...")
+	go scheduler.NewScheduler(k8sClient).Run()
 
 	log.Println("[Main] Initializing NAT Metadata collector...")
 	telemetry.InitNATMetadataCollector(nodeName)

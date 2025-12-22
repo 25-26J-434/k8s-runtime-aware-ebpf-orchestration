@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scaling"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scheduler"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -95,6 +96,7 @@ func StartServer() {
 		}
 		scaling.HandleScaling(k8sClient)(w, r)
 	}))
+	http.HandleFunc("/api/scheduler/rules", corsMiddleware(scheduler.HandleSchedulerRules()))
 
 	log.Println("[API] Starting HTTP server on :8080")
 	log.Println("[API] Endpoints:")
