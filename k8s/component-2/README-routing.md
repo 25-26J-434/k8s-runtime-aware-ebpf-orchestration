@@ -22,6 +22,7 @@ This replaces the earlier Envoy/CEC weight fiddling. When telemetry + your rule 
 - `apply-local-redirect.sh` — checks telemetry + rule, and applies an LRP on violation.
 - `local-redirect-policy.yaml` — static example LRP manifest (manual apply if you want).
 - `k8s/test-services.yaml` — now includes `service-a`, `service-b`, and an extra backend `service-c` (port 5003) so you can test redirecting to more than one backend. Image for service-c lives at `examples/service-c/`.
+- `backend/` — optional Node/Express + MongoDB API to store and retrieve redirect rules for this component.
 
 ## Quick flow (telemetry + rule -> redirect)
 ```bash
@@ -78,6 +79,25 @@ The rule format (what the frontend will eventually send):
 - `redirect_backend_label` is the label selector applied in the LRP `localEndpointSelector`. To redirect to the new `service-c` backend, change to `app=service-c` and set `redirect_backend_port` to `5003`.
 - `ttl_seconds` defines how long the redirect stays enforced before the helper automatically deletes the LRP (and removes the winner label if `choose_best_pod` was used). If new outliers appear after TTL expiry, rerun the helper to recreate the policy.
 - `choose_best_pod` (optional) selects the lowest-latency pod from the candidates and applies `redirect_winner_label` to only that pod; the LRP then targets that label so just the winner receives redirected traffic. Set `backend_candidate_label` to choose which pods are evaluated (defaults to `redirect_backend_label`).
+
+## Optional: rule storage backend (Express + MongoDB)
+```bash
+# Start MongoDB (or point MONGODB_URI to your cluster)
+cd backend
+cp .env.example .env   # update MONGODB_URI/PORT if needed
+npm install
+npm start
+
+# Save a rule (upsert by policy_name)
+curl -X POST http://localhost:4000/api/rules \
+  -H "Content-Type: application/json" \
+  -d @k8s/component-2/redirect-rule.example.json
+
+# Export to a file and apply via the helper
+curl -s http://localhost:4000/api/rules/by-policy/redirect-service-a-to-c/rule-file \
+  -o /tmp/rule.json
+./k8s/component-2/apply-local-redirect.sh /tmp/rule.json
+```
 
 ## Validate
 ```bash
