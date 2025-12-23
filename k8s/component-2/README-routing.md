@@ -49,6 +49,8 @@ cat k8s/component-2/redirect-rule.example.json
 #    labeled app=service-b on port 5001 (change label/port to target service-c: app=service-c, port 5003).
 #    The policy is auto-removed after the rule's TTL; if the issue resurfaces, re-run
 #    the helper to re-enforce the redirect.
+#    Set choose_best_pod=true to have the helper pick the lowest-latency backend pod,
+#    label it, and point the LRP only at that pod.
 ```
 
 The rule format (what the frontend will eventually send):
@@ -65,13 +67,17 @@ The rule format (what the frontend will eventually send):
   "redirect_backend_label": "app=service-b",
   "redirect_backend_port": "5001",
   "redirect_backend_protocol": "TCP",
-  "ttl_seconds": 300
+  "ttl_seconds": 300,
+  "choose_best_pod": true,
+  "backend_candidate_label": "app=service-b",
+  "redirect_winner_label": "redirect-winner=yes"
 }
 ```
 - `metric` can be `rtt_us` (default) or `dns_us`; the helper switches endpoints accordingly.
 - `monitor_pod_contains` is a simple substring match on pod names within the namespace you set.
 - `redirect_backend_label` is the label selector applied in the LRP `localEndpointSelector`. To redirect to the new `service-c` backend, change to `app=service-c` and set `redirect_backend_port` to `5003`.
-- `ttl_seconds` defines how long the redirect stays enforced before the helper automatically deletes the LRP. If new outliers appear after TTL expiry, rerun the helper to recreate the policy.
+- `ttl_seconds` defines how long the redirect stays enforced before the helper automatically deletes the LRP (and removes the winner label if `choose_best_pod` was used). If new outliers appear after TTL expiry, rerun the helper to recreate the policy.
+- `choose_best_pod` (optional) selects the lowest-latency pod from the candidates and applies `redirect_winner_label` to only that pod; the LRP then targets that label so just the winner receives redirected traffic. Set `backend_candidate_label` to choose which pods are evaluated (defaults to `redirect_backend_label`).
 
 ## Validate
 ```bash
