@@ -1,4 +1,6 @@
-# Cilium weighted routing manifest (line-by-line) and link to Component 1
+# (Legacy) Cilium weighted routing manifest (Envoy)
+
+**Use LocalRedirectPolicy going forward.** This file is kept only for reference; the active path is described in `README-routing.md` with `CiliumLocalRedirectPolicy`.
 
 This README explains what each part of `cilium-weighted-routing.yaml` does and how it connects to Component 1 (the eBPF telemetry daemon).
 

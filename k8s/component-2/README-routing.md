@@ -1,185 +1,90 @@
-# Intelligent Traffic Routing with Cilium (single-node pods)
+# Telemetry-Driven Redirection with Cilium LocalRedirectPolicy
 
-This guide shows how to use the existing eBPF telemetry DaemonSet plus Cilium/Envoy to steer traffic between `service-a` and `service-b` pods on the same node. It is terminal-first and matches the API endpoints described in `README.md`.
+This replaces the earlier Envoy/CEC weight fiddling. When telemetry + your rule say “redirect,” we push a `CiliumLocalRedirectPolicy` (LRP) so traffic for the frontend Service is locally redirected to the pods you mark as the safe backend.
 
 ## Prerequisites
-- Cluster running Cilium with Envoy (`cilium status` OK)
-- `ebpf-telemetry/ebpf-daemon` DaemonSet running
-- Services deployed in namespace `test-services`:
-  - `service-a` at port `5000`
-  - `service-b` at port `5001`
-- `kubectl`, `jq` installed
+- Cilium running with the LocalRedirectPolicy CRD available (`kubectl api-resources | grep LocalRedirect`). If missing, reinstall/upgrade Cilium with LRP enabled:
+  ```bash
+  # Example (Helm install/upgrade) - adjust values.yaml as needed
+  helm upgrade --install cilium cilium/cilium \
+    --namespace kube-system \
+    --set localRedirectPolicy=true
+  ```
+  After install, verify:
+  ```bash
+  kubectl api-resources | grep LocalRedirect
+  ```
+- `ebpf-telemetry/ebpf-daemon` is up and its API is reachable (port-forwarded).
+- Backend pods have a label you can match (example uses `app=service-b`).
 
-## 0) Install the CiliumEnvoyConfig CRD (one-time)
+## Files in this folder
+- `redirect-rule.example.json` — rule format the frontend can post later; used by the helper script now.
+- `apply-local-redirect.sh` — checks telemetry + rule, and applies an LRP on violation.
+- `local-redirect-policy.yaml` — static example LRP manifest (manual apply if you want).
+- `k8s/test-services.yaml` — now includes `service-a`, `service-b`, and an extra backend `service-c` (port 5003) so you can test redirecting to more than one backend. Image for service-c lives at `examples/service-c/`.
+
+## Quick flow (telemetry + rule -> redirect)
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/cilium/cilium/v1.18.2/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumenvoyconfigs.yaml
-kubectl apply -f https://raw.githubusercontent.com/cilium/cilium/v1.18.2/pkg/k8s/apis/cilium.io/client/crds/v2/ciliumclusterwideenvoyconfigs.yaml
+# 1) Port-forward telemetry API (Irushi side data)
+kubectl -n ebpf-telemetry port-forward ds/ebpf-daemon 8080:8080
 
-kubectl get crd | grep ciliumenvoyconfig
+# 2) Build/load test images (service-a, service-b, service-c share the same cluster)
+docker build -t service-a:latest examples/service-a
+docker build -t service-b:latest examples/service-b
+docker build -t service-c:latest examples/service-c
+kind load docker-image service-a:latest --name ebpf-cluster
+kind load docker-image service-b:latest --name ebpf-cluster
+kind load docker-image service-c:latest --name ebpf-cluster
+
+# 3) Deploy the test stack (service-a/b/c, traffic generator, tcp-client)
+kubectl apply -f k8s/test-services.yaml
+
+# 4) Inspect / tweak the rule
+cat k8s/component-2/redirect-rule.example.json
+
+# 5) Run the helper (uses the rule + telemetry)
+./k8s/component-2/apply-local-redirect.sh
+# -> If avg RTT/DNS for monitored pods crosses the threshold and action=redirect,
+#    it applies a CiliumLocalRedirectPolicy that sends service-a traffic to pods
+#    labeled app=service-b on port 5001 (change label/port to target service-c: app=service-c, port 5003).
 ```
 
-## 0.5) Define a simple “intent” policy (file-based)
-Keep an intent file that encodes your thresholds and how to map them to weights. An example is provided at `k8s/component-2/intent-policy.example.json`:
+The rule format (what the frontend will eventually send):
 ```json
 {
-  "policy_name": "prefer-low-rtt-service-a",
-  "target_service": "service-a",
+  "policy_name": "redirect-service-a-to-b",
   "namespace": "test-services",
+  "frontend_service": "service-a",
+  "frontend_service_port": "5000",
+  "monitor_pod_contains": "service-a",
   "metric": "rtt_us",
-  "thresholds": {
-    "prefer_below": 100000,
-    "degrade_above": 150000
-  },
-  "backends": [
-    { "name": "service-a", "weight_if_preferred": 70, "weight_if_degraded": 30 },
-    { "name": "service-b", "weight_if_preferred": 30, "weight_if_degraded": 70 }
-  ]
+  "violation_threshold": 150000,
+  "action": "redirect",
+  "redirect_backend_label": "app=service-b",
+  "redirect_backend_port": "5001",
+  "redirect_backend_protocol": "TCP"
 }
 ```
-Workflow: read telemetry → compare RTT to thresholds → pick the weights → update/apply `cilium-weighted-routing.yaml`. You can script this later; for now do it manually with the steps below.
+- `metric` can be `rtt_us` (default) or `dns_us`; the helper switches endpoints accordingly.
+- `monitor_pod_contains` is a simple substring match on pod names within the namespace you set.
+- `redirect_backend_label` is the label selector applied in the LRP `localEndpointSelector`. To redirect to the new `service-c` backend, change to `app=service-c` and set `redirect_backend_port` to `5003`.
 
-## 1) Access telemetry metrics
-Port-forward the daemon API:
+## Validate
 ```bash
-kubectl -n ebpf-telemetry port-forward ds/ebpf-daemon 8080:8080
-```
-In another terminal, get per-pod metrics:
-```bash
-curl -s http://127.0.0.1:8080/api/rtt/pods | jq
-curl -s http://127.0.0.1:8080/api/dns/pods | jq
-```
-Note which backend (service-a vs service-b) shows lower latency.
+./k8s/component-2/apply-local-redirect.sh
+kubectl -n test-services describe ciliumlocalredirectpolicy redirect-service-a-to-b
 
-## 2) Create weighted routing with Cilium Envoy
-Save as `cilium-weighted-routing.yaml` (example starts with 70/30 preferring service-a). If you already have `k8s/component-2/cilium-weighted-routing.yaml`, you can reuse it:
-```yaml
-apiVersion: cilium.io/v2
-kind: CiliumEnvoyConfig
-metadata:
-  name: service-a-intelligent
-  namespace: test-services
-spec:
-  services:
-    - name: service-a
-      namespace: test-services
-      ports:
-        - 5000
-  resources:
-    - "@type": type.googleapis.com/envoy.config.listener.v3.Listener
-      name: service-a-listener
-      address:
-        socket_address:
-          address: 0.0.0.0
-          port_value: 5000
-      filter_chains:
-        - filters:
-            - name: envoy.filters.network.http_connection_manager
-              typed_config:
-                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                stat_prefix: ingress_http
-                route_config:
-                  name: local_route
-                  virtual_hosts:
-                    - name: backend
-                      domains: ["*"]
-                      routes:
-                        - match: { prefix: "/" }
-                          route:
-                            weighted_clusters:
-                              clusters:
-                                - name: service-a-cluster
-                                  weight: 70
-                                - name: service-b-cluster
-                                  weight: 30
-                http_filters:
-                  - name: envoy.filters.http.router
-
-    - "@type": type.googleapis.com/envoy.config.cluster.v3.Cluster
-      name: service-a-cluster
-      type: LOGICAL_DNS
-      connect_timeout: 2s
-      load_assignment:
-        cluster_name: service-a-cluster
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: service-a.test-services.svc.cluster.local
-                      port_value: 5000
-
-    - "@type": type.googleapis.com/envoy.config.cluster.v3.Cluster
-      name: service-b-cluster
-      type: LOGICAL_DNS
-      connect_timeout: 2s
-      load_assignment:
-        cluster_name: service-b-cluster
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: service-b.test-services.svc.cluster.local
-                      port_value: 5001
-
-```
-Apply it:
-```bash
-kubectl apply -f cilium-weighted-routing.yaml
-```
-
-## 3) Validate traffic split
-Run a temporary client and send requests:
-```bash
+# curl loop from an in-cluster client and check the backend logs to confirm traffic lands on the redirected pods
 kubectl -n test-services run curl-test --rm -it --restart=Never --image=curlimages/curl -- sh
-# inside the pod
-while true; do curl -s http://service-a:5000; sleep 1; done
 ```
-Watch backends to confirm distribution matches weights:
+
+## Manual apply (no helper)
 ```bash
-kubectl logs -n test-services -l app=service-a
-kubectl logs -n test-services -l app=service-b
+kubectl apply -f k8s/component-2/local-redirect-policy.yaml
 ```
+Edit `serviceMatcher`, `matchLabels`, and `toPorts` to match your frontend + safe backend before applying.
 
-## 4) Adjust weights from telemetry
-If telemetry shows `service-b` is faster, swap weights in the YAML and re-apply:
+## Cleanup
 ```bash
-kubectl apply -f cilium-weighted-routing.yaml
+kubectl -n test-services delete ciliumlocalredirectpolicy redirect-service-a-to-b
 ```
-
-Quick patch example (swap to 30/70 without editing file; adjust array indices if you reorder clusters):
-```bash
-kubectl -n test-services patch ciliumenvoyconfig service-a-intelligent \
-  --type=json \
-  -p='[{"op":"replace","path":"/spec/resources/0/filter_chains/0/filters/0/typed_config/route_config/virtual_hosts/0/routes/0/route/weighted_clusters/clusters/0/weight","value":30},{"op":"replace","path":"/spec/resources/0/filter_chains/0/filters/0/typed_config/route_config/virtual_hosts/0/routes/0/route/weighted_clusters/clusters/1/weight","value":70}]'
-```
-
-## 5) Simple “intent” -> weights workflow (manual)
-- Define intent: e.g., “prefer latency < 100 ms; if backend exceeds 150 ms avg RTT, send it 30%.”
-- Read telemetry: `/api/rtt/pods` shows per-pod RTT (Component 1 data).
-- Map to weights: give the faster backend higher weight (e.g., 70) and the slower one lower (e.g., 30).
-- Apply: edit weights in `cilium-weighted-routing.yaml` and `kubectl apply -f ...`.
-- Validate: curl loop + logs to confirm split.
-- Iterate: periodically re-check telemetry and adjust weights; automation can be added later by scripting this decision.
-
-## 6) Automate intent -> weight patch (optional script)
-You can keep intents in a JSON file and let a helper script set the weights:
-```bash
-# Make sure port-forward is running:
-kubectl -n ebpf-telemetry port-forward ds/ebpf-daemon 8080:8080
-
-# Run the helper (uses k8s/component-2/intent-policy.example.json by default)
-./k8s/component-2/apply-intent.sh
-
-# Or point to your own policy file:
-./k8s/component-2/apply-intent.sh /path/to/policy.json
-```
-What it does:
-- Reads thresholds + per-backend weights from the policy JSON (preferred vs degraded).
-- Pulls telemetry from `/api/rtt/pods` (or `/api/dns/pods` if metric is `dns_us`).
-- Picks the faster backend, maps to preferred/degraded weights, and patches the `CiliumEnvoyConfig` (assumes cluster index 0 = service-a, 1 = service-b).
-
-## 7) Operational notes
-- Update weights periodically based on `/api/rtt/pods` or `/api/dns/pods`.
-- This setup is node-local and sidecar-less; routing is handled by Cilium/Envoy.
-- Remove with: `kubectl delete -f cilium-weighted-routing.yaml`.

@@ -1,0 +1,13 @@
+{
+  "policy_name": "redirect-service-a-to-c",
+  "namespace": "test-services",
+  "frontend_service": "service-a",
+  "frontend_service_port": "5000",
+  "monitor_pod_contains": "service-a",
+  "metric": "dns_us",
+  "violation_threshold": 1000,
+  "action": "redirect",
+  "redirect_backend_label": "app=service-c",
+  "redirect_backend_port": "5003",
+  "redirect_backend_protocol": "TCP"
+}
