@@ -55,13 +55,15 @@ We use the sample at `k8s/component-2/redirect-rule.example.json` (already set t
   "action": "redirect",
   "redirect_backend_label": "app=service-c",
   "redirect_backend_port": "5003",
-  "redirect_backend_protocol": "TCP"
+  "redirect_backend_protocol": "TCP",
+  "ttl_seconds": 300
 }
 ```
 Notes:
 - `metric`: use `dns_us` unless RTT is populated. RTT is empty by default in this cluster.
 - Lower `violation_threshold` if you want to force a redirect (example uses 1000µs).
 - To target service-b instead, set `redirect_backend_label: "app=service-b"` and `redirect_backend_port: "5001"`.
+- `ttl_seconds` is required; after this many seconds, the helper deletes the LRP so traffic returns to normal unless a new violation triggers a reapply.
 
 ## 5) Apply telemetry-driven redirect
 ```bash
@@ -72,6 +74,7 @@ The helper:
 - Pulls telemetry from `API_URL`.
 - Computes avg metric for pods containing `monitor_pod_contains` in the rule namespace.
 - If metric >= threshold and action=redirect, it creates a `CiliumLocalRedirectPolicy` (LRP) named from `policy_name`.
+- A background timer deletes the LRP after `ttl_seconds`, so the redirect is temporary unless the next run sees a fresh violation.
 
 ## 6) Validate
 ```bash

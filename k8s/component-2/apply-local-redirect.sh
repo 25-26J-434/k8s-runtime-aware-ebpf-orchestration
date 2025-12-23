@@ -32,9 +32,18 @@ threshold=$(jq -r '.violation_threshold' "$RULE_FILE")
 backend_label=$(jq -r '.redirect_backend_label' "$RULE_FILE")
 backend_port=$(jq -r '.redirect_backend_port' "$RULE_FILE")
 backend_protocol=$(jq -r '.redirect_backend_protocol' "$RULE_FILE")
+ttl_seconds=$(jq -r '.ttl_seconds // empty' "$RULE_FILE")
 
 if [[ -z "$policy_name" || "$policy_name" == "null" ]]; then
   echo "policy_name is required in the rule file." >&2
+  exit 1
+fi
+if [[ -z "$ttl_seconds" || "$ttl_seconds" == "null" ]]; then
+  echo "ttl_seconds is required in the rule file and must be a positive integer (seconds)." >&2
+  exit 1
+fi
+if ! [[ "$ttl_seconds" =~ ^[0-9]+$ ]] || (( ttl_seconds <= 0 )); then
+  echo "ttl_seconds must be a positive integer (seconds)." >&2
   exit 1
 fi
 policy_slug=$(echo "$policy_name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9-' '-' | sed 's/^-*//;s/-*$//')
@@ -108,4 +117,15 @@ spec:
   loadBalancerMode: localized
 EOF
 
-echo "Done. You can remove the redirect with: kubectl -n ${namespace} delete ciliumlocalredirectpolicy ${policy_slug}"
+if (( ttl_seconds > 0 )); then
+  (
+    sleep "$ttl_seconds"
+    echo "TTL (${ttl_seconds}s) expired; removing CiliumLocalRedirectPolicy \"${policy_slug}\" in namespace \"${namespace}\"..."
+    kubectl -n "${namespace}" delete ciliumlocalredirectpolicy "${policy_slug}" --ignore-not-found
+  ) &
+  echo "Redirect applied with TTL=${ttl_seconds}s. A background cleanup will delete the policy after the TTL elapses."
+else
+  echo "Redirect applied without TTL cleanup (ttl_seconds=0)."
+fi
+
+echo "You can also remove the redirect manually with: kubectl -n ${namespace} delete ciliumlocalredirectpolicy ${policy_slug}"

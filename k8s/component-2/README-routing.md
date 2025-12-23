@@ -47,6 +47,8 @@ cat k8s/component-2/redirect-rule.example.json
 # -> If avg RTT/DNS for monitored pods crosses the threshold and action=redirect,
 #    it applies a CiliumLocalRedirectPolicy that sends service-a traffic to pods
 #    labeled app=service-b on port 5001 (change label/port to target service-c: app=service-c, port 5003).
+#    The policy is auto-removed after the rule's TTL; if the issue resurfaces, re-run
+#    the helper to re-enforce the redirect.
 ```
 
 The rule format (what the frontend will eventually send):
@@ -62,12 +64,14 @@ The rule format (what the frontend will eventually send):
   "action": "redirect",
   "redirect_backend_label": "app=service-b",
   "redirect_backend_port": "5001",
-  "redirect_backend_protocol": "TCP"
+  "redirect_backend_protocol": "TCP",
+  "ttl_seconds": 300
 }
 ```
 - `metric` can be `rtt_us` (default) or `dns_us`; the helper switches endpoints accordingly.
 - `monitor_pod_contains` is a simple substring match on pod names within the namespace you set.
 - `redirect_backend_label` is the label selector applied in the LRP `localEndpointSelector`. To redirect to the new `service-c` backend, change to `app=service-c` and set `redirect_backend_port` to `5003`.
+- `ttl_seconds` defines how long the redirect stays enforced before the helper automatically deletes the LRP. If new outliers appear after TTL expiry, rerun the helper to recreate the policy.
 
 ## Validate
 ```bash
