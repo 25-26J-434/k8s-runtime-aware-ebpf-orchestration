@@ -18,7 +18,8 @@ def home():
         "service": "service-c",
         "status": "running",
         "simulated_delay_ms": round(delay * 1000, 2),
-        "message": "eBPF Telemetry Test Service C"
+        # Clear identifier to verify redirect target
+        "message": "Hi, I am service C (alternate backend)"
     })
 
 @app.route("/health")
@@ -45,6 +46,12 @@ def data():
             "random_value": random.random()
         }
     })
+
+
+@app.route("/whoami")
+def whoami():
+    """Plain text identity to confirm which backend handled the request."""
+    return "Hi, I am service C\n", 200, {"Content-Type": "text/plain"}
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5003))

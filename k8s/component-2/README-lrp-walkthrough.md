@@ -92,8 +92,14 @@ kubectl -n test-services run curl-test --rm -it --restart=Never --image=curlimag
 
 # In another terminal, watch the redirected backend logs
 kubectl -n test-services logs -f deploy/service-c
+
+# Quick backend identity check (who actually handled the request)
+kubectl -n test-services run id-check --rm -it --restart=Never --image=curlimages/curl -- \
+  sh -c "for i in $(seq 1 5); do curl -s service-a:5000/whoami; sleep 1; done"
+# If the redirect points to service-b you'll see: 'Hi, I am service B'
+# If traffic stays on service-c you'll see: 'Hi, I am service C'
 ```
-You should see requests landing on service-c pods.
+You should see requests landing on the redirected backend (service-c by default, or service-b if you changed the rule).
 
 ## 7) Cleanup
 ```bash
