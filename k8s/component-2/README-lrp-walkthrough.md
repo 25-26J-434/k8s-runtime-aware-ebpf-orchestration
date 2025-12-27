@@ -87,15 +87,22 @@ kubectl -n test-services get ciliumlocalredirectpolicy
 kubectl -n test-services describe ciliumlocalredirectpolicy redirect-service-a-to-c
 
 # Generate client traffic and observe backend
+kubectl -n test-services delete pod curl-test --force --grace-period=0
+
 kubectl -n test-services run curl-test --rm -it --restart=Never --image=curlimages/curl -- \
   sh -c "while true; do curl -s service-a:5000; sleep 1; done"
+  
+  kubectl -n test-services run curl-test --restart=Never --image=curlimages/curl -- \
+    sh -c 'while true; do curl -s service-a:5000/whoami; sleep 1; done'
 
+  kubectl -n test-services logs -f curl-test
+  
 # In another terminal, watch the redirected backend logs
 kubectl -n test-services logs -f deploy/service-c
 
 # Quick backend identity check (who actually handled the request)
-kubectl -n test-services run id-check --rm -it --restart=Never --image=curlimages/curl -- \
-  sh -c "for i in $(seq 1 5); do curl -s service-a:5000/whoami; sleep 1; done"
+  kubectl -n test-services run id-check --rm -it --restart=Never --image=curlimages/curl -- \
+    sh -c 'for i in $(seq 1 5); do curl -s service-a:5000/whoami; sleep 1; done'
 # If the redirect points to service-b you'll see: 'Hi, I am service B'
 # If traffic stays on service-c you'll see: 'Hi, I am service C'
 ```

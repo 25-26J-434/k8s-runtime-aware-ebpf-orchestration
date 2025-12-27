@@ -16,4 +16,3 @@ spec:
       - name: http-failover
         port: "5001"
         protocol: TCP
-  loadBalancerMode: localized

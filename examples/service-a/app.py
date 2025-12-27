@@ -30,6 +30,12 @@ def root():
         "served_by": os.environ.get("SERVICE_NAME", "unknown")
     })
 
+@app.route("/whoami")
+def whoami():
+    """Plain text identity to match service-b/service-c behavior."""
+    identity = os.environ.get("SERVICE_NAME", socket.gethostname())
+    return f"Hi, I am service A ({identity})\n", 200, {"Content-Type": "text/plain"}
+
 @app.route("/health")
 def health():
     return "OK", 200
