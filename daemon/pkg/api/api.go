@@ -71,6 +71,8 @@ func StartServer() {
 		go refreshPodIPMappingPeriodically()
 	}
 
+	initMetricsStreaming()
+
 	http.HandleFunc("/health", corsMiddleware(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "OK")
@@ -89,6 +91,8 @@ func StartServer() {
 	http.HandleFunc("/api/cluster/topology", corsMiddleware(handleClusterTopology))
 	http.HandleFunc("/api/cluster/services", corsMiddleware(handleClusterServices))
 
+	initMetricsStreaming()
+
 	// Register in-process communication handlers (broadcast/unicast/multicast/stats/health).
 	comm.RegisterHandlers(nil, corsMiddleware)
 
@@ -99,6 +103,7 @@ func StartServer() {
 	log.Println("[API]   GET /metrics                 - Prometheus metrics")
 	log.Println("[API]   GET /metrics/json            - JSON metrics")
 	log.Println("[API]   GET /api/metrics             - Unified metrics (extensible)")
+	log.Println("[API]   WS  /api/metrics/ws          - Unified metrics stream")
 	log.Println("[API]   GET /api/dns/pods            - Per-pod DNS metrics")
 	log.Println("[API]   GET /api/rtt/pods            - Per-pod RTT metrics")
 	log.Println("[API]   GET /api/cluster/topology    - Cluster topology")

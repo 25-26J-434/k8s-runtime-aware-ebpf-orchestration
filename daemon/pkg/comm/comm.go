@@ -57,6 +57,9 @@ type Message struct {
 	Action      ActionType        `json:"action"`
 }
 
+// MessageHandler handles incoming communication events.
+type MessageHandler func(Message)
+
 type LogDirection string
 
 const (
@@ -131,6 +134,9 @@ var (
 	initOnce      sync.Once
 	cancelMu      sync.Mutex
 	cancelRefresh context.CancelFunc
+
+	handlersMu sync.RWMutex
+	handlers   = make(map[EventType][]MessageHandler)
 )
 
 func Init(cfg Config) func() {
@@ -195,6 +201,18 @@ func Init(cfg Config) func() {
 			cancelRefresh = nil
 		}
 	}
+
+}
+
+// RegisterMessageHandler registers a handler for a given event type. Handlers execute asynchronously.
+func RegisterMessageHandler(event EventType, handler MessageHandler) {
+	if handler == nil {
+		return
+	}
+
+	handlersMu.Lock()
+	defer handlersMu.Unlock()
+	handlers[event] = append(handlers[event], handler)
 }
 
 func RegisterHandlers(mux *http.ServeMux, wrap func(http.HandlerFunc) http.HandlerFunc) {
@@ -221,6 +239,27 @@ func RegisterHandlers(mux *http.ServeMux, wrap func(http.HandlerFunc) http.Handl
 	register("/api/comm/stats", statsHandler)
 	register("/api/comm/logs", logsHandler)
 	register("/api/comm/health", healthHandler)
+}
+
+func dispatchMessage(msg Message) {
+	handlersMu.RLock()
+	registered := append([]MessageHandler{}, handlers[msg.Event]...)
+	handlersMu.RUnlock()
+	if len(registered) == 0 {
+		return
+	}
+
+	for _, handler := range registered {
+		handler := handler
+		go func(copy Message) {
+			defer func() {
+				if r := recover(); r != nil {
+					logf("panic in message handler: %v", r)
+				}
+			}()
+			handler(copy)
+		}(cloneMessage(msg))
+	}
 }
 
 func loadPeersFromFileOrEnv(cfg string) []string {
@@ -479,6 +518,11 @@ func sendData(commType CommunicationType, msg Message, targets []string) {
 	})
 }
 
+// BroadcastMessage sends a message to all known peers.
+func BroadcastMessage(msg Message) {
+	sendData(Broadcast, msg, nil)
+}
+
 func receiveHandler(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	var msg Message
@@ -519,6 +563,8 @@ func receiveHandler(w http.ResponseWriter, r *http.Request) {
 		Result:    "received",
 		Payload:   copyPayloadMap(msg.Payload),
 	})
+
+	dispatchMessage(msg)
 
 	w.Write([]byte("OK"))
 }
@@ -735,6 +781,16 @@ func cloneLogEntry(entry CommLogEntry) CommLogEntry {
 	clone.FailedIPs = copyStringSlice(entry.FailedIPs)
 	if entry.Payload != nil {
 		clone.Payload = copyPayloadMap(entry.Payload)
+	}
+	return clone
+}
+
+func cloneMessage(msg Message) Message {
+	clone := msg
+	clone.Targets = copyStringSlice(msg.Targets)
+	clone.TargetNodes = copyStringSlice(msg.TargetNodes)
+	if msg.Payload != nil {
+		clone.Payload = copyPayloadMap(msg.Payload)
 	}
 	return clone
 }

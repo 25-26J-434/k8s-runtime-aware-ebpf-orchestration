@@ -30,20 +30,21 @@ type UnifiedMetricsResponse struct {
 
 // handleUnifiedMetrics returns metrics from all collectors
 func handleUnifiedMetrics(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameters
-	metricType := r.URL.Query().Get("type")
-	level := r.URL.Query().Get("level")
+	response := buildUnifiedMetricsResponse(r.URL.Query().Get("type"), r.URL.Query().Get("level"))
 
-	// Get node name from environment
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// buildUnifiedMetricsResponse constructs a unified metrics payload for this node.
+func buildUnifiedMetricsResponse(metricType, level string) UnifiedMetricsResponse {
 	nodeName := os.Getenv("NODE_NAME")
 	if nodeName == "" {
 		nodeName = "unknown"
 	}
 
-	// Get node IP from Kubernetes API (try to get even if nodeName is unknown)
 	nodeIP := getNodeIP(nodeName)
 	if nodeIP == "" && nodeName == "unknown" {
-		// Try to get node IP from pod's node name or hostname
 		nodeIP = getNodeIPFromPod()
 	}
 
@@ -55,61 +56,64 @@ func handleUnifiedMetrics(w http.ResponseWriter, r *http.Request) {
 		Pods:      make(map[string]map[string]interface{}),
 	}
 
-	// Get collectors based on filter
-	var collectors []telemetry.Collector
-	if metricType != "" {
-		// Filter by specific type
-		collector, ok := telemetry.GlobalRegistry.Get(telemetry.MetricType(metricType))
-		if ok {
-			collectors = []telemetry.Collector{collector}
-		}
-	} else {
-		// Get all collectors
-		collectors = telemetry.GlobalRegistry.GetAll()
-	}
+	collectors := selectCollectors(metricType)
 
-	// Collect node-level metrics (always for this node only)
 	if level == "" || level == "node" {
-		for _, collector := range collectors {
-			nodeMetric := collector.GetNodeMetrics()
-			// Ensure node metrics are tagged with the correct node name
-			if nodeMetric.NodeName == "" {
-				nodeMetric.NodeName = nodeName
-			}
-			// Only include node metrics if they match this node (or if NodeName is not set, assume it's for this node)
-			if nodeMetric.NodeName == "" || nodeMetric.NodeName == nodeName {
-				response.Node[string(nodeMetric.Type)] = nodeMetric.Value
-			}
-		}
+		populateNodeMetrics(nodeName, collectors, response.Node)
 	}
 
-	// Collect pod-level metrics (only for pods on this node)
 	if level == "" || level == "pod" {
-		podCount := 0
-		filteredCount := 0
-		for _, collector := range collectors {
-			podMetrics := collector.GetPodMetrics()
-			for podKey, podMetric := range podMetrics {
-				podCount++
-				// STRICT FILTERING: Only include pods that match this node exactly
-				// If NodeName is empty, skip it (should not happen if collectors are properly initialized)
-				if podMetric.NodeName != "" && podMetric.NodeName == nodeName {
-					filteredCount++
-					if response.Pods[podKey] == nil {
-						response.Pods[podKey] = make(map[string]interface{})
-					}
-					response.Pods[podKey][string(podMetric.Type)] = podMetric.Value
-				}
-			}
+		populatePodMetrics(nodeName, collectors, response.Pods)
+	}
+
+	return response
+}
+
+func selectCollectors(metricType string) []telemetry.Collector {
+	if metricType == "" {
+		return telemetry.GlobalRegistry.GetAll()
+	}
+
+	collector, ok := telemetry.GlobalRegistry.Get(telemetry.MetricType(metricType))
+	if !ok {
+		return nil
+	}
+	return []telemetry.Collector{collector}
+}
+
+func populateNodeMetrics(nodeName string, collectors []telemetry.Collector, dest map[string]interface{}) {
+	for _, collector := range collectors {
+		nodeMetric := collector.GetNodeMetrics()
+		if nodeMetric.NodeName == "" {
+			nodeMetric.NodeName = nodeName
 		}
-		// Log filtering stats (only if there's a mismatch to avoid spam)
-		if podCount > 0 && filteredCount != podCount {
-			log.Printf("[API] Pod filtering: %d total pod metrics, %d filtered for node %s", podCount, filteredCount, nodeName)
+		if nodeMetric.NodeName == "" || nodeMetric.NodeName == nodeName {
+			dest[string(nodeMetric.Type)] = nodeMetric.Value
+		}
+	}
+}
+
+func populatePodMetrics(nodeName string, collectors []telemetry.Collector, dest map[string]map[string]interface{}) {
+	podCount := 0
+	filteredCount := 0
+
+	for _, collector := range collectors {
+		podMetrics := collector.GetPodMetrics()
+		for podKey, podMetric := range podMetrics {
+			podCount++
+			if podMetric.NodeName != "" && podMetric.NodeName == nodeName {
+				filteredCount++
+				if dest[podKey] == nil {
+					dest[podKey] = make(map[string]interface{})
+				}
+				dest[podKey][string(podMetric.Type)] = podMetric.Value
+			}
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if podCount > 0 && filteredCount != podCount {
+		log.Printf("[API] Pod filtering: %d total pod metrics, %d filtered for node %s", podCount, filteredCount, nodeName)
+	}
 }
 
 // getNodeIP retrieves the node IP address from Kubernetes API

@@ -7,10 +7,10 @@ import type {
     CommLogEntry,
 } from '../types/api';
 
-const API_BASE = '';  // Proxy handles routing
+export const API_BASE = '';  // Proxy handles routing
 
 // Transform unified metrics to expected format
-function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
+export function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
     const node = data.node || {};
     const pods = data.pods || {};
     

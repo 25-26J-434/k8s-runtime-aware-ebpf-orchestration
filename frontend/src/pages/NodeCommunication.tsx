@@ -43,6 +43,8 @@ const NodeCommunication: React.FC = () => {
   const [communicationType, setCommunicationType] = useState<'BROADCAST' | 'UNICAST' | 'MULTICAST'>('BROADCAST');
   const [eventType, setEventType] = useState<string>('DISCOVERY');
   const [loading, setLoading] = useState(false);
+  const [broadcasting, setBroadcasting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const COMM_TYPES = [
     { value: 'BROADCAST', label: '📡 Broadcast', color: '#3b82f6' },
@@ -142,6 +144,7 @@ const NodeCommunication: React.FC = () => {
 
     setLoading(true);
     try {
+      setStatusMessage(null);
       const response = await fetch('http://localhost:8000/api/send', {
         method: 'POST',
         headers: {
@@ -159,17 +162,62 @@ const NodeCommunication: React.FC = () => {
       });
 
       if (response.ok) {
-        alert('Message sent successfully!');
+        setStatusMessage('Message sent successfully.');
         fetchStats();
         fetchLogs();
       } else {
         const error = await response.json();
-        alert(`Error: ${error.message}`);
+        setStatusMessage(`Error: ${error.message}`);
       }
     } catch (error) {
-      alert(`Failed to send message: ${error}`);
+      setStatusMessage(`Failed to send message: ${error}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBroadcastAllData = async () => {
+    if (!selectedSender) {
+      alert('Please select a sender');
+      return;
+    }
+
+    setBroadcasting(true);
+    setStatusMessage(null);
+
+    try {
+      const response = await fetch('http://localhost:8000/api/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender_ip: selectedSender,
+          type: 'BROADCAST',
+          event: eventType,
+          payload: {
+            timestamp: new Date().toISOString(),
+            nodes,
+            stats,
+            note: 'Cluster-wide broadcast triggered from dashboard',
+          },
+        }),
+      });
+
+      if (response.ok) {
+        setStatusMessage('Broadcast sent to all nodes.');
+        setCommunicationType('BROADCAST');
+        setSelectedRecipients([]);
+        fetchStats();
+        fetchLogs();
+      } else {
+        const error = await response.json();
+        setStatusMessage(`Broadcast failed: ${error.message}`);
+      }
+    } catch (error) {
+      setStatusMessage(`Broadcast failed: ${error}`);
+    } finally {
+      setBroadcasting(false);
     }
   };
 
@@ -552,14 +600,39 @@ const NodeCommunication: React.FC = () => {
             </select>
           </div>
 
-          {/* Send Button */}
-          <button
-            className="send-btn"
-            onClick={handleSendMessage}
-            disabled={!selectedSender || loading}
-          >
-            {loading ? 'Sending...' : 'Send Message'}
-          </button>
+          {/* Action Buttons */}
+          <div style={{ display: 'grid', gap: '12px' }}>
+            <button
+              className="send-btn"
+              onClick={handleSendMessage}
+              disabled={!selectedSender || loading}
+            >
+              {loading ? 'Sending...' : 'Send Message'}
+            </button>
+            <button
+              className="send-btn"
+              style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' }}
+              onClick={handleBroadcastAllData}
+              disabled={!selectedSender || broadcasting}
+            >
+              {broadcasting ? 'Broadcasting…' : 'Broadcast Cluster Data'}
+            </button>
+            {statusMessage && (
+              <div
+                style={{
+                  background: 'rgba(255,255,255,0.85)',
+                  color: '#1f2937',
+                  borderRadius: '8px',
+                  padding: '10px 12px',
+                  fontSize: '13px',
+                  textAlign: 'center',
+                  border: '1px solid rgba(31,41,55,0.1)',
+                }}
+              >
+                {statusMessage}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Charts */}
