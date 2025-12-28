@@ -1,10 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMetrics } from '../hooks/useMetrics';
+import { usePodDetails } from '../hooks/usePodDetails';
 import { api } from '../services/api';
-import { FiAlertCircle, FiCheckCircle, FiRefreshCw, FiDownload, FiMaximize2, FiPause, FiPlay, FiFilter, FiSettings } from 'react-icons/fi';
+import { 
+    FiRefreshCw, FiTrash2, FiX, FiCheckCircle, 
+    FiAlertCircle, FiTerminal, FiRotateCw, FiZap,
+    FiArrowRight, FiCpu
+} from 'react-icons/fi';
 import './NetworkTopology.css';
 
-interface Node {
+interface PodNode {
     id: string;
     name: string;
     namespace: string;
@@ -13,13 +18,12 @@ interface Node {
     vx: number;
     vy: number;
     health: 'good' | 'warning' | 'critical';
-    latency: number;
     connections: number;
-    selected: boolean;
-    metrics?: {
+    isDragging?: boolean;
+    metrics: {
         dns_latency?: number;
         tcp_retransmissions?: number;
-        tcp_packet_loss?: number;
+        packet_loss?: number;
         events?: number;
     };
 }
@@ -27,224 +31,333 @@ interface Node {
 interface Connection {
     source: string;
     target: string;
-    strength: number;
     latency: number;
     packets: number;
 }
 
-interface HealthThresholds {
-    criticalLatency: number;      // μs
-    warningLatency: number;       // μs
-    criticalRetrans: number;      // count
-    criticalPacketLoss: number;   // count
-    warningRetrans: number;       // count
-    warningPacketLoss: number;    // count
+interface MigrationSuggestion {
+    pod: string;
+    namespace: string;
+    reason: string;
+    severity: 'high' | 'medium' | 'low';
+    action: string;
+    aiSuggestion: string;
+    metrics: {
+        tcp_issues: number;
+        dns_latency: number;
+        packet_loss: number;
+        cpu_latency: number;
+    };
+    logs?: string;
 }
 
-const DEFAULT_THRESHOLDS: HealthThresholds = {
-    criticalLatency: 10000,
-    warningLatency: 5000,
-    criticalRetrans: 5,
-    criticalPacketLoss: 3,
-    warningRetrans: 1,
-    warningPacketLoss: 1,
-};
-
 export function NetworkTopology() {
-    const { metrics, loading, error } = useMetrics(3000);
+    const { metrics } = useMetrics(3000);
+    const { data: podDetails } = usePodDetails(5000);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [nodes, setNodes] = useState<Node[]>([]);
+    const [pods, setPods] = useState<PodNode[]>([]);
     const [connections, setConnections] = useState<Connection[]>([]);
     const [realConnections, setRealConnections] = useState<any[]>([]);
-    const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-    const [hoveredNode, setHoveredNode] = useState<Node | null>(null);
+    const [selectedPod, setSelectedPod] = useState<PodNode | null>(null);
+    const [draggedPod, setDraggedPod] = useState<PodNode | null>(null);
+    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
     const [isPaused, setIsPaused] = useState(false);
-    const [showFilters, setShowFilters] = useState(false);
-    const [showThresholdConfig, setShowThresholdConfig] = useState(false);
-    const [namespaceFilter, setNamespaceFilter] = useState<string>('all');
-    const [healthFilter, setHealthFilter] = useState<string>('all');
-    const [connectionFilter, setConnectionFilter] = useState<string>('established');
-    const [healthThresholds, setHealthThresholds] = useState<HealthThresholds>(() => {
-        const saved = localStorage.getItem('topology-health-thresholds');
-        return saved ? JSON.parse(saved) : DEFAULT_THRESHOLDS;
-    });
+    const [showMigrationAdvisor, setShowMigrationAdvisor] = useState(false);
+    const [migrationSuggestions, setMigrationSuggestions] = useState<MigrationSuggestion[]>([]);
+    const [podLogs, setPodLogs] = useState<{pod: string, logs: string} | null>(null);
+    const [actionResult, setActionResult] = useState<{type: 'success' | 'error', message: string} | null>(null);
+    const [selectedPodMetrics, setSelectedPodMetrics] = useState<any>(null);
+    const [loadingLogs, setLoadingLogs] = useState<{[key: string]: boolean}>({});
     const animationRef = useRef<number>();
     
-    // Save thresholds to localStorage when they change
-    useEffect(() => {
-        localStorage.setItem('topology-health-thresholds', JSON.stringify(healthThresholds));
-    }, [healthThresholds]);
-
-    // Fetch real connection data
+    // Fetch connections
     useEffect(() => {
         let mounted = true;
-        
         const fetchConnections = async () => {
             try {
-                const data = await api.getConnectionTopology(connectionFilter);
+                const data = await api.getConnectionTopology('all'); // Changed from 'established' to 'all'
                 if (mounted && data.connections) {
+                    console.log('[Topology] Fetched connections:', data.connections.length);
                     setRealConnections(data.connections);
                 }
             } catch (err) {
                 console.error('[Topology] Failed to fetch connections:', err);
             }
         };
-        
         fetchConnections();
         const interval = setInterval(fetchConnections, 3000);
-        
         return () => {
             mounted = false;
             clearInterval(interval);
         };
-    }, [connectionFilter]);
+    }, []);
 
-    // Extract nodes from metrics
+    // Build pod nodes
     useEffect(() => {
-        if (!metrics || !metrics.pods) {
-            console.log('[Topology] No metrics or pods:', { hasMetrics: !!metrics, hasPods: !!metrics?.pods });
-            return;
-        }
+        if (!metrics?.pods) return;
 
-        console.log('[Topology] Processing pods:', Object.keys(metrics.pods));
-        const newNodes: Node[] = [];
+        const newPods: PodNode[] = [];
         const podEntries = Object.entries(metrics.pods);
 
-        podEntries.forEach(([podKey, podData], index) => {
-            const [namespace, podName] = podKey.split('/');
+        podEntries.forEach(([podKey, podData]: [string, any], index) => {
+            const [namespace, name] = podKey.split('/');
             const angle = (index / podEntries.length) * Math.PI * 2;
             const radius = 280;
             
-            // Extract metrics from the pod data
             const dnsMetrics = podData.dns_latency;
             const tcpMetrics = podData.tcp_metrics;
             
-            // Determine health based on latency and TCP metrics (using configurable thresholds)
             let health: 'good' | 'warning' | 'critical' = 'good';
             const latency = dnsMetrics?.avg_latency_us || 0;
             
-            const hasCriticalIssues = tcpMetrics && (
-                tcpMetrics.retransmissions > healthThresholds.criticalRetrans || 
-                tcpMetrics.packet_loss > healthThresholds.criticalPacketLoss
-            );
-            
-            const hasWarningIssues = tcpMetrics && (
-                tcpMetrics.retransmissions >= healthThresholds.warningRetrans || 
-                tcpMetrics.packet_loss >= healthThresholds.warningPacketLoss
-            );
-            
-            if (latency > healthThresholds.criticalLatency || hasCriticalIssues) {
+            if (latency > 10000 || (tcpMetrics?.retransmissions || 0) > 5 || (tcpMetrics?.packet_loss || 0) > 3) {
                 health = 'critical';
-            } else if (latency > healthThresholds.warningLatency || hasWarningIssues) {
+            } else if (latency > 5000 || (tcpMetrics?.retransmissions || 0) > 1 || (tcpMetrics?.packet_loss || 0) > 1) {
                 health = 'warning';
             }
 
-            newNodes.push({
+            // Check if pod already exists (preserve position)
+            const existingPod = pods.find(p => p.id === podKey);
+            
+            newPods.push({
                 id: podKey,
-                name: podName,
+                name,
                 namespace,
-                x: 600 + Math.cos(angle) * radius,
-                y: 400 + Math.sin(angle) * radius,
+                x: existingPod?.x || (600 + Math.cos(angle) * radius),
+                y: existingPod?.y || (350 + Math.sin(angle) * radius),
                 vx: 0,
                 vy: 0,
                 health,
-                latency: latency,
                 connections: 0,
-                selected: selectedNode?.id === podKey,
                 metrics: {
-                    dns_latency: dnsMetrics?.avg_latency_us || 0,
+                    dns_latency: latency,
                     tcp_retransmissions: tcpMetrics?.retransmissions || 0,
-                    tcp_packet_loss: tcpMetrics?.packet_loss || 0,
+                    packet_loss: tcpMetrics?.packet_loss || 0,
                     events: (dnsMetrics?.total_events || 0) + (tcpMetrics?.total_events || 0)
                 }
             });
         });
 
-        // Create connections from real eBPF data
+        // Build connections
         const newConnections: Connection[] = [];
-        const nodeMap = new Map<string, Node>();
-        newNodes.forEach(node => nodeMap.set(node.id, node));
+        const podMap = new Map<string, PodNode>();
+        const connectionSet = new Set<string>(); // Track unique connections
+        newPods.forEach(pod => podMap.set(pod.id, pod));
         
-        // Process real connections
+        console.log('[Topology] Processing connections, total realConnections:', realConnections.length);
+        console.log('[Topology] Available pods:', Array.from(podMap.keys()));
+        
         realConnections.forEach((conn: any) => {
-            if (!conn.source_pod || !conn.dest_pod) return;
+            // Skip self-connections
+            if (!conn.source_pod || !conn.dest_pod || conn.source_pod === conn.dest_pod) {
+                return;
+            }
             
-            // Skip self-connections (same pod)
-            if (conn.source_pod === conn.dest_pod) return;
+            const sourcePod = podMap.get(conn.source_pod);
+            const destPod = podMap.get(conn.dest_pod);
             
-            const sourceNode = nodeMap.get(conn.source_pod);
-            const destNode = nodeMap.get(conn.dest_pod);
-            
-            if (sourceNode && destNode) {
-                // Calculate strength based on event count (more events = stronger connection)
-                const strength = Math.min(1.0, Math.log10(conn.event_count + 1) / 3);
+            if (sourcePod && destPod) {
+                // Create unique key for bidirectional connections
+                const connKey = [conn.source_pod, conn.dest_pod].sort().join('->');
                 
-                // Use actual RTT for latency
-                const latency = conn.last_srtt_us || conn.last_min_rtt_us || 0;
-                
-                newConnections.push({
-                    source: conn.source_pod,
-                    target: conn.dest_pod,
-                    strength: strength,
-                    latency: latency,
-                    packets: conn.event_count || 0
-                });
-                
-                // Update node connection counts
-                sourceNode.connections++;
-                destNode.connections++;
+                if (!connectionSet.has(connKey)) {
+                    connectionSet.add(connKey);
+                    newConnections.push({
+                        source: conn.source_pod,
+                        target: conn.dest_pod,
+                        latency: conn.last_srtt_us || 0,
+                        packets: conn.event_count || 0
+                    });
+                    
+                    sourcePod.connections++;
+                    destPod.connections++;
+                }
             }
         });
         
-        console.log(`[Topology] Created ${newConnections.length} real connections from ${realConnections.length} tracked connections`);
+        console.log('[Topology] Final connections to draw:', newConnections.length);
 
-        setNodes(newNodes);
+        setPods(newPods);
         setConnections(newConnections);
-    }, [metrics, realConnections, healthThresholds]);
 
-    // Physics simulation
+    }, [metrics, realConnections]);
+
+    // Analyze metrics for migration advisor with AI suggestions
     useEffect(() => {
-        if (isPaused) return;
+        if (!metrics?.pods) {
+            console.log('[Migration Advisor] No metrics available');
+            return;
+        }
+
+        console.log('[Migration Advisor] Analyzing metrics for', Object.keys(metrics.pods).length, 'pods');
+        const suggestions: MigrationSuggestion[] = [];
+        
+        Object.entries(metrics.pods).forEach(([podKey, podData]: [string, any]) => {
+            const [namespace, name] = podKey.split('/');
+            const dnsMetrics = podData.dns_latency;
+            const tcpMetrics = podData.tcp_metrics;
+            const schedMetrics = podData.sched_latency;
+            
+            let issues: string[] = [];
+            let severity: 'high' | 'medium' | 'low' = 'low';
+            let aiSuggestion = '';
+            let action = '';
+
+            const dnsLatency = dnsMetrics?.avg_latency_us || 0;
+            const tcpRetrans = tcpMetrics?.retransmissions || 0;
+            const packetLoss = tcpMetrics?.packet_loss || 0;
+            const cpuLatency = schedMetrics?.avg_runqueue_latency_us || 0;
+
+            console.log(`[Migration Advisor] Pod ${podKey}: DNS=${dnsLatency}, TCP=${tcpRetrans}, Loss=${packetLoss}, CPU=${cpuLatency}`);
+
+            // AI-powered analysis - Lower thresholds to show more suggestions
+            if (dnsLatency > 10000) { // Lowered from 20000
+                issues.push('Critical DNS latency');
+                severity = 'high';
+                action = 'Restart Pod';
+                aiSuggestion = 'DNS resolver is severely degraded. Recommend immediate pod restart to re-establish DNS connections.';
+            } else if (dnsLatency > 5000) { // Lowered from 15000
+                issues.push('High DNS latency');
+                severity = 'high';
+                action = 'Investigate DNS';
+                aiSuggestion = 'DNS queries are slow. Check DNS server health or consider using a local DNS cache.';
+            } else if (dnsLatency > 2000) { // New medium threshold
+                issues.push('Elevated DNS latency');
+                severity = 'medium';
+                action = 'Monitor DNS';
+                aiSuggestion = 'DNS latency is higher than optimal. Monitor DNS performance and consider optimization.';
+            }
+
+            if (tcpRetrans > 10) { // Lowered from 20
+                issues.push('Excessive TCP retransmissions');
+                severity = 'high';
+                action = 'Migrate Pod';
+                aiSuggestion = 'Network path is unreliable. Recommend migrating pod to a different node with better network connectivity.';
+            } else if (tcpRetrans > 3) { // Lowered from 10
+                issues.push('TCP retransmissions detected');
+                severity = severity === 'high' ? 'high' : 'medium';
+                action = 'Monitor Network';
+                aiSuggestion = 'TCP retransmissions indicate network congestion. Monitor node network metrics and consider QoS policies.';
+            } else if (tcpRetrans > 0) { // Show even 1 retransmission
+                issues.push('Minor TCP retransmissions');
+                severity = severity === 'high' ? 'high' : severity === 'medium' ? 'medium' : 'low';
+                action = 'Monitor';
+                aiSuggestion = 'Some TCP retransmissions detected. This is normal but worth monitoring if it increases.';
+            }
+
+            if (packetLoss > 5) { // Lowered from 10
+                issues.push('Critical packet loss');
+                severity = 'high';
+                action = 'Urgent: Migrate Pod';
+                aiSuggestion = 'Severe packet loss detected. Network interface may be failing. Immediate pod migration recommended.';
+            } else if (packetLoss > 2) { // Lowered from 5
+                issues.push('Packet loss detected');
+                severity = 'high';
+                action = 'Check Network';
+                aiSuggestion = 'Packet loss is affecting performance. Verify network interface health and check for network saturation.';
+            } else if (packetLoss > 0) { // Show any packet loss
+                issues.push('Minor packet loss');
+                severity = severity === 'high' ? 'high' : 'medium';
+                action = 'Monitor Network';
+                aiSuggestion = 'Packet loss detected. Monitor network health to ensure it doesn\'t worsen.';
+            }
+
+            if (cpuLatency > 20000) { // Lowered from 50000
+                issues.push('High CPU scheduling latency');
+                severity = severity === 'high' ? 'high' : 'medium';
+                action = 'Reduce CPU Load';
+                aiSuggestion = 'Pod is experiencing CPU starvation. Consider increasing CPU limits or moving to a less loaded node.';
+            } else if (cpuLatency > 10000) { // New medium threshold
+                issues.push('Moderate CPU scheduling latency');
+                severity = severity === 'high' ? 'high' : 'medium';
+                action = 'Monitor CPU';
+                aiSuggestion = 'CPU scheduling latency is elevated. Monitor CPU usage and consider adjusting resource limits.';
+            }
+
+            if (issues.length > 0) {
+                console.log(`[Migration Advisor] Pod ${podKey} has ${issues.length} issues:`, issues);
+                suggestions.push({
+                    pod: name,
+                    namespace,
+                    reason: issues.join(', '),
+                    severity,
+                    action: action || 'Monitor',
+                    aiSuggestion: aiSuggestion || 'No immediate action required. Continue monitoring pod metrics.',
+                    metrics: {
+                        tcp_issues: tcpRetrans + packetLoss,
+                        dns_latency: dnsLatency,
+                        packet_loss: packetLoss,
+                        cpu_latency: cpuLatency
+                    }
+                });
+            }
+        });
+
+        setMigrationSuggestions(suggestions.sort((a, b) => {
+            const severityOrder = { high: 3, medium: 2, low: 1 };
+            return severityOrder[b.severity] - severityOrder[a.severity];
+        }));
+
+    }, [metrics]);
+
+    // Physics simulation for force-directed layout
+    useEffect(() => {
+        if (isPaused || draggedPod) return;
 
         const animate = () => {
-            setNodes(prevNodes => {
-                const updatedNodes = [...prevNodes];
+            setPods(prevPods => {
+                const updatedPods = [...prevPods];
 
-                // Apply forces
-                updatedNodes.forEach(node => {
-                    // Center force
+                updatedPods.forEach(pod => {
+                    // Center attraction force (reduced)
                     const centerX = 600;
-                    const centerY = 400;
-                    const dx = centerX - node.x;
-                    const dy = centerY - node.y;
-                    node.vx += dx * 0.0001;
-                    node.vy += dy * 0.0001;
+                    const centerY = 350;
+                    const dx = centerX - pod.x;
+                    const dy = centerY - pod.y;
+                    pod.vx += dx * 0.00005; // Reduced from 0.0002
+                    pod.vy += dy * 0.00005;
 
-                    // Repulsion between nodes
-                    updatedNodes.forEach(other => {
-                        if (node.id === other.id) return;
-                        const dx = other.x - node.x;
-                        const dy = other.y - node.y;
+                    // Repulsion between pods (reduced)
+                    updatedPods.forEach(other => {
+                        if (pod.id === other.id) return;
+                        const dx = other.x - pod.x;
+                        const dy = other.y - pod.y;
                         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                        if (dist < 150) {
-                            const force = (150 - dist) / dist * 0.5;
-                            node.vx -= dx * force;
-                            node.vy -= dy * force;
+                        if (dist < 150) { // Increased from 120
+                            const force = (150 - dist) / dist * 0.2; // Reduced from 0.8
+                            pod.vx -= dx * force;
+                            pod.vy -= dy * force;
                         }
                     });
 
-                    // Apply velocity with damping
-                    node.x += node.vx;
-                    node.y += node.vy;
-                    node.vx *= 0.9;
-                    node.vy *= 0.9;
+                    // Connection spring forces (reduced)
+                    connections.forEach(conn => {
+                        if (conn.source === pod.id) {
+                            const target = updatedPods.find(p => p.id === conn.target);
+                            if (target) {
+                                const dx = target.x - pod.x;
+                                const dy = target.y - pod.y;
+                                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                                const optimalDist = 200; // Increased from 180
+                                const force = (dist - optimalDist) / dist * 0.003; // Reduced from 0.01
+                                pod.vx += dx * force;
+                                pod.vy += dy * force;
+                            }
+                        }
+                    });
+
+                    // Apply velocity with stronger damping (slower movement)
+                    pod.x += pod.vx;
+                    pod.y += pod.vy;
+                    pod.vx *= 0.92; // Increased damping from 0.85
+                    pod.vy *= 0.92;
 
                     // Keep in bounds
-                    node.x = Math.max(80, Math.min(1120, node.x));
-                    node.y = Math.max(80, Math.min(720, node.y));
+                    pod.x = Math.max(80, Math.min(1120, pod.x));
+                    pod.y = Math.max(80, Math.min(620, pod.y));
                 });
 
-                return updatedNodes;
+                return updatedPods;
             });
 
             animationRef.current = requestAnimationFrame(animate);
@@ -252,11 +365,9 @@ export function NetworkTopology() {
 
         animationRef.current = requestAnimationFrame(animate);
         return () => {
-            if (animationRef.current) {
-                cancelAnimationFrame(animationRef.current);
-            }
+            if (animationRef.current) cancelAnimationFrame(animationRef.current);
         };
-    }, [isPaused]);
+    }, [isPaused, draggedPod, connections]);
 
     // Canvas drawing
     useEffect(() => {
@@ -266,827 +377,659 @@ export function NetworkTopology() {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const draw = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Filter nodes
-        const filteredNodes = nodes.filter(node => {
-            if (namespaceFilter !== 'all' && node.namespace !== namespaceFilter) return false;
-            if (healthFilter !== 'all' && node.health !== healthFilter) return false;
-            return true;
-        });
+            // Draw connections with animated flow
+            if (connections.length > 0) {
+                console.log('[Topology] Drawing', connections.length, 'connections');
+            }
+            connections.forEach(conn => {
+                const source = pods.find(p => p.id === conn.source);
+                const target = pods.find(p => p.id === conn.target);
+                if (!source || !target) {
+                    console.log('[Topology] Skipping connection - pods not found:', conn.source, '->', conn.target);
+                    return;
+                }
 
-        // Draw connections
-        connections.forEach(conn => {
-            const sourceNode = filteredNodes.find(n => n.id === conn.source);
-            const targetNode = filteredNodes.find(n => n.id === conn.target);
-            if (!sourceNode || !targetNode) return;
+                const dx = target.x - source.x;
+                const dy = target.y - source.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                // Color based on latency
+                const color = conn.latency > 10000 ? '#ef4444' : conn.latency > 5000 ? '#f59e0b' : '#3b82f6';
+                
+                // Draw curved line
+                ctx.beginPath();
+                ctx.moveTo(source.x, source.y);
+                
+                // Control point for curve
+                const midX = (source.x + target.x) / 2;
+                const midY = (source.y + target.y) / 2;
+                const offset = 30;
+                const angle = Math.atan2(dy, dx);
+                const controlX = midX + offset * Math.cos(angle + Math.PI / 2);
+                const controlY = midY + offset * Math.sin(angle + Math.PI / 2);
+                
+                ctx.quadraticCurveTo(controlX, controlY, target.x, target.y);
+                ctx.strokeStyle = `${color}60`;
+                ctx.lineWidth = 2;
+                ctx.stroke();
 
-            // Color based on latency
-            const alpha = conn.latency > 10000 ? 0.7 : conn.latency > 5000 ? 0.5 : 0.4;
-            const color = conn.latency > 10000 ? '239, 68, 68' : conn.latency > 5000 ? '245, 158, 11' : '59, 130, 246';
-            
-            // Draw main line with gradient
-            const gradient = ctx.createLinearGradient(sourceNode.x, sourceNode.y, targetNode.x, targetNode.y);
-            gradient.addColorStop(0, `rgba(${color}, ${alpha})`);
-            gradient.addColorStop(0.5, `rgba(${color}, ${alpha * 0.6})`);
-            gradient.addColorStop(1, `rgba(${color}, ${alpha})`);
-            
-            ctx.beginPath();
-            ctx.moveTo(sourceNode.x, sourceNode.y);
-            ctx.lineTo(targetNode.x, targetNode.y);
-            ctx.strokeStyle = gradient;
-            ctx.lineWidth = Math.max(2, conn.strength * 3);
-            ctx.lineCap = 'round';
-            ctx.stroke();
+                // Animated flow particles
+                if (!isPaused) {
+                    for (let i = 0; i < 2; i++) {
+                        const progress = ((Date.now() / 1500 + i * 0.5) % 1);
+                        const t = progress;
+                        
+                        const x = Math.pow(1 - t, 2) * source.x + 
+                                 2 * (1 - t) * t * controlX + 
+                                 Math.pow(t, 2) * target.x;
+                        const y = Math.pow(1 - t, 2) * source.y + 
+                                 2 * (1 - t) * t * controlY + 
+                                 Math.pow(t, 2) * target.y;
+                        
+                        // Particle glow
+                        const gradient = ctx.createRadialGradient(x, y, 0, x, y, 8);
+                        gradient.addColorStop(0, color);
+                        gradient.addColorStop(0.5, `${color}80`);
+                        gradient.addColorStop(1, `${color}00`);
+                        
+                        ctx.beginPath();
+                        ctx.arc(x, y, 8, 0, Math.PI * 2);
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
+                    }
+                }
+            });
 
-            // Draw direction arrow
-            const angle = Math.atan2(targetNode.y - sourceNode.y, targetNode.x - sourceNode.x);
-            const arrowSize = 8;
-            const midX = (sourceNode.x + targetNode.x) / 2;
-            const midY = (sourceNode.y + targetNode.y) / 2;
+            // Draw pods
+            pods.forEach(pod => {
+                const isSelected = selectedPod?.id === pod.id;
+                const isDragging = draggedPod?.id === pod.id;
+                const radius = isSelected ? 42 : isDragging ? 44 : 38;
 
-            ctx.save();
-            ctx.translate(midX, midY);
-            ctx.rotate(angle);
-            ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(-arrowSize, -arrowSize / 2);
-            ctx.lineTo(-arrowSize, arrowSize / 2);
-            ctx.closePath();
-            ctx.fillStyle = `rgba(${color}, ${alpha + 0.2})`;
-            ctx.fill();
-            ctx.restore();
-
-            // Animated particles (multiple for better effect)
-            if (!isPaused) {
-                for (let i = 0; i < 2; i++) {
-                    const offset = i * 0.5;
-                    const progress = ((Date.now() / 1500) + offset) % 1;
-                    const x = sourceNode.x + (targetNode.x - sourceNode.x) * progress;
-                    const y = sourceNode.y + (targetNode.y - sourceNode.y) * progress;
-                    
-                    // Glowing particle
-                    const particleGradient = ctx.createRadialGradient(x, y, 0, x, y, 6);
-                    particleGradient.addColorStop(0, `rgba(${color}, 1)`);
-                    particleGradient.addColorStop(0.5, `rgba(${color}, 0.6)`);
-                    particleGradient.addColorStop(1, `rgba(${color}, 0)`);
-                    
+                // Glow effect
+                if (isSelected || isDragging) {
                     ctx.beginPath();
-                    ctx.arc(x, y, 6, 0, Math.PI * 2);
-                    ctx.fillStyle = particleGradient;
+                    ctx.arc(pod.x, pod.y, radius + 12, 0, Math.PI * 2);
+                    const glowGradient = ctx.createRadialGradient(pod.x, pod.y, radius, pod.x, pod.y, radius + 12);
+                    const glowColor = pod.health === 'critical' ? 'rgba(239, 68, 68, 0.4)' : 
+                                     pod.health === 'warning' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(59, 130, 246, 0.4)';
+                    glowGradient.addColorStop(0, glowColor);
+                    glowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                    ctx.fillStyle = glowGradient;
                     ctx.fill();
                 }
-            }
-        });
 
-        // Draw help text at bottom
-        if (filteredNodes.length === 0) {
-            ctx.fillStyle = '#94a3b8';
-            ctx.font = '16px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('No test pods available', 600, 380);
-            ctx.font = '13px sans-serif';
-            ctx.fillText('Deploy pods to test-services namespace to see them here', 600, 405);
-        } else {
-            // Show clean interaction hints
-            ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
-            ctx.font = '11px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('Click pods for details  •  Arrows show data flow', 600, 770);
-        }
-
-        // Draw nodes
-        filteredNodes.forEach(node => {
-            const isHovered = hoveredNode?.id === node.id;
-            const isSelected = selectedNode?.id === node.id;
-            const baseRadius = 25;
-            const radius = isSelected ? baseRadius + 5 : isHovered ? baseRadius + 3 : baseRadius;
-
-            // Glow effect for selected/hovered
-            if (isSelected || isHovered) {
+                // Pod circle with gradient
                 ctx.beginPath();
-                ctx.arc(node.x, node.y, radius + 15, 0, Math.PI * 2);
-                const gradient = ctx.createRadialGradient(node.x, node.y, radius, node.x, node.y, radius + 15);
-                gradient.addColorStop(0, node.health === 'critical' ? 'rgba(239, 68, 68, 0.4)' : 
-                                        node.health === 'warning' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(16, 185, 129, 0.4)');
-                gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-                ctx.fillStyle = gradient;
-                ctx.fill();
-            }
-
-            // Draw container-like pod shape (rounded rectangle)
-            const podWidth = radius * 2.2;
-            const podHeight = radius * 1.8;
-            const cornerRadius = 8;
-            const x = node.x - podWidth / 2;
-            const y = node.y - podHeight / 2;
-
-            // Shadow
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-            ctx.shadowBlur = 15;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 4;
-
-            // Pod container background
-            ctx.beginPath();
-            ctx.moveTo(x + cornerRadius, y);
-            ctx.lineTo(x + podWidth - cornerRadius, y);
-            ctx.quadraticCurveTo(x + podWidth, y, x + podWidth, y + cornerRadius);
-            ctx.lineTo(x + podWidth, y + podHeight - cornerRadius);
-            ctx.quadraticCurveTo(x + podWidth, y + podHeight, x + podWidth - cornerRadius, y + podHeight);
-            ctx.lineTo(x + cornerRadius, y + podHeight);
-            ctx.quadraticCurveTo(x, y + podHeight, x, y + podHeight - cornerRadius);
-            ctx.lineTo(x, y + cornerRadius);
-            ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
-            ctx.closePath();
-
-            // Gradient fill
-            const podGradient = ctx.createLinearGradient(x, y, x, y + podHeight);
-            if (node.health === 'critical') {
-                podGradient.addColorStop(0, '#ef4444');
-                podGradient.addColorStop(1, '#dc2626');
-            } else if (node.health === 'warning') {
-                podGradient.addColorStop(0, '#f59e0b');
-                podGradient.addColorStop(1, '#d97706');
-            } else {
-                podGradient.addColorStop(0, '#10b981');
-                podGradient.addColorStop(1, '#059669');
-            }
-            ctx.fillStyle = podGradient;
-            ctx.fill();
-
-            // Border
-            ctx.shadowColor = 'transparent';
-            ctx.shadowBlur = 0;
-            ctx.strokeStyle = isSelected ? '#fff' : 'rgba(255, 255, 255, 0.4)';
-            ctx.lineWidth = isSelected ? 3 : 2;
-            ctx.stroke();
-
-            // Inner highlight
-            ctx.beginPath();
-            ctx.moveTo(x + cornerRadius + 2, y + 2);
-            ctx.lineTo(x + podWidth - cornerRadius - 2, y + 2);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-
-            // Professional pod icon - Kubernetes-style hexagon
-            const hexSize = 12;
-            const hexCenterX = node.x;
-            const hexCenterY = node.y - 8;
-            
-            ctx.beginPath();
-            for (let i = 0; i < 6; i++) {
-                const angle = (Math.PI / 3) * i - Math.PI / 2;
-                const hx = hexCenterX + hexSize * Math.cos(angle);
-                const hy = hexCenterY + hexSize * Math.sin(angle);
-                if (i === 0) {
-                    ctx.moveTo(hx, hy);
+                ctx.arc(pod.x, pod.y, radius, 0, Math.PI * 2);
+                
+                const gradient = ctx.createRadialGradient(
+                    pod.x - radius/3, pod.y - radius/3, 0,
+                    pod.x, pod.y, radius
+                );
+                
+                if (pod.health === 'critical') {
+                    gradient.addColorStop(0, '#f87171');
+                    gradient.addColorStop(1, '#dc2626');
+                } else if (pod.health === 'warning') {
+                    gradient.addColorStop(0, '#fbbf24');
+                    gradient.addColorStop(1, '#f59e0b');
                 } else {
-                    ctx.lineTo(hx, hy);
+                    gradient.addColorStop(0, '#60a5fa');
+                    gradient.addColorStop(1, '#3b82f6');
                 }
-            }
-            ctx.closePath();
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-
-            // Inner circle detail
-            ctx.beginPath();
-            ctx.arc(hexCenterX, hexCenterY, hexSize * 0.5, 0, Math.PI * 2);
-            ctx.fillStyle = node.health === 'critical' ? 'rgba(239, 68, 68, 0.8)' : 
-                           node.health === 'warning' ? 'rgba(245, 158, 11, 0.8)' : 'rgba(16, 185, 129, 0.8)';
-            ctx.fill();
-
-            // Status indicator dots (3 horizontal dots)
-            const dotY = node.y + 8;
-            const dotSpacing = 6;
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-            for (let i = -1; i <= 1; i++) {
-                ctx.beginPath();
-                ctx.arc(node.x + (i * dotSpacing), dotY, 2, 0, Math.PI * 2);
+                
+                ctx.fillStyle = gradient;
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+                ctx.shadowBlur = 15;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 5;
                 ctx.fill();
+                
+                // Border
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.strokeStyle = isSelected ? '#fff' : 'rgba(255, 255, 255, 0.4)';
+                ctx.lineWidth = isSelected ? 3 : 2;
+                ctx.stroke();
+
+                // Kubernetes pod hexagon icon
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+                ctx.beginPath();
+                const hexSize = 14;
+                for (let i = 0; i < 6; i++) {
+                    const angle = (Math.PI / 3) * i - Math.PI / 2;
+                    const hx = pod.x + hexSize * Math.cos(angle);
+                    const hy = pod.y + hexSize * Math.sin(angle);
+                    if (i === 0) {
+                        ctx.moveTo(hx, hy);
+                    } else {
+                        ctx.lineTo(hx, hy);
+                    }
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                
+                // Inner circle
+                ctx.beginPath();
+                ctx.arc(pod.x, pod.y, hexSize * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = pod.health === 'critical' ? '#dc2626' : 
+                               pod.health === 'warning' ? '#d97706' : '#2563eb';
+                ctx.fill();
+
+                // Connection count badge
+                if (pod.connections > 0) {
+                    ctx.beginPath();
+                    ctx.arc(pod.x + radius - 8, pod.y - radius + 8, 12, 0, Math.PI * 2);
+                    ctx.fillStyle = '#1e293b';
+                    ctx.fill();
+                    ctx.strokeStyle = '#3b82f6';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 11px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(pod.connections.toString(), pod.x + radius - 8, pod.y - radius + 8);
+                }
+
+                // Pod name
+                ctx.fillStyle = '#f1f5f9';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                const displayName = pod.name.length > 18 ? pod.name.substring(0, 16) + '..' : pod.name;
+                ctx.fillText(displayName, pod.x, pod.y + radius + 8);
+                
+                // Namespace
+                ctx.font = '10px sans-serif';
+                ctx.fillStyle = 'rgba(203, 213, 225, 0.8)';
+                ctx.fillText(pod.namespace, pod.x, pod.y + radius + 24);
+            });
+
+            requestAnimationFrame(draw);
+        };
+
+        draw();
+    }, [pods, connections, selectedPod, draggedPod, isPaused]);
+
+    // Mouse handlers
+    const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const clickedPod = pods.find(pod => {
+            const dx = pod.x - x;
+            const dy = pod.y - y;
+            return Math.sqrt(dx * dx + dy * dy) < 38;
+        });
+
+        if (clickedPod) {
+            setDraggedPod(clickedPod);
+            setDragOffset({ x: x - clickedPod.x, y: y - clickedPod.y });
+            setSelectedPod(clickedPod);
+            
+            // Fetch full metrics for selected pod
+            if (metrics?.pods && metrics.pods[clickedPod.id]) {
+                setSelectedPodMetrics(metrics.pods[clickedPod.id]);
             }
+        } else {
+            setSelectedPod(null);
+            setSelectedPodMetrics(null);
+        }
+    };
 
-            // Always show pod name - clean and simple
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 12px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'top';
-            const displayName = node.name.length > 16 ? node.name.substring(0, 14) + '..' : node.name;
-            ctx.fillText(displayName, node.x, y + podHeight + 6);
-        });
-
-    }, [nodes, connections, selectedNode, hoveredNode, isPaused, namespaceFilter, healthFilter]);
-
-    // Handle canvas click
-    const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas || !draggedPod) return;
 
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        const clickedNode = nodes.find(node => {
-            const baseRadius = 25;
-            const podWidth = baseRadius * 2.2;
-            const podHeight = baseRadius * 1.8;
-            return Math.abs(node.x - x) < podWidth / 2 && Math.abs(node.y - y) < podHeight / 2;
-        });
-
-        setSelectedNode(clickedNode || null);
+        setPods(prevPods => 
+            prevPods.map(pod => 
+                pod.id === draggedPod.id
+                    ? { ...pod, x: x - dragOffset.x, y: y - dragOffset.y, vx: 0, vy: 0 }
+                    : pod
+            )
+        );
     };
 
-    // Handle canvas hover
-    const handleCanvasMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-
-        const hoveredNode = nodes.find(node => {
-            const baseRadius = 25;
-            const podWidth = baseRadius * 2.2;
-            const podHeight = baseRadius * 1.8;
-            return Math.abs(node.x - x) < podWidth / 2 && Math.abs(node.y - y) < podHeight / 2;
-        });
-
-        setHoveredNode(hoveredNode || null);
-        canvas.style.cursor = hoveredNode ? 'pointer' : 'grab';
+    const handleMouseUp = () => {
+        setDraggedPod(null);
     };
 
-    // Get unique namespaces
-    const namespaces = ['all', ...new Set(nodes.map(n => n.namespace))];
-
-    return (
-        <div className="network-topology">
-            <div className="topology-header">
-                <div className="header-left">
-                    <h2>Pod Network Topology</h2>
-                    <span className="node-count">
-                        {nodes.length} {nodes.length === 1 ? 'Pod' : 'Pods'} • {connections.length} {connections.length === 1 ? 'Connection' : 'Connections'}
-                    </span>
-                </div>
-                <div className="header-controls">
-                    <button className="control-btn" onClick={() => setIsPaused(!isPaused)}>
-                        {isPaused ? <FiPlay /> : <FiPause />}
-                        {isPaused ? 'Resume' : 'Pause'}
-                    </button>
-                    <button className="control-btn" onClick={() => setShowFilters(!showFilters)}>
-                        <FiFilter />
-                        Filters
-                    </button>
-                    <button 
-                        className="control-btn" 
-                        onClick={() => {
-                            console.log('Toggling threshold config:', !showThresholdConfig);
-                            setShowThresholdConfig(!showThresholdConfig);
-                        }}
-                        style={{ position: 'relative' }}
-                    >
-                        <FiSettings />
-                        Health Thresholds
-                        {showThresholdConfig && <span style={{ 
-                            position: 'absolute', 
-                            top: '4px', 
-                            right: '4px', 
-                            width: '6px', 
-                            height: '6px', 
-                            background: '#10b981', 
-                            borderRadius: '50%' 
-                        }}></span>}
-                    </button>
-                    <button className="control-btn">
-                        <FiDownload />
-                        Export
-                    </button>
-                    <button className="control-btn">
-                        <FiMaximize2 />
-                        Fullscreen
-                    </button>
-                </div>
-            </div>
-
-            {showFilters && (
-                <div className="topology-filters" style={{ 
-                    display: 'block',  /* Override CSS hiding */
-                    background: 'rgba(15, 23, 42, 0.95)', 
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    borderRadius: '8px',
-                    padding: '1rem',
-                    marginBottom: '0.5rem'
-                }}>
-                    <div className="filter-group">
-                        <label>Namespace:</label>
-                        <select value={namespaceFilter} onChange={(e) => setNamespaceFilter(e.target.value)}>
-                            {namespaces.map(ns => (
-                                <option key={ns} value={ns}>{ns}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="filter-group">
-                        <label>Health:</label>
-                        <select value={healthFilter} onChange={(e) => setHealthFilter(e.target.value)}>
-                            <option value="all">All</option>
-                            <option value="good">Good</option>
-                            <option value="warning">Warning</option>
-                            <option value="critical">Critical</option>
-                        </select>
-                    </div>
-                    <div className="filter-group">
-                        <label>Connections:</label>
-                        <select value={connectionFilter} onChange={(e) => setConnectionFilter(e.target.value)}>
-                            <option value="established">Established Only</option>
-                            <option value="pod-to-pod">Pod-to-Pod Only</option>
-                            <option value="all">All Connections</option>
-                        </select>
-                    </div>
-                </div>
-            )}
-
-            {showThresholdConfig && (
-                <div className="topology-filters" style={{ 
-                    display: 'block',  /* Override CSS hiding */
-                    background: 'rgba(15, 23, 42, 0.95)', 
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    borderRadius: '8px',
-                    padding: '1.5rem',
-                    marginTop: '0.5rem',
-                    marginBottom: '0.5rem'
-                }}>
-                    <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h3 style={{ fontSize: '1rem', color: '#60a5fa', margin: 0 }}>Configure Health Thresholds</h3>
-                        <button 
-                            onClick={() => setHealthThresholds(DEFAULT_THRESHOLDS)}
-                            style={{
-                                background: 'rgba(239, 68, 68, 0.2)',
-                                border: '1px solid rgba(239, 68, 68, 0.4)',
-                                color: '#f87171',
-                                padding: '0.4rem 0.8rem',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '0.8rem'
-                            }}
-                        >
-                            Reset to Defaults
-                        </button>
-                    </div>
-                    
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem' }}>
-                        {/* Critical Thresholds */}
-                        <div style={{ borderLeft: '3px solid #ef4444', paddingLeft: '1rem' }}>
-                            <h4 style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: '0.75rem' }}>🔴 Critical Thresholds</h4>
-                            <div className="filter-group" style={{ marginBottom: '0.75rem' }}>
-                                <label style={{ fontSize: '0.75rem' }}>DNS Latency (μs):</label>
-                                <input 
-                                    type="number" 
-                                    value={healthThresholds.criticalLatency}
-                                    onChange={(e) => setHealthThresholds({...healthThresholds, criticalLatency: Number(e.target.value)})}
-                                    style={{ 
-                                        width: '100%', 
-                                        padding: '0.4rem', 
-                                        background: 'rgba(0,0,0,0.3)',
-                                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                                        color: '#fff',
-                                        borderRadius: '4px'
-                                    }}
-                                />
-                            </div>
-                            <div className="filter-group" style={{ marginBottom: '0.75rem' }}>
-                                <label style={{ fontSize: '0.75rem' }}>Retransmissions:</label>
-                                <input 
-                                    type="number" 
-                                    value={healthThresholds.criticalRetrans}
-                                    onChange={(e) => setHealthThresholds({...healthThresholds, criticalRetrans: Number(e.target.value)})}
-                                    style={{ 
-                                        width: '100%', 
-                                        padding: '0.4rem', 
-                                        background: 'rgba(0,0,0,0.3)',
-                                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                                        color: '#fff',
-                                        borderRadius: '4px'
-                                    }}
-                                />
-                            </div>
-                            <div className="filter-group">
-                                <label style={{ fontSize: '0.75rem' }}>Packet Loss:</label>
-                                <input 
-                                    type="number" 
-                                    value={healthThresholds.criticalPacketLoss}
-                                    onChange={(e) => setHealthThresholds({...healthThresholds, criticalPacketLoss: Number(e.target.value)})}
-                                    style={{ 
-                                        width: '100%', 
-                                        padding: '0.4rem', 
-                                        background: 'rgba(0,0,0,0.3)',
-                                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                                        color: '#fff',
-                                        borderRadius: '4px'
-                                    }}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Warning Thresholds */}
-                        <div style={{ borderLeft: '3px solid #f59e0b', paddingLeft: '1rem' }}>
-                            <h4 style={{ color: '#f59e0b', fontSize: '0.85rem', marginBottom: '0.75rem' }}>🟡 Warning Thresholds</h4>
-                            <div className="filter-group" style={{ marginBottom: '0.75rem' }}>
-                                <label style={{ fontSize: '0.75rem' }}>DNS Latency (μs):</label>
-                                <input 
-                                    type="number" 
-                                    value={healthThresholds.warningLatency}
-                                    onChange={(e) => setHealthThresholds({...healthThresholds, warningLatency: Number(e.target.value)})}
-                                    style={{ 
-                                        width: '100%', 
-                                        padding: '0.4rem', 
-                                        background: 'rgba(0,0,0,0.3)',
-                                        border: '1px solid rgba(245, 158, 11, 0.3)',
-                                        color: '#fff',
-                                        borderRadius: '4px'
-                                    }}
-                                />
-                            </div>
-                            <div className="filter-group" style={{ marginBottom: '0.75rem' }}>
-                                <label style={{ fontSize: '0.75rem' }}>Retransmissions:</label>
-                                <input 
-                                    type="number" 
-                                    value={healthThresholds.warningRetrans}
-                                    onChange={(e) => setHealthThresholds({...healthThresholds, warningRetrans: Number(e.target.value)})}
-                                    style={{ 
-                                        width: '100%', 
-                                        padding: '0.4rem', 
-                                        background: 'rgba(0,0,0,0.3)',
-                                        border: '1px solid rgba(245, 158, 11, 0.3)',
-                                        color: '#fff',
-                                        borderRadius: '4px'
-                                    }}
-                                />
-                            </div>
-                            <div className="filter-group">
-                                <label style={{ fontSize: '0.75rem' }}>Packet Loss:</label>
-                                <input 
-                                    type="number" 
-                                    value={healthThresholds.warningPacketLoss}
-                                    onChange={(e) => setHealthThresholds({...healthThresholds, warningPacketLoss: Number(e.target.value)})}
-                                    style={{ 
-                                        width: '100%', 
-                                        padding: '0.4rem', 
-                                        background: 'rgba(0,0,0,0.3)',
-                                        border: '1px solid rgba(245, 158, 11, 0.3)',
-                                        color: '#fff',
-                                        borderRadius: '4px'
-                                    }}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Info */}
-                        <div style={{ borderLeft: '3px solid #10b981', paddingLeft: '1rem' }}>
-                            <h4 style={{ color: '#10b981', fontSize: '0.85rem', marginBottom: '0.75rem' }}>ℹ️ How it Works</h4>
-                            <p style={{ fontSize: '0.7rem', color: '#94a3b8', lineHeight: '1.5', margin: 0 }}>
-                                Pods are classified as:<br/><br/>
-                                <strong style={{ color: '#ef4444' }}>Critical</strong> if DNS latency OR retransmissions OR packet loss exceeds critical threshold.<br/><br/>
-                                <strong style={{ color: '#f59e0b' }}>Warning</strong> if metrics exceed warning threshold but below critical.<br/><br/>
-                                <strong style={{ color: '#10b981' }}>Good</strong> if all metrics are below warning thresholds.<br/><br/>
-                                Thresholds are saved in your browser.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <div className="topology-content">
-                <div className="canvas-container">
-                    <canvas
-                        ref={canvasRef}
-                        width={1200}
-                        height={800}
-                        onClick={handleCanvasClick}
-                        onMouseMove={handleCanvasMove}
-                        onMouseLeave={() => setHoveredNode(null)}
-                    />
-                    
-                    <div className="topology-legend">
-                        <div style={{ marginBottom: '0.75rem', paddingBottom: '0.5rem', borderBottom: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                            <strong style={{ fontSize: '0.875rem', color: '#10b981' }}>
-                                Real eBPF Connection Data
-                            </strong>
-                            <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '0.25rem', lineHeight: '1.3' }}>
-                                Connections traced from kernel TCP events<br/>
-                                Shows actual pod-to-pod network flows
-                            </div>
-                        </div>
-                        <div style={{ marginBottom: '0.75rem', paddingBottom: '0.5rem', borderBottom: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                            <strong style={{ fontSize: '0.875rem', color: '#cbd5e1' }}>Health Status</strong>
-                        </div>
-                        <div className="legend-item">
-                            <div className="legend-color" style={{ background: '#10b981' }}></div>
-                            <span>Healthy - Below warning thresholds</span>
-                        </div>
-                        <div className="legend-item">
-                            <div className="legend-color" style={{ background: '#f59e0b' }}></div>
-                            <span>Warning - Latency &gt; {healthThresholds.warningLatency}μs or issues detected</span>
-                        </div>
-                        <div className="legend-item">
-                            <div className="legend-color" style={{ background: '#ef4444' }}></div>
-                            <span>Critical - Latency &gt; {healthThresholds.criticalLatency}μs or serious issues</span>
-                        </div>
-                        <div style={{ marginTop: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(59, 130, 246, 0.2)', fontSize: '0.7rem', color: '#94a3b8' }}>
-                            ▸ Click any pod to perform actions
-                        </div>
-                    </div>
-                </div>
-
-                {selectedNode && (
-                    <NodeActionPanel 
-                        node={selectedNode} 
-                        onClose={() => setSelectedNode(null)}
-                    />
-                )}
-            </div>
-        </div>
-    );
-}
-
-interface NodeActionPanelProps {
-    node: Node;
-    onClose: () => void;
-}
-
-function NodeActionPanel({ node, onClose }: NodeActionPanelProps) {
-    const [actionLog, setActionLog] = useState<string[]>([]);
-    const [isPerformingAction, setIsPerformingAction] = useState(false);
-    const [showEBPFActions, setShowEBPFActions] = useState(false);
-
-    const performAction = async (action: string, description: string) => {
-        setIsPerformingAction(true);
-        setActionLog(prev => [...prev, `[RUNNING] ${description}...`]);
-
+    // Pod actions
+    const handleDeletePod = async () => {
+        if (!selectedPod) return;
+        if (!window.confirm(`Delete pod ${selectedPod.name}?`)) return;
+        
         try {
             const response = await fetch('http://localhost:8080/api/pod/action', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    action: action,
-                    namespace: node.namespace,
-                    pod_name: node.name,
-                    replicas: 2 // Default for scale action
+                    action: 'delete',
+                    namespace: selectedPod.namespace,
+                    pod_name: selectedPod.name,
                 })
             });
-
+            
             const result = await response.json();
-
             if (result.success) {
-                setActionLog(prev => [...prev, `[SUCCESS] ${result.message}`]);
-                if (result.data) {
-                    setActionLog(prev => [...prev, `[DATA] ${JSON.stringify(result.data)}`]);
-                }
+                setActionResult({ type: 'success', message: `Pod deleted successfully` });
+                setSelectedPod(null);
             } else {
-                setActionLog(prev => [...prev, `[ERROR] ${result.error || result.message}`]);
+                setActionResult({ type: 'error', message: result.error || 'Failed to delete pod' });
             }
         } catch (error) {
-            setActionLog(prev => [...prev, `[FAILED] ${description}: ${error}`]);
-        } finally {
-            setIsPerformingAction(false);
+            setActionResult({ type: 'error', message: `Error: ${error}` });
         }
+        
+        setTimeout(() => setActionResult(null), 5000);
     };
 
-    const performEBPFAction = async (action: string, description: string, params?: any) => {
-        setIsPerformingAction(true);
-        setActionLog(prev => [...prev, `[EBPF] ${description}...`]);
-
+    const handleRestartPod = async () => {
+        if (!selectedPod) return;
+        if (!window.confirm(`Restart pod ${selectedPod.name}?`)) return;
+        
         try {
-            const response = await fetch('http://localhost:8080/api/pod/ebpf-action', {
+            const response = await fetch('http://localhost:8080/api/pod/action', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    action: action,
-                    namespace: node.namespace,
-                    pod_name: node.name,
-                    ...params
+                    action: 'restart',
+                    namespace: selectedPod.namespace,
+                    pod_name: selectedPod.name,
                 })
             });
-
+            
             const result = await response.json();
-
             if (result.success) {
-                setActionLog(prev => [...prev, `[SUCCESS] ${result.message}`]);
-                if (result.explanation) {
-                    setActionLog(prev => [...prev, `[INFO] ${result.explanation}`]);
-                }
-                if (result.details) {
-                    const details = JSON.stringify(result.details, null, 2);
-                    setActionLog(prev => [...prev, `[DETAILS] ${details}`]);
-                }
+                setActionResult({ type: 'success', message: `Pod restart initiated` });
             } else {
-                setActionLog(prev => [...prev, `[ERROR] ${result.error || result.message}`]);
+                setActionResult({ type: 'error', message: result.error || 'Failed to restart pod' });
             }
         } catch (error) {
-            setActionLog(prev => [...prev, `[FAILED] ${description}: ${error}`]);
-        } finally {
-            setIsPerformingAction(false);
+            setActionResult({ type: 'error', message: `Error: ${error}` });
+        }
+        
+        setTimeout(() => setActionResult(null), 5000);
+    };
+
+    const handleViewLogs = async () => {
+        if (!selectedPod) return;
+        
+        try {
+            const response = await fetch(`http://localhost:8080/api/pod/logs?namespace=${selectedPod.namespace}&pod=${selectedPod.name}&lines=100`);
+            const result = await response.json();
+            if (result.success) {
+                setPodLogs({ pod: selectedPod.name, logs: result.logs || 'No logs available' });
+            } else {
+                setPodLogs({ pod: selectedPod.name, logs: `Error: ${result.error}` });
+            }
+        } catch (error) {
+            setPodLogs({ pod: selectedPod.name, logs: `Error fetching logs: ${error}` });
         }
     };
+
+    // Fetch logs for migration advisor
+    const fetchLogsForPod = async (namespace: string, podName: string) => {
+        const key = `${namespace}/${podName}`;
+        if (loadingLogs[key]) return null;
+        
+        setLoadingLogs(prev => ({ ...prev, [key]: true }));
+        
+        try {
+            const response = await fetch(`http://localhost:8080/api/pod/logs?namespace=${namespace}&pod=${podName}&lines=20`);
+            const result = await response.json();
+            setLoadingLogs(prev => ({ ...prev, [key]: false }));
+            return result.success ? result.logs : 'Logs unavailable';
+        } catch (error) {
+            setLoadingLogs(prev => ({ ...prev, [key]: false }));
+            return 'Error fetching logs';
+        }
+    };
+
+    // Load logs for migration suggestions
+    useEffect(() => {
+        migrationSuggestions.forEach(async (suggestion) => {
+            if (!suggestion.logs) {
+                const logs = await fetchLogsForPod(suggestion.namespace, suggestion.pod);
+                if (logs) {
+                    setMigrationSuggestions(prev => 
+                        prev.map(s => 
+                            s.pod === suggestion.pod && s.namespace === suggestion.namespace 
+                                ? { ...s, logs } 
+                                : s
+                        )
+                    );
+                }
+            }
+        });
+    }, [migrationSuggestions.length]);
 
     return (
-        <div className="node-action-panel">
-            <div className="panel-header">
+        <div className="network-topology-pro">
+            {/* Header */}
+            <div className="topology-header-pro">
                 <div>
-                    <h3>{node.name}</h3>
-                    <span className="panel-namespace">{node.namespace}</span>
+                    <h2>🌐 Pod Network Topology</h2>
+                    <span className="topology-stats">{pods.length} Pods • {connections.length} Connections</span>
                 </div>
-                <button className="close-btn" onClick={onClose}>×</button>
-            </div>
-
-            <div className="panel-metrics">
-                <div className="panel-metric">
-                    <span className="metric-label">Health</span>
-                    <span className={`health-badge ${node.health}`}>
-                        {node.health === 'good' && <FiCheckCircle />}
-                        {node.health === 'warning' && <FiAlertCircle />}
-                        {node.health === 'critical' && <FiAlertCircle />}
-                        {node.health}
-                    </span>
-                </div>
-                <div className="panel-metric">
-                    <span className="metric-label">DNS Latency</span>
-                    <span className="metric-value">
-                        {node.metrics?.dns_latency ? `${node.metrics.dns_latency.toFixed(2)} μs` : 'N/A'}
-                    </span>
-                </div>
-                <div className="panel-metric">
-                    <span className="metric-label">Retransmissions</span>
-                    <span className="metric-value">{node.metrics?.tcp_retransmissions || 0}</span>
-                </div>
-                <div className="panel-metric">
-                    <span className="metric-label">Packet Loss</span>
-                    <span className="metric-value">{node.metrics?.tcp_packet_loss || 0}</span>
-                </div>
-                <div className="panel-metric">
-                    <span className="metric-label">Total Events</span>
-                    <span className="metric-value">{node.metrics?.events || 0}</span>
-                </div>
-            </div>
-
-            <div className="panel-actions">
-                <h4>Quick Actions</h4>
-                <button 
-                    className="action-btn primary"
-                    onClick={() => performAction('restart', 'Restarting pod')}
-                    disabled={isPerformingAction}
-                    title="Deletes the pod, triggering Kubernetes to create a new one with fresh state. Useful for clearing temporary issues or applying configuration changes."
-                >
-                    <FiRefreshCw />
-                    Restart Pod
-                </button>
-                <button 
-                    className="action-btn"
-                    onClick={() => performAction('isolate', 'Applying network policy')}
-                    disabled={isPerformingAction}
-                    title="Applies a NetworkPolicy to isolate this pod from all other pods. Useful for security quarantine or testing in isolation."
-                >
-                    <FiAlertCircle />
-                    Isolate Pod
-                </button>
-                <button 
-                    className="action-btn"
-                    onClick={() => performAction('health', 'Running health check')}
-                    disabled={isPerformingAction}
-                    title="Runs comprehensive health checks including readiness probe, liveness probe, and resource utilization to verify pod health."
-                >
-                    <FiCheckCircle />
-                    Health Check
-                </button>
-                <button 
-                    className="action-btn"
-                    onClick={() => performAction('logs', 'Fetching logs')}
-                    disabled={isPerformingAction}
-                    title="Downloads the last 100 lines of container logs for debugging and analysis. Logs are streamed from the Kubernetes API."
-                >
-                    <FiDownload />
-                    Download Logs
-                </button>
-            </div>
-
-            <div className="panel-actions ebpf-section" style={{ borderTop: '1px solid rgba(59, 130, 246, 0.2)', paddingTop: '1.25rem', marginTop: '0.75rem' }}>
-                <h4 style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between',
-                    fontSize: '0.95rem',
-                    marginBottom: '1rem'
-                }}>
-                    <span style={{ letterSpacing: '0.5px' }}>eBPF ACTIONS</span>
+                <div className="topology-controls-pro">
                     <button 
-                        onClick={() => setShowEBPFActions(!showEBPFActions)}
-                        style={{ 
-                            background: 'rgba(59, 130, 246, 0.1)', 
-                            border: '1px solid rgba(59, 130, 246, 0.3)', 
-                            color: '#60a5fa', 
-                            fontSize: '0.75rem',
-                            cursor: 'pointer',
-                            padding: '0.375rem 0.75rem',
-                            borderRadius: '6px',
-                            fontWeight: '500',
-                            transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'}
+                        className={`control-btn-pro ${isPaused ? '' : 'active'}`}
+                        onClick={() => setIsPaused(!isPaused)}
                     >
-                        {showEBPFActions ? '▼ Hide' : '▶ Show'}
+                        {isPaused ? <FiRefreshCw /> : '⏸'}
+                        {isPaused ? 'Resume' : 'Pause'}
                     </button>
-                </h4>
+                    <button 
+                        className={`control-btn-pro ${showMigrationAdvisor ? 'active' : ''}`}
+                        onClick={() => setShowMigrationAdvisor(!showMigrationAdvisor)}
+                    >
+                        <FiZap />
+                        Migration Advisor
+                        {migrationSuggestions.length > 0 && (
+                            <span className="badge">{migrationSuggestions.length}</span>
+                        )}
+                    </button>
+                </div>
+            </div>
+
+            {/* Action notification */}
+            {actionResult && (
+                <div className={`action-notification ${actionResult.type}`}>
+                    {actionResult.type === 'success' ? <FiCheckCircle /> : <FiAlertCircle />}
+                    <span>{actionResult.message}</span>
+                    <button onClick={() => setActionResult(null)}><FiX /></button>
+                </div>
+            )}
+
+            {/* Canvas */}
+            <div className="topology-canvas-container">
+                <canvas
+                    ref={canvasRef}
+                    width={1200}
+                    height={700}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                    style={{ cursor: draggedPod ? 'grabbing' : 'grab' }}
+                />
                 
-                {showEBPFActions && (
-                    <>
-                        <button 
-                            className="action-btn ebpf-action"
-                            onClick={() => performEBPFAction('priority_boost', 'Boosting network priority', { priority: 'high', duration_seconds: 300 })}
-                            disabled={isPerformingAction}
-                            title="Uses eBPF to mark packets with high priority DSCP values. Network switches will prioritize this traffic, resulting in lower latency and higher throughput."
-                            style={{ 
-                                background: 'rgba(16, 185, 129, 0.15)', 
-                                borderColor: 'rgba(16, 185, 129, 0.4)', 
-                                color: '#34d399',
-                                padding: '1rem 1.25rem',
-                                fontSize: '0.9rem',
-                                fontWeight: '600'
-                            }}
-                        >
-                            Priority Boost: High (5 minutes)
-                        </button>
-                        <button 
-                            className="action-btn ebpf-action"
-                            onClick={() => performEBPFAction('connection_reset', 'Resetting connections', { target_ips: [] })}
-                            disabled={isPerformingAction}
-                            title="Uses eBPF to inject TCP RST packets, forcefully terminating all active connections. Applications will automatically reconnect. Useful for breaking stale connections or testing retry logic."
-                            style={{ 
-                                background: 'rgba(245, 158, 11, 0.15)', 
-                                borderColor: 'rgba(245, 158, 11, 0.4)', 
-                                color: '#fbbf24',
-                                padding: '1rem 1.25rem',
-                                fontSize: '0.9rem',
-                                fontWeight: '600'
-                            }}
-                        >
-                            Reset All Connections
-                        </button>
-                        <button 
-                            className="action-btn ebpf-action"
-                            onClick={() => performEBPFAction('drain_connections', 'Draining connections', { duration_seconds: 30 })}
-                            disabled={isPerformingAction}
-                            title="Uses eBPF to gracefully drain connections by rejecting new incoming connections while allowing existing ones to complete. Ensures zero-downtime during pod restarts or migrations."
-                            style={{ 
-                                background: 'rgba(59, 130, 246, 0.15)', 
-                                borderColor: 'rgba(59, 130, 246, 0.4)', 
-                                color: '#60a5fa',
-                                padding: '1rem 1.25rem',
-                                fontSize: '0.9rem',
-                                fontWeight: '600'
-                            }}
-                        >
-                            Drain Connections (30 seconds)
-                        </button>
-                        <button 
-                            className="action-btn ebpf-action"
-                            onClick={() => performEBPFAction('trace_enable', 'Enabling deep tracing', { duration_seconds: 300 })}
-                            disabled={isPerformingAction}
-                            title="Attaches additional eBPF kprobes to capture detailed network events including every packet, connection, and syscall. Useful for debugging performance issues and analyzing traffic patterns."
-                            style={{ 
-                                background: 'rgba(236, 72, 153, 0.15)', 
-                                borderColor: 'rgba(236, 72, 153, 0.4)', 
-                                color: '#f472b6',
-                                padding: '1rem 1.25rem',
-                                fontSize: '0.9rem',
-                                fontWeight: '600'
-                            }}
-                        >
-                            Enable Deep Tracing (5 minutes)
-                        </button>
-                    </>
+                {pods.length === 0 && (
+                    <div className="topology-empty">
+                        <p>No pods available</p>
+                        <span>Deploy pods to see network topology</span>
+                    </div>
                 )}
             </div>
 
-            {actionLog.length > 0 && (
-                <div className="action-log">
-                    <h4>Action Log</h4>
-                    <div className="log-content">
-                        {actionLog.map((log, idx) => (
-                            <div key={idx} className="log-entry">{log}</div>
-                        ))}
+            {/* Selected pod panel with full eBPF metrics */}
+            {selectedPod && (
+                <div className="selected-pod-panel-expanded">
+                    <div className="panel-header">
+                        <div>
+                            <h3>{selectedPod.name}</h3>
+                            <span className="panel-namespace">{selectedPod.namespace}</span>
+                        </div>
+                        <button onClick={() => setSelectedPod(null)}><FiX /></button>
+                    </div>
+                    
+                    <div className="panel-metrics-expanded">
+                        <div className="metrics-section">
+                            <h4>🏥 Health Status</h4>
+                            <div className="panel-metric">
+                                <span>Overall Health:</span>
+                                <span className={`health-badge ${selectedPod.health}`}>
+                                    {selectedPod.health.toUpperCase()}
+                                </span>
+                            </div>
+                            <div className="panel-metric">
+                                <span>Connections:</span>
+                                <span>{selectedPod.connections}</span>
+                            </div>
+                        </div>
+
+                        {selectedPodMetrics?.dns_latency && (
+                            <div className="metrics-section">
+                                <h4>🌐 DNS Metrics</h4>
+                                <div className="panel-metric">
+                                    <span>Avg Latency:</span>
+                                    <span>{(selectedPodMetrics.dns_latency.avg_latency_us / 1000).toFixed(2)} ms</span>
+                                </div>
+                                <div className="panel-metric">
+                                    <span>Max Latency:</span>
+                                    <span>{(selectedPodMetrics.dns_latency.max_latency_us / 1000).toFixed(2)} ms</span>
+                                </div>
+                                <div className="panel-metric">
+                                    <span>Total Queries:</span>
+                                    <span>{selectedPodMetrics.dns_latency.total_events || 0}</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {selectedPodMetrics?.tcp_metrics && (
+                            <div className="metrics-section">
+                                <h4>🔌 TCP Metrics</h4>
+                                <div className="panel-metric">
+                                    <span>Avg SRTT:</span>
+                                    <span>{(selectedPodMetrics.tcp_metrics.avg_srtt_us / 1000).toFixed(2)} ms</span>
+                                </div>
+                                <div className="panel-metric">
+                                    <span>Retransmissions:</span>
+                                    <span className={selectedPodMetrics.tcp_metrics.retransmissions > 5 ? 'metric-warning' : ''}>
+                                        {selectedPodMetrics.tcp_metrics.retransmissions || 0}
+                                    </span>
+                                </div>
+                                <div className="panel-metric">
+                                    <span>Packet Loss:</span>
+                                    <span className={selectedPodMetrics.tcp_metrics.packet_loss > 3 ? 'metric-critical' : ''}>
+                                        {selectedPodMetrics.tcp_metrics.packet_loss || 0}
+                                    </span>
+                                </div>
+                                <div className="panel-metric">
+                                    <span>Bad Handshakes:</span>
+                                    <span>{selectedPodMetrics.tcp_metrics.bad_handshakes || 0}</span>
+                                </div>
+                                <div className="panel-metric">
+                                    <span>Total Events:</span>
+                                    <span>{selectedPodMetrics.tcp_metrics.total_events || 0}</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {selectedPodMetrics?.sched_latency && (
+                            <div className="metrics-section">
+                                <h4>⚡ CPU Scheduling</h4>
+                                <div className="panel-metric">
+                                    <span>Avg Run Queue:</span>
+                                    <span>{(selectedPodMetrics.sched_latency.avg_runqueue_latency_us / 1000).toFixed(2)} ms</span>
+                                </div>
+                                <div className="panel-metric">
+                                    <span>Max Latency:</span>
+                                    <span>{(selectedPodMetrics.sched_latency.max_runqueue_latency_us / 1000).toFixed(2)} ms</span>
+                                </div>
+                                <div className="panel-metric">
+                                    <span>CPU Starvation:</span>
+                                    <span className={selectedPodMetrics.sched_latency.cpu_starvation_count > 10 ? 'metric-warning' : ''}>
+                                        {selectedPodMetrics.sched_latency.cpu_starvation_count || 0}
+                                    </span>
+                                </div>
+                                <div className="panel-metric">
+                                    <span>Total Events:</span>
+                                    <span>{selectedPodMetrics.sched_latency.total_events || 0}</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {!selectedPodMetrics && (
+                            <div className="metrics-section">
+                                <p className="no-metrics">No eBPF metrics available yet. Pod may be starting up.</p>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="panel-actions">
+                        <button className="action-btn primary" onClick={handleViewLogs}>
+                            <FiTerminal />
+                            View Logs
+                        </button>
+                        <button className="action-btn warning" onClick={handleRestartPod}>
+                            <FiRotateCw />
+                            Restart Pod
+                        </button>
+                        <button className="action-btn danger" onClick={handleDeletePod}>
+                            <FiTrash2 />
+                            Delete Pod
+                        </button>
                     </div>
                 </div>
             )}
+
+            {/* Pod logs modal */}
+            {podLogs && (
+                <div className="logs-modal">
+                    <div className="logs-container">
+                        <div className="logs-header">
+                            <h3>📋 Pod Logs: {podLogs.pod}</h3>
+                            <button onClick={() => setPodLogs(null)}><FiX /></button>
+                        </div>
+                        <pre className="logs-content">{podLogs.logs}</pre>
+                    </div>
+                </div>
+            )}
+
+            {/* Migration Advisor Panel */}
+            {showMigrationAdvisor && (
+                <div className="migration-advisor-panel">
+                    <div className="advisor-header">
+                        <div>
+                            <h3><FiZap /> Intelligent Pod Migration Advisor</h3>
+                            <span className="advisor-subtitle">Real-time eBPF-based recommendations</span>
+                        </div>
+                        <button onClick={() => setShowMigrationAdvisor(false)}><FiX /></button>
+                    </div>
+                    
+                    <div className="advisor-content">
+                        {migrationSuggestions.length === 0 ? (
+                            <div className="advisor-empty">
+                                <FiCheckCircle size={48} />
+                                <h4>All Pods Performing Optimally</h4>
+                                <p>No migration recommendations at this time</p>
+                            </div>
+                        ) : (
+                            <div className="suggestions-list">
+                                {migrationSuggestions.map((suggestion, idx) => (
+                                    <div key={idx} className={`suggestion-card ${suggestion.severity}`}>
+                                        <div className="suggestion-header">
+                                            <div>
+                                                <h4>{suggestion.pod}</h4>
+                                                <span className="suggestion-namespace">{suggestion.namespace}</span>
+                                            </div>
+                                            <span className={`severity-badge ${suggestion.severity}`}>
+                                                {suggestion.severity.toUpperCase()}
+                                            </span>
+                                        </div>
+                                        
+                                        <div className="suggestion-reason">
+                                            <FiAlertCircle />
+                                            <span>{suggestion.reason}</span>
+                                        </div>
+                                        
+                                        <div className="ai-suggestion">
+                                            <div className="ai-header">
+                                                <FiZap />
+                                                <span>AI Analysis:</span>
+                                            </div>
+                                            <p>{suggestion.aiSuggestion}</p>
+                                        </div>
+                                        
+                                        <div className="suggestion-metrics">
+                                            <div className="metric">
+                                                <span>TCP Issues: {suggestion.metrics.tcp_issues}</span>
+                                            </div>
+                                            <div className="metric">
+                                                <span>DNS: {(suggestion.metrics.dns_latency / 1000).toFixed(1)}ms</span>
+                                            </div>
+                                            <div className="metric">
+                                                <span>Packet Loss: {suggestion.metrics.packet_loss}</span>
+                                            </div>
+                                            {suggestion.metrics.cpu_latency > 0 && (
+                                                <div className="metric">
+                                                    <span>CPU: {(suggestion.metrics.cpu_latency / 1000).toFixed(1)}ms</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        <div className="suggestion-action">
+                                            <span className="migration-hint">
+                                                <FiArrowRight />
+                                                Recommended Action: {suggestion.action}
+                                            </span>
+                                        </div>
+
+                                        {suggestion.logs && (
+                                            <details className="suggestion-logs">
+                                                <summary>📋 Recent Pod Logs</summary>
+                                                <pre className="logs-preview">{suggestion.logs}</pre>
+                                            </details>
+                                        )}
+
+                                        {loadingLogs[`${suggestion.namespace}/${suggestion.pod}`] && (
+                                            <div className="logs-loading">Loading logs...</div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Legend */}
+            <div className="topology-legend">
+                <div className="legend-item">
+                    <div className="legend-circle good"></div>
+                    <span>Healthy</span>
+                </div>
+                <div className="legend-item">
+                    <div className="legend-circle warning"></div>
+                    <span>Warning</span>
+                </div>
+                <div className="legend-item">
+                    <div className="legend-circle critical"></div>
+                    <span>Critical</span>
+                </div>
+                <div className="legend-separator"></div>
+                <div className="legend-item">
+                    <div className="legend-arrow blue"></div>
+                    <span>Good (&lt;5s)</span>
+                </div>
+                <div className="legend-item">
+                    <div className="legend-arrow orange"></div>
+                    <span>Slow (5-10s)</span>
+                </div>
+                <div className="legend-item">
+                    <div className="legend-arrow red"></div>
+                    <span>Poor (&gt;10s)</span>
+                </div>
+            </div>
         </div>
     );
 }
-

@@ -96,19 +96,20 @@ func StartServer() {
 	http.HandleFunc("/api/cluster/topology", corsMiddleware(handleClusterTopology))
 	http.HandleFunc("/api/cluster/services", corsMiddleware(handleClusterServices))
 	http.HandleFunc("/api/pod/action", corsMiddleware(handlePodAction))
+	http.HandleFunc("/api/pod/logs", corsMiddleware(handlePodLogs))
 	http.HandleFunc("/api/pod/ebpf-action", corsMiddleware(handleEBPFAction))
 	http.HandleFunc("/api/pod/details", corsMiddleware(handlePodDetails))
 
 	// Connection topology endpoints
 	http.HandleFunc("/api/connections/topology", corsMiddleware(handleConnectionTopology))
 	http.HandleFunc("/api/connections/pod", corsMiddleware(handlePodConnections))
-	
+
 	// Scheduling latency endpoints
 	http.HandleFunc("/api/sched/metrics", corsMiddleware(handleSchedLatencyMetrics))
 	http.HandleFunc("/api/sched/pods", corsMiddleware(handleSchedLatencyPods))
 	http.HandleFunc("/api/sched/containers", corsMiddleware(handleSchedLatencyContainers))
 	http.HandleFunc("/api/sched/records", corsMiddleware(handleSchedLatencyRecords))
-	
+
 	// WebSocket endpoints
 	http.HandleFunc("/ws/metrics", corsMiddleware(handleWebSocketMetrics))
 	http.HandleFunc("/ws/topology", corsMiddleware(handleWebSocketClusterTopology))
@@ -329,13 +330,13 @@ func handlePodRTTMetrics(w http.ResponseWriter, r *http.Request) {
 			avgRTT = float64(metrics.TotalRTTNs) / float64(metrics.TotalEvents) / 1000
 		}
 		response[podKey] = map[string]interface{}{
-			"namespace":      metrics.Namespace,
-			"pod_name":       metrics.PodName,
-			"total_events":   metrics.TotalEvents,
-			"avg_rtt_us":     avgRTT,
-			"last_rtt_us":    float64(metrics.LastRTTNs) / 1000,
-			"max_rtt_us":     float64(metrics.MaxRTTNs) / 1000,
-			"min_rtt_us":     safeMinValue(metrics.MinRTTNs) / 1000,
+			"namespace":    metrics.Namespace,
+			"pod_name":     metrics.PodName,
+			"total_events": metrics.TotalEvents,
+			"avg_rtt_us":   avgRTT,
+			"last_rtt_us":  float64(metrics.LastRTTNs) / 1000,
+			"max_rtt_us":   float64(metrics.MaxRTTNs) / 1000,
+			"min_rtt_us":   safeMinValue(metrics.MinRTTNs) / 1000,
 		}
 	}
 
@@ -400,11 +401,11 @@ func updatePodIPMappingFromK8s() {
 
 	// Get node name - only map pods on this node
 	nodeName := os.Getenv("NODE_NAME")
-	
+
 	ctx := context.Background()
 	var pods *corev1.PodList
 	var err error
-	
+
 	if nodeName != "" {
 		// Only get pods on this node
 		pods, err = k8sClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{
@@ -436,7 +437,7 @@ func updatePodIPMappingFromK8s() {
 
 	// Update the telemetry package
 	telemetry.SetPodIPMapping(mapping)
-	
+
 	// Update the connection tracker
 	tracker := telemetry.GetConnectionTracker()
 	if tracker != nil {
