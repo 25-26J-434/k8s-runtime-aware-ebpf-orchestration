@@ -24,10 +24,13 @@ nodes:
         hostPort: 8081
         protocol: TCP
     extraMounts:
-      # Mount /sys for eBPF
-      - hostPath: /sys
-        containerPath: /sys
-        readOnly: true
+      # Mount BPF filesystem (Standard for Cilium/eBPF)
+      - hostPath: /sys/fs/bpf
+        containerPath: /sys/fs/bpf
+        # Must be writable for map pinning
+      # Mount kernel debug (Required for some tracing)
+      - hostPath: /sys/kernel/debug
+        containerPath: /sys/kernel/debug
 networking:
   podSubnet: "10.244.0.0/16"
   serviceSubnet: "10.96.0.0/16"

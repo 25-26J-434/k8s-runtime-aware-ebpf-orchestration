@@ -529,3 +529,5 @@ cd frontend && npm run dev
 
 This guide should help you understand the entire codebase structure and what needs to be managed in git!
 
+
+

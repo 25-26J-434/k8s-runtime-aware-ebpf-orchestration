@@ -33,6 +33,7 @@ export interface UnifiedMetricsResponse {
     node_ip?: string;
     node?: Record<string, any>;
     pods?: Record<string, Record<string, any>>;
+    containers?: Record<string, Record<string, any>>; // Container-level metrics
 }
 
 export interface TCPEvent {
@@ -131,6 +132,61 @@ export interface NATMetadataMetrics {
     translation_errors: number;
 }
 
+export interface PodMetrics {
+    dns_latency?: {
+        total_events: number;
+        avg_latency_us: number;
+        last_latency_us: number;
+        max_latency_us: number;
+        min_latency_us: number;
+    };
+    tcp_metrics?: TCPPodMetrics;
+    rtt?: {
+        total_events: number;
+        avg_rtt_us: number;
+        last_rtt_us: number;
+        max_rtt_us: number;
+        min_rtt_us: number;
+    };
+}
+
+export interface ContainerDNSMetrics {
+    container_name: string;
+    container_id: string;
+    pod_name: string;
+    namespace: string;
+    total_events: number;
+    total_latency_ns: number;
+    avg_latency_ns: number;
+    avg_latency_us: number;
+    min_latency_ns: number;
+    max_latency_ns: number;
+    last_latency_ns: number;
+}
+
+export interface ContainerTCPMetrics {
+    container_name: string;
+    container_id: string;
+    pod_name: string;
+    namespace: string;
+    total_events: number;
+    smoothed_rtt_us: number;
+    avg_srtt_us: number;
+    min_rtt_us: number;
+    retransmissions: number;
+    packet_loss: number;
+    bad_handshakes: number;
+    last_srtt_us: number;
+    last_min_rtt_us: number;
+    last_cwnd: number;
+    recent_events?: TCPEvent[];
+}
+
+export interface ContainerMetrics {
+    dns_latency?: ContainerDNSMetrics;
+    tcp_metrics?: ContainerTCPMetrics;
+}
+
 export interface MetricsResponse {
     timestamp: string;
     node_name?: string;
@@ -156,6 +212,8 @@ export interface MetricsResponse {
     packet_distribution?: PacketDistributionMetrics;
     service_health?: ServiceHealthMetrics;
     nat_metadata?: NATMetadataMetrics;
+    pods?: Record<string, PodMetrics>;
+    containers?: Record<string, ContainerMetrics>; // Container-level metrics
 }
 
 export interface PodDNSStats {
