@@ -2,9 +2,11 @@ const express = require('express');
 const mongoose = require('mongoose');
 const morgan = require('morgan');
 const cors = require('cors');
+const os = require('os');
 require('dotenv').config();
 
 const RedirectRule = require('./models/RedirectRule');
+const RedirectionEvent = require('./models/RedirectionEvent');
 
 const app = express();
 app.use(express.json());
@@ -85,6 +87,37 @@ function normalizeRule(body, { requireAll } = { requireAll: true }) {
   return { data };
 }
 
+const VALID_EVENT_STATUSES = ['applied', 'expired', 'deleted', 'skipped', 'observed'];
+
+function normalizeRedirectionEvent(body) {
+  const data = {};
+  if (!body.policy_name) return { error: 'policy_name is required' };
+  data.policy_name = body.policy_name;
+  if (body.frontend_service !== undefined) data.frontend_service = body.frontend_service;
+  if (body.redirect_backend_label !== undefined) data.redirect_backend_label = body.redirect_backend_label;
+  if (body.redirect_backend_port !== undefined) data.redirect_backend_port = String(body.redirect_backend_port);
+  if (body.accepted_service !== undefined) data.accepted_service = body.accepted_service;
+  if (body.notes !== undefined) data.notes = body.notes;
+
+  if (body.violation_triggered === undefined) {
+    return { error: 'violation_triggered is required (boolean)' };
+  }
+  data.violation_triggered =
+    typeof body.violation_triggered === 'boolean'
+      ? body.violation_triggered
+      : String(body.violation_triggered).toLowerCase() === 'true';
+
+  data.status = body.status && VALID_EVENT_STATUSES.includes(body.status) ? body.status : 'applied';
+
+  if (body.occurred_at !== undefined) {
+    const d = new Date(body.occurred_at);
+    if (Number.isNaN(d.getTime())) return { error: 'occurred_at is not a valid date' };
+    data.occurred_at = d;
+  }
+
+  return { data };
+}
+
 function toRuleFile(doc) {
   return {
     policy_name: doc.policy_name,
@@ -108,6 +141,12 @@ function toRuleFile(doc) {
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
+});
+
+// Identity endpoint to match service-a/b/c whoami checks
+app.get('/whoami', (_req, res) => {
+  const identity = process.env.SERVICE_NAME || os.hostname();
+  res.status(200).send(`Hi, I am component2-backend (${identity})\n`);
 });
 
 app.get('/api/rules', async (_req, res, next) => {
@@ -193,7 +232,81 @@ app.delete('/api/rules/:id', async (req, res, next) => {
   try {
     const result = await RedirectRule.findByIdAndDelete(req.params.id);
     if (!result) return res.status(404).json({ message: 'Rule not found' });
+
+    // Record a lifecycle event for bookkeeping
+    try {
+      await RedirectionEvent.create({
+        policy_name: result.policy_name,
+        frontend_service: result.frontend_service,
+        redirect_backend_label: result.redirect_backend_label,
+        redirect_backend_port: result.redirect_backend_port,
+        violation_triggered: false,
+        status: 'deleted',
+        notes: 'Policy deleted via API',
+      });
+    } catch (eventErr) {
+      console.error('Failed to record deletion event', eventErr);
+    }
+
     res.json({ deleted: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Redirection event log endpoints
+app.get('/api/redirections', async (req, res, next) => {
+  try {
+    const filter = {};
+    if (req.query.policy_name) filter.policy_name = req.query.policy_name;
+    const events = await RedirectionEvent.find(filter).sort({ occurred_at: -1 });
+    res.json(events);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/redirections/by-policy/:policyName', async (req, res, next) => {
+  try {
+    const events = await RedirectionEvent.find({ policy_name: req.params.policyName }).sort({ occurred_at: -1 });
+    res.json(events);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/redirections', async (req, res, next) => {
+  try {
+    const { data, error } = normalizeRedirectionEvent(req.body);
+    if (error) return res.status(400).json({ message: error });
+
+    const created = await RedirectionEvent.create(data);
+    res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Mark a policy as expired (when TTL cleanup or manual expiry occurs)
+app.post('/api/rules/by-policy/:policyName/expire', async (req, res, next) => {
+  try {
+    const rule = await RedirectRule.findOne({ policy_name: req.params.policyName });
+    if (!rule) return res.status(404).json({ message: 'Rule not found' });
+
+    const { data, error } = normalizeRedirectionEvent({
+      policy_name: rule.policy_name,
+      frontend_service: rule.frontend_service,
+      redirect_backend_label: rule.redirect_backend_label,
+      redirect_backend_port: rule.redirect_backend_port,
+      violation_triggered: false,
+      status: 'expired',
+      notes: req.body?.notes || 'Policy TTL expired or was manually expired',
+      occurred_at: req.body?.occurred_at,
+    });
+    if (error) return res.status(400).json({ message: error });
+
+    const created = await RedirectionEvent.create(data);
+    res.status(201).json(created);
   } catch (err) {
     next(err);
   }
