@@ -73,6 +73,13 @@ func StartServer() {
 
 	initMetricsStreaming()
 
+	// Initialize WebSocket hub
+	InitWebSocket()
+
+	// Start metrics broadcaster
+	ctx := context.Background()
+	go StartMetricsBroadcaster(ctx, 2*time.Second) // Broadcast every 2 seconds
+
 	http.HandleFunc("/health", corsMiddleware(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "OK")
@@ -83,6 +90,7 @@ func StartServer() {
 		fmt.Fprintln(w, "Ready")
 	}))
 
+	// REST API endpoints (kept for backwards compatibility)
 	http.HandleFunc("/metrics/json", corsMiddleware(handleJSONMetrics))
 	http.HandleFunc("/metrics", corsMiddleware(handlePrometheusMetrics))
 	http.HandleFunc("/api/metrics", corsMiddleware(handleUnifiedMetrics))
@@ -95,6 +103,25 @@ func StartServer() {
 
 	// Register in-process communication handlers (broadcast/unicast/multicast/stats/health).
 	comm.RegisterHandlers(nil, corsMiddleware)
+	http.HandleFunc("/api/pod/action", corsMiddleware(handlePodAction))
+	http.HandleFunc("/api/pod/logs", corsMiddleware(handlePodLogs))
+	http.HandleFunc("/api/pod/ebpf-action", corsMiddleware(handleEBPFAction))
+	http.HandleFunc("/api/pod/details", corsMiddleware(handlePodDetails))
+
+	// Connection topology endpoints
+	http.HandleFunc("/api/connections/topology", corsMiddleware(handleConnectionTopology))
+	http.HandleFunc("/api/connections/pod", corsMiddleware(handlePodConnections))
+
+	// Scheduling latency endpoints
+	http.HandleFunc("/api/sched/metrics", corsMiddleware(handleSchedLatencyMetrics))
+	http.HandleFunc("/api/sched/pods", corsMiddleware(handleSchedLatencyPods))
+	http.HandleFunc("/api/sched/containers", corsMiddleware(handleSchedLatencyContainers))
+	http.HandleFunc("/api/sched/records", corsMiddleware(handleSchedLatencyRecords))
+
+	// WebSocket endpoints
+	http.HandleFunc("/ws/metrics", corsMiddleware(handleWebSocketMetrics))
+	http.HandleFunc("/ws/topology", corsMiddleware(handleWebSocketClusterTopology))
+	http.HandleFunc("/ws/pod-details", corsMiddleware(handleWebSocketPodDetails))
 
 	log.Println("[API] Starting HTTP server on :8080")
 	log.Println("[API] Endpoints:")
@@ -103,16 +130,10 @@ func StartServer() {
 	log.Println("[API]   GET /metrics                 - Prometheus metrics")
 	log.Println("[API]   GET /metrics/json            - JSON metrics")
 	log.Println("[API]   GET /api/metrics             - Unified metrics (extensible)")
-	log.Println("[API]   WS  /api/metrics/ws          - Unified metrics stream")
 	log.Println("[API]   GET /api/dns/pods            - Per-pod DNS metrics")
 	log.Println("[API]   GET /api/rtt/pods            - Per-pod RTT metrics")
 	log.Println("[API]   GET /api/cluster/topology    - Cluster topology")
 	log.Println("[API]   GET /api/cluster/services    - Services info")
-	log.Println("[API]   POST /api/comm/broadcast     - Broadcast to cluster peers")
-	log.Println("[API]   POST /api/comm/unicast       - Unicast to a cluster peer")
-	log.Println("[API]   POST /api/comm/multicast     - Multicast to selected peers")
-	log.Println("[API]   GET  /api/comm/stats         - Communication stats")
-	log.Println("[API]   GET  /api/comm/health        - Communication subsystem health")
 
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalf("[API] Server failed: %v", err)
@@ -360,10 +381,10 @@ func handleClusterServices(w http.ResponseWriter, r *http.Request) {
 
 // refreshPodIPMappingPeriodically queries K8s API and updates telemetry package with pod IP mappings
 func refreshPodIPMappingPeriodically() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(5 * time.Second) // Refresh every 5 seconds for real-time pod discovery
 	defer ticker.Stop()
 
-	// Do initial refresh
+	// Do initial refresh immediately
 	updatePodIPMappingFromK8s()
 
 	for range ticker.C {
@@ -380,9 +401,11 @@ func updatePodIPMappingFromK8s() {
 	// Get node name - only map pods on this node
 	nodeName := os.Getenv("NODE_NAME")
 
+
 	ctx := context.Background()
 	var pods *corev1.PodList
 	var err error
+
 
 	if nodeName != "" {
 		// Only get pods on this node
@@ -415,4 +438,10 @@ func updatePodIPMappingFromK8s() {
 
 	// Update the telemetry package
 	telemetry.SetPodIPMapping(mapping)
+
+	// Update the connection tracker
+	tracker := telemetry.GetConnectionTracker()
+	if tracker != nil {
+		tracker.UpdatePodIPMapping(mapping)
+	}
 }

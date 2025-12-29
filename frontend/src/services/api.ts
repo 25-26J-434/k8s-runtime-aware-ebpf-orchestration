@@ -102,6 +102,10 @@ export function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsRe
         packet_distribution: node.packet_distribution || undefined,
         service_health: node.service_health || undefined,
         nat_metadata: node.nat_metadata || undefined,
+        // Include raw pods data for topology
+        pods: data.pods,
+        // Include container-level metrics
+        containers: data.containers || {},
     };
 }
 
@@ -152,6 +156,90 @@ export const api = {
     async getPodDNSMetrics() {
         const response = await fetch(`${API_BASE}/api/dns/pods`);
         if (!response.ok) throw new Error('Failed to fetch pod DNS metrics');
+        return response.json();
+    },
+
+    async getConnectionTopology(filter: string = 'established'): Promise<any> {
+        const response = await fetch(`${API_BASE}/api/connections/topology?filter=${filter}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch connection topology: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+    
+    async getPodConnections(namespace: string, podName: string): Promise<any> {
+        const response = await fetch(`${API_BASE}/api/connections/pod?namespace=${namespace}&pod=${podName}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch pod connections: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async getSchedLatencyMetrics(limit: number = 50): Promise<any> {
+        const response = await fetch(`${API_BASE}/api/sched/metrics?limit=${limit}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch scheduling latency metrics: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async getSchedLatencyPods(): Promise<any> {
+        const response = await fetch(`${API_BASE}/api/sched/pods`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch pod scheduling latency metrics: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async getSchedLatencyRecords(limit: number = 100): Promise<any> {
+        const response = await fetch(`${API_BASE}/api/sched/records?limit=${limit}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch scheduling latency records: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async getSchedLatencyContainers(): Promise<any> {
+        const response = await fetch(`${API_BASE}/api/sched/containers`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch container scheduling latency metrics: ${response.status} ${response.statusText}`);
+        }
         return response.json();
     },
 

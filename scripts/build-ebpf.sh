@@ -1,3 +1,5 @@
+#Chaneg this content to architecture-aware content : Will not effect to the strcture
+
 #!/bin/bash
 # eBPF Build Script for Runtime-Aware Telemetry Daemon
 # This script compiles the eBPF programs and prepares them for embedding in the Go binary
@@ -224,6 +226,22 @@ if [ -f "$COMPONENT_DIR/tcp_metrics.c" ]; then
     if [ -f "$COMPONENT_DIR/tcp_metrics.o" ]; then
         cp "$COMPONENT_DIR/tcp_metrics.o" "$OUTPUT_DIR/tcp_metrics.o"
         echo "[OK] Copied tcp_metrics.o to $OUTPUT_DIR"
+    fi
+fi
+
+# Build Scheduler Latency eBPF program (if exists)
+if [ -f "$COMPONENT_DIR/sched_latency.c" ]; then
+    echo "[BUILD] Compiling sched_latency.c..."
+    clang $CLANG_FLAGS \
+        -c "$COMPONENT_DIR/sched_latency.c" \
+        -o "$COMPONENT_DIR/sched_latency.o" 2>&1 || {
+        echo "[WARN] Scheduler latency program compilation failed"
+        echo "[WARN] Continuing without scheduler latency..."
+    }
+    
+    if [ -f "$COMPONENT_DIR/sched_latency.o" ]; then
+        cp "$COMPONENT_DIR/sched_latency.o" "$OUTPUT_DIR/sched_latency.o"
+        echo "[OK] Copied sched_latency.o to $OUTPUT_DIR"
     fi
 fi
 

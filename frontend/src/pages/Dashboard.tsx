@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMetrics } from '../hooks/useMetrics';
 import { useClusterInfo } from '../hooks/useClusterInfo';
+import { usePodDetails } from '../hooks/usePodDetails';
 import { DNSLatencyChart } from '../components/DNSLatencyChart';
 import { TCPMetricsChart } from '../components/TCPMetricsChart';
 import { SystemResourcesChart } from '../components/SystemResourcesChart';
@@ -9,6 +10,8 @@ import { PacketDistributionChart } from '../components/PacketDistributionChart';
 import { SystemHealth } from '../components/SystemHealth';
 import { TopPerformers } from '../components/TopPerformers';
 import { NetworkStats } from '../components/NetworkStats';
+import { CPUSchedulingMetrics } from '../components/CPUSchedulingMetrics';
+import { api } from '../services/api';
 import { 
     FiBarChart2, 
     FiActivity, 
@@ -20,15 +23,21 @@ import {
     FiCpu, 
     FiDownload, 
     FiSettings, 
-    FiRefreshCw 
+    FiRefreshCw,
+    FiClock
 } from 'react-icons/fi';
 import '../App.css';
+import '../styles/clean-pods.css';
 
 export function Dashboard() {
     const { metrics, loading, error } = useMetrics(3000);
     const clusterInfo = useClusterInfo(5000);
+    const { data: podDetails, loading: podDetailsLoading } = usePodDetails(5000);
     const [activeSection, setActiveSection] = useState<string>('overview');
     const sectionRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+    const [schedMetrics, setSchedMetrics] = useState<any>(null);
+    const [containerSchedMetrics, setContainerSchedMetrics] = useState<any>({});
+    const [selectedPod, setSelectedPod] = useState<string>('all');
 
     // Scroll to section
     const scrollToSection = (sectionId: string) => {
@@ -58,6 +67,35 @@ export function Dashboard() {
         return () => window.removeEventListener('scroll', handleScroll);
     }, [metrics]);
 
+    // Fetch scheduling metrics
+    useEffect(() => {
+        const fetchSchedMetrics = async () => {
+            try {
+                const data = await api.getSchedLatencyMetrics(10);
+                setSchedMetrics(data);
+            } catch (err) {
+                // Silently fail if scheduling metrics not available
+            }
+        };
+        
+        const fetchContainerSchedMetrics = async () => {
+            try {
+                const data = await api.getSchedLatencyContainers();
+                setContainerSchedMetrics(data || {});
+            } catch (err) {
+                // Silently fail if container scheduling metrics not available
+            }
+        };
+        
+        fetchSchedMetrics();
+        fetchContainerSchedMetrics();
+        const interval = setInterval(() => {
+            fetchSchedMetrics();
+            fetchContainerSchedMetrics();
+        }, 3000); // Update every 3 seconds for real-time
+        return () => clearInterval(interval);
+    }, []);
+
     if (loading && !metrics) {
         return (
             <div className="loading-container">
@@ -82,6 +120,7 @@ export function Dashboard() {
         { id: 'overview', label: 'Overview', icon: FiBarChart2 },
         { id: 'health', label: 'System Health', icon: FiActivity },
         { id: 'performance', label: 'Performance', icon: FiZap },
+        { id: 'cpu-scheduling', label: 'CPU Scheduling', icon: FiClock },
         { id: 'node-metrics', label: 'Node Metrics', icon: FiServer },
         { id: 'system', label: 'System Resources', icon: FiCpu },
         { id: 'network', label: 'Network Stats', icon: FiGlobe },
@@ -133,8 +172,26 @@ export function Dashboard() {
                     </div>
                     <div className="overview-grid">
                         <div className="overview-card">
-                            <div className="overview-label">Cluster</div>
-                            <div className="overview-value">{clusterInfo.cluster}</div>
+                            <div className="overview-label">Total Containers</div>
+                            <div className="overview-value">{podDetails?.cluster_metrics.total_containers || 0}</div>
+                        </div>
+                        <div className="overview-card">
+                            <div className="overview-label">Total Pods</div>
+                            <div className="overview-value">{podDetails?.cluster_metrics.total_pods || clusterInfo.activePods}</div>
+                        </div>
+                        <div className="overview-card">
+                            <div className="overview-label">Total Nodes</div>
+                            <div className="overview-value">{podDetails?.cluster_metrics.total_nodes || 1}</div>
+                        </div>
+                        <div className="overview-card">
+                            <div className="overview-label">Namespaces</div>
+                            <div className="overview-value">{podDetails?.cluster_metrics.pods_by_namespace ? Object.keys(podDetails.cluster_metrics.pods_by_namespace).length : 0}</div>
+                        </div>
+                        <div className="overview-card">
+                            <div className="overview-label">eBPF Active Pods</div>
+                            <div className="overview-value">
+                                {metrics?.pods ? Object.keys(metrics.pods).length : 0}
+                            </div>
                         </div>
                         <div className="overview-card">
                             <div className="overview-label">Node</div>
@@ -144,14 +201,6 @@ export function Dashboard() {
                                     IP: {metrics.node_ip}
                                 </div>
                             )}
-                        </div>
-                        <div className="overview-card">
-                            <div className="overview-label">Active Pods</div>
-                            <div className="overview-value">{metrics?.dns.pods ? Object.keys(metrics.dns.pods).length : 0}</div>
-                        </div>
-                        <div className="overview-card">
-                            <div className="overview-label">Total Pods</div>
-                            <div className="overview-value">{clusterInfo.activePods}</div>
                         </div>
                     </div>
                 </section>
@@ -183,6 +232,19 @@ export function Dashboard() {
                         <TopPerformers />
                     </section>
                 )}
+
+                {/* CPU Scheduling Latency */}
+                <section 
+                    id="cpu-scheduling" 
+                    ref={(el) => (sectionRefs.current['cpu-scheduling'] = el)}
+                    className="section"
+                >
+                    <div className="section-header">
+                        <h2>CPU SCHEDULING LATENCY</h2>
+                        <span className="section-badge">Run Queue Performance</span>
+                    </div>
+                    <CPUSchedulingMetrics />
+                </section>
 
                 {/* Network Statistics */}
                 <section 
@@ -276,6 +338,54 @@ export function Dashboard() {
                                     <div className="stat-details">
                                         <span className="stat-label">Network Quality</span>
                                         <span className="stat-range">CWND: {metrics.tcp.last_cwnd.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {schedMetrics?.node_metrics && schedMetrics.node_metrics.total_events > 0 && (
+                            <>
+                                <div className="stat-card scheduling">
+                                    <div className="stat-header">
+                                        <h3>CPU Scheduling</h3>
+                                    </div>
+                                    <div className="stat-value">{schedMetrics.node_metrics.total_events.toLocaleString()}</div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">Total Events</span>
+                                        <span className="stat-sublabel">
+                                            Avg: {(schedMetrics.node_metrics.avg_runqueue_latency_us || 0).toFixed(0)} μs
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="stat-card scheduling-latency">
+                                    <div className="stat-header">
+                                        <h3>Run Queue Latency</h3>
+                                    </div>
+                                    <div className="stat-value">
+                                        {(schedMetrics.node_metrics.avg_runqueue_latency_us || 0).toFixed(0)} <span className="unit">μs</span>
+                                    </div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">Average Wait Time</span>
+                                        <span className="stat-range">
+                                            P95: {(schedMetrics.node_metrics.p95_runqueue_latency_us || 0).toFixed(0)} μs • 
+                                            Max: {(schedMetrics.node_metrics.max_runqueue_latency_us || 0).toFixed(0)} μs
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className={`stat-card scheduling-starvation ${schedMetrics.node_metrics.cpu_starvation_count > 0 ? 'alert' : ''}`}>
+                                    <div className="stat-header">
+                                        <h3>CPU Starvation</h3>
+                                    </div>
+                                    <div className="stat-value" style={{
+                                        color: schedMetrics.node_metrics.cpu_starvation_count > 0 ? '#ef4444' : '#10b981'
+                                    }}>
+                                        {schedMetrics.node_metrics.cpu_starvation_count}
+                                    </div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">Critical Delays</span>
+                                        <span className="stat-sublabel">Latency {'>'} 10ms</span>
                                     </div>
                                 </div>
                             </>
@@ -437,7 +547,7 @@ export function Dashboard() {
                 )}
 
                 {/* Pod-Level Metrics Section */}
-                {metrics?.dns.pods && Object.keys(metrics.dns.pods).length > 0 && (
+                {metrics?.pods && Object.keys(metrics.pods).length > 0 && (
                     <section 
                         id="pod-metrics" 
                         ref={(el) => (sectionRefs.current['pod-metrics'] = el)}
@@ -445,123 +555,614 @@ export function Dashboard() {
                     >
                         <div className="section-header">
                             <h2>POD-LEVEL METRICS</h2>
-                            <span className="section-badge">{Object.keys(metrics.dns.pods).length} Active Pods</span>
+                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <span className="section-badge">{Object.keys(metrics.pods).length} Active Pods</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <label style={{ color: '#94a3b8', fontSize: '0.875rem' }}>Filter Pod:</label>
+                                    <select 
+                                        value={selectedPod}
+                                        onChange={(e) => setSelectedPod(e.target.value)}
+                                        style={{
+                                            padding: '0.5rem 1rem',
+                                            background: 'rgba(30, 41, 59, 0.8)',
+                                            border: '1px solid rgba(71, 85, 105, 0.5)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0',
+                                            fontSize: '0.875rem',
+                                            cursor: 'pointer',
+                                            minWidth: '250px'
+                                        }}
+                                    >
+                                        <option value="all">All Pods ({Object.keys(metrics.pods).length})</option>
+                                        {Object.keys(metrics.pods).sort().map((podKey) => {
+                                            const [ns, name] = podKey.split('/');
+                                            return (
+                                                <option key={podKey} value={podKey}>
+                                                    {ns}/{name}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
+                                </div>
+                            </div>
                         </div>
-                        <div className="pods-grid">
-                            {Object.entries(metrics.dns.pods).map(([podKey, stats]) => {
+
+                        {selectedPod === 'all' ? (
+                            <div className="pods-grid">
+                                {Object.entries(metrics.pods).map(([podKey, podData]) => {
+                                const dnsStats = podData.dns_latency;
+                                const tcpStats = podData.tcp_metrics;
                                 const [namespace, podName] = podKey.split('/');
+                                
+                                // Calculate microsecond values from nanoseconds
+                                const dnsAvgLatencyUs = dnsStats ? (dnsStats.avg_latency_ns / 1000) : 0;
+                                const dnsMinLatencyUs = dnsStats ? (dnsStats.min_latency_ns / 1000) : 0;
+                                const dnsMaxLatencyUs = dnsStats ? (dnsStats.max_latency_ns / 1000) : 0;
+                                
+                                // Get container-level metrics for this pod
+                                const containerMetrics: Record<string, any> = {};
+                                if (metrics.containers) {
+                                    Object.entries(metrics.containers).forEach(([containerKey, containerData]) => {
+                                        // containerKey format: "namespace/podname/containername"
+                                        const parts = containerKey.split('/');
+                                        const containerPodKey = `${parts[0]}/${parts[1]}`;
+                                        if (containerPodKey === podKey) {
+                                            const containerName = parts[2];
+                                            containerMetrics[containerName] = containerData;
+                                        }
+                                    });
+                                }
+                                
+                                const parts = podKey.split('/');
+                                
                                 return (
-                                    <div key={podKey} className="pod-card">
-                                        <div className="pod-card-glow"></div>
-                                        <div className="pod-header">
-                                            <div className="pod-info">
-                                                <div className="pod-name">{podName}</div>
-                                                <div className="pod-namespace">{namespace}</div>
+                                    <div key={podKey} className="pod-card-clean">
+                                        {/* Header Section */}
+                                        <div className="card-header-clean">
+                                            <div className="pod-title-clean">
+                                                <span className="namespace-tag">{parts[0]}</span>
+                                                <span className="pod-name-clean">{parts[1]}</span>
                                             </div>
-                                            <div className="pod-status-wrapper">
-                                                <div className="pod-status-indicator"></div>
-                                                <div className="pod-status">Running</div>
-                                            </div>
+                                            <div className="status-badge-clean">Active</div>
                                         </div>
 
-                                        {/* Pod DNS Latency Chart */}
-                                        <div className="pod-chart">
-                                            <DNSLatencyChart 
-                                                currentLatency={stats.avg_latency_us} 
-                                                title={`${podName} DNS Latency`}
-                                            />
-                                        </div>
-                                        
-                                        <div className="pod-metrics-section">
-                                            <div className="metric-group">
-                                                <div className="metric-group-title">
-                                                    DNS Metrics
-                                                </div>
-                                                <div className="metrics-row">
-                                                    <div className="metric-item">
-                                                        <span className="metric-label">Avg Latency</span>
-                                                        <span className="metric-value cyan">{stats.avg_latency_us.toFixed(2)} <span className="metric-unit">μs</span></span>
-                                                        <div className="metric-trend">{(stats.avg_latency_us < 1000 ? 'Excellent' : stats.avg_latency_us < 5000 ? 'Good' : 'Needs Attention')}</div>
+                                        {/* Pod-Level eBPF Metrics */}
+                                        <div className="metrics-section-clean">
+                                            {dnsStats && (
+                                                <div className="metric-block-clean">
+                                                    <div className="metric-block-title">DNS Metrics</div>
+                                                    <div className="metric-grid-clean">
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Avg Latency</div>
+                                                            <div className="metric-value-clean">{dnsAvgLatencyUs.toFixed(2)} μs</div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Events</div>
+                                                            <div className="metric-value-clean">{dnsStats.total_events.toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Min</div>
+                                                            <div className="metric-value-clean">{dnsMinLatencyUs.toFixed(2)} μs</div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Max</div>
+                                                            <div className="metric-value-clean">{dnsMaxLatencyUs.toFixed(2)} μs</div>
+                                                        </div>
                                                     </div>
-                                                    <div className="metric-item">
-                                                        <span className="metric-label">Events</span>
-                                                        <span className="metric-value purple">{stats.total_events.toLocaleString()}</span>
-                                                        <div className="metric-trend">Total Queries</div>
-                                                    </div>
-                                                </div>
-                                                <div className="metrics-row">
-                                                    <div className="metric-item">
-                                                        <span className="metric-label">Min</span>
-                                                        <span className="metric-value green">{stats.min_latency_us.toFixed(2)} <span className="metric-unit">μs</span></span>
-                                                        <div className="metric-trend">Best Performance</div>
-                                                    </div>
-                                                    <div className="metric-item">
-                                                        <span className="metric-label">Max</span>
-                                                        <span className="metric-value orange">{stats.max_latency_us.toFixed(2)} <span className="metric-unit">μs</span></span>
-                                                        <div className="metric-trend">Peak Latency</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {metrics?.tcp?.pods?.[podKey] && (
-                                                <div className="metric-group">
-                                                    <div className="metric-group-title">
-                                                        TCP-Level Metrics
-                                                    </div>
-                                                    {(() => {
-                                                        const podTCP = metrics.tcp.pods[podKey];
-                                                        if (podTCP && podTCP.total_events > 0) {
-                                                            return (
-                                                                <>
-                                                                    <div className="metrics-row">
-                                                                        <div className="metric-item">
-                                                                            <span className="metric-label">SRTT</span>
-                                                                            <span className="metric-value cyan">{(podTCP.last_srtt_us / 1000).toFixed(2)} <span className="metric-unit">ms</span></span>
-                                                                            <div className="metric-trend">Smoothed RTT</div>
-                                                                        </div>
-                                                                        <div className="metric-item">
-                                                                            <span className="metric-label">Min RTT</span>
-                                                                            <span className="metric-value green">{(podTCP.last_min_rtt_us / 1000).toFixed(2)} <span className="metric-unit">ms</span></span>
-                                                                            <div className="metric-trend">Best RTT</div>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="metrics-row">
-                                                                        <div className="metric-item">
-                                                                            <span className="metric-label">Retrans</span>
-                                                                            <span className="metric-value orange">{podTCP.retransmissions}</span>
-                                                                            <div className="metric-trend">Retransmissions</div>
-                                                                        </div>
-                                                                        <div className="metric-item">
-                                                                            <span className="metric-label">Loss</span>
-                                                                            <span className="metric-value red">{podTCP.packet_loss}</span>
-                                                                            <div className="metric-trend">Packet Loss</div>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="metrics-row">
-                                                                        <div className="metric-item">
-                                                                            <span className="metric-label">CWND</span>
-                                                                            <span className="metric-value purple">{podTCP.last_cwnd.toLocaleString()}</span>
-                                                                            <div className="metric-trend">Congestion Window</div>
-                                                                        </div>
-                                                                        <div className="metric-item">
-                                                                            <span className="metric-label">Bad HS</span>
-                                                                            <span className="metric-value red">{podTCP.bad_handshakes}</span>
-                                                                            <div className="metric-trend">Failed Handshakes</div>
-                                                                        </div>
-                                                                    </div>
-                                                                </>
-                                                            );
-                                                        }
-                                                        return null;
-                                                    })()}
                                                 </div>
                                             )}
+                                            
+                                            {tcpStats && tcpStats.total_events > 0 && (
+                                                <div className="metric-block-clean">
+                                                    <div className="metric-block-title">TCP Metrics</div>
+                                                    <div className="metric-grid-clean">
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Connections</div>
+                                                            <div className="metric-value-clean">{(tcpStats.connection_count || 0).toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Events</div>
+                                                            <div className="metric-value-clean">{(tcpStats.total_events || 0).toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Retransmits</div>
+                                                            <div className="metric-value-clean">{(tcpStats.total_retransmissions || 0).toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Avg RTT</div>
+                                                            <div className="metric-value-clean">{((tcpStats.avg_rtt_us || 0) / 1000).toFixed(2)} ms</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div className="metric-block-clean">
+                                                <div className="metric-block-title">CPU Scheduling</div>
+                                                {schedMetrics?.pod_metrics && schedMetrics.pod_metrics[podKey] ? (
+                                                    <div className="metric-grid-clean">
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Avg Latency</div>
+                                                            <div className="metric-value-clean" style={{
+                                                                color: (schedMetrics.pod_metrics[podKey].avg_runqueue_latency_us || 0) > 10000 ? '#ef4444' : 
+                                                                       (schedMetrics.pod_metrics[podKey].avg_runqueue_latency_us || 0) > 5000 ? '#f59e0b' : '#10b981'
+                                                            }}>
+                                                                {(schedMetrics.pod_metrics[podKey].avg_runqueue_latency_us || 0).toFixed(0)} μs
+                                                            </div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Events</div>
+                                                            <div className="metric-value-clean">
+                                                                {(schedMetrics.pod_metrics[podKey].event_count || 0).toLocaleString()}
+                                                            </div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Max Latency</div>
+                                                            <div className="metric-value-clean" style={{
+                                                                color: (schedMetrics.pod_metrics[podKey].max_runqueue_latency_us || 0) > 10000 ? '#ef4444' : '#10b981'
+                                                            }}>
+                                                                {(schedMetrics.pod_metrics[podKey].max_runqueue_latency_us || 0).toFixed(0)} μs
+                                                            </div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Starvation</div>
+                                                            <div className="metric-value-clean" style={{
+                                                                color: (schedMetrics.pod_metrics[podKey].cpu_starvation_count || 0) > 0 ? '#ef4444' : '#10b981'
+                                                            }}>
+                                                                {schedMetrics.pod_metrics[podKey].cpu_starvation_count || 0}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ 
+                                                        padding: '1rem', 
+                                                        textAlign: 'center', 
+                                                        color: '#64748b', 
+                                                        fontSize: '0.875rem',
+                                                        fontStyle: 'italic'
+                                                    }}>
+                                                        No scheduling data available yet
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
+
+                                        {/* Container-Level eBPF Metrics & Details */}
+                                        {podDetails?.pods[podKey] && podDetails.pods[podKey].containers?.length > 0 && (
+                                            <div className="container-section-clean">
+                                                <div className="section-title-clean">
+                                                    <span>Container Metrics</span>
+                                                    <span className="count-badge-clean">{podDetails.pods[podKey].containers.length}</span>
+                                                </div>
+                                                <div className="container-grid-clean">
+                                                    {podDetails.pods[podKey].containers.map((container: any) => {
+                                                        const containerName = container.name;
+                                                        const containerData = containerMetrics[containerName] || {};
+                                                        const containerDns = containerData.dns_latency;
+                                                        const containerTcp = containerData.tcp_metrics;
+                                                        const containerKey = `${podKey}/${containerName}`;
+                                                        const containerSched = containerSchedMetrics[containerKey];
+
+                                                        return (
+                                                            <div key={containerName} className="container-card-clean">
+                                                                {/* Container Info */}
+                                                                <div className="container-info-clean">
+                                                                    <div className="container-name-clean">{containerName}</div>
+                                                                    <div className="container-image-clean">{container.image.split(':')[0]}</div>
+                                                                    <div className="container-status-clean">
+                                                                        <span className={container.ready ? 'status-ready' : 'status-not-ready'}>
+                                                                            {container.ready ? 'Ready' : 'Not Ready'}
+                                                                        </span>
+                                                                        <span className="status-divider">|</span>
+                                                                        <span>{container.state}</span>
+                                                                        <span className="status-divider">|</span>
+                                                                        <span>Restarts: {container.restart_count}</span>
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                {/* eBPF Metrics - All Metrics */}
+                                                                <div className="ebpf-metrics-compact">
+                                                                    {containerDns && containerDns.total_events > 0 ? (
+                                                                        <div className="metric-row-compact">
+                                                                            <span className="metric-type">DNS</span>
+                                                                            <span className="metric-val">{containerDns.total_events} queries</span>
+                                                                            <span className="metric-val">{containerDns.avg_latency_us.toFixed(1)}μs avg</span>
+                                                                            <span className="metric-val">{(containerDns.max_latency_ns / 1000).toFixed(1)}μs max</span>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="metric-row-compact">
+                                                                            <span className="metric-type">DNS</span>
+                                                                            <span className="metric-val" style={{color: '#64748b', fontStyle: 'italic'}}>No data</span>
+                                                                        </div>
+                                                                    )}
+                                                                    {containerTcp && containerTcp.total_events > 0 ? (
+                                                                        <div className="metric-row-compact">
+                                                                            <span className="metric-type">TCP</span>
+                                                                            <span className="metric-val">{containerTcp.total_events} events</span>
+                                                                            <span className="metric-val">{containerTcp.retransmissions || 0} retrans</span>
+                                                                            <span className="metric-val">{((containerTcp.last_srtt_us || 0) / 1000).toFixed(1)}ms rtt</span>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="metric-row-compact">
+                                                                            <span className="metric-type">TCP</span>
+                                                                            <span className="metric-val" style={{color: '#64748b', fontStyle: 'italic'}}>No data</span>
+                                                                        </div>
+                                                                    )}
+                                                                    {/* CPU Scheduling for container */}
+                                                                    {containerSched ? (
+                                                                        <div className="metric-row-compact">
+                                                                            <span className="metric-type">CPU Sched</span>
+                                                                            <span className="metric-val" style={{
+                                                                                color: (containerSched.avg_runqueue_latency_us || 0) > 10000 ? '#ef4444' : 
+                                                                                       (containerSched.avg_runqueue_latency_us || 0) > 5000 ? '#f59e0b' : '#10b981'
+                                                                            }}>
+                                                                                {(containerSched.avg_runqueue_latency_us || 0).toFixed(0)}μs avg
+                                                                            </span>
+                                                                            <span className="metric-val">{(containerSched.event_count || 0).toLocaleString()} events</span>
+                                                                            {(containerSched.cpu_starvation_count || 0) > 0 && (
+                                                                                <span className="metric-val" style={{color: '#ef4444'}}>
+                                                                                    {(containerSched.cpu_starvation_count || 0)} starv
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="metric-row-compact">
+                                                                            <span className="metric-type">CPU Sched</span>
+                                                                            <span className="metric-val" style={{color: '#64748b', fontStyle: 'italic'}}>No data</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                
+                                                                {/* Resources */}
+                                                                <div className="resource-row-compact">
+                                                                    <span>CPU: {container.resources.requests.cpu}</span>
+                                                                    <span className="dot-sep">•</span>
+                                                                    <span>Memory: {container.resources.requests.memory}</span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
                         </div>
-                    </section>
+                        ) : (
+                            <div className="enhanced-pod-view">
+                                {(() => {
+                                    const podKey = selectedPod;
+                                    const podData = metrics.pods[podKey];
+                                    if (!podData) return null;
+                                    
+                                    const dnsStats = podData.dns_latency;
+                                    const tcpStats = podData.tcp_metrics;
+                                    const [namespace, podName] = podKey.split('/');
+                                    
+                                    const dnsAvgLatencyUs = dnsStats ? (dnsStats.avg_latency_ns / 1000) : 0;
+                                    const dnsMinLatencyUs = dnsStats ? (dnsStats.min_latency_ns / 1000) : 0;
+                                    const dnsMaxLatencyUs = dnsStats ? (dnsStats.max_latency_ns / 1000) : 0;
+                                    
+                                    const containerMetrics: Record<string, any> = {};
+                                    if (metrics.containers) {
+                                        Object.entries(metrics.containers).forEach(([containerKey, containerData]) => {
+                                            const parts = containerKey.split('/');
+                                            const containerPodKey = `${parts[0]}/${parts[1]}`;
+                                            if (containerPodKey === podKey) {
+                                                const containerName = parts[2];
+                                                containerMetrics[containerName] = containerData;
+                                            }
+                                        });
+                                    }
+                                    
+                                    const podSchedMetrics = schedMetrics?.pod_metrics?.[podKey];
+                                    
+                                    return (
+                                        <div className="enhanced-pod-card">
+                                            {/* Enhanced Header */}
+                                            <div className="enhanced-pod-header">
+                                                <div className="enhanced-pod-title">
+                                                    <span className="enhanced-namespace">{namespace}</span>
+                                                    <span className="enhanced-pod-name">{podName}</span>
+                                                </div>
+                                                <button 
+                                                    onClick={() => setSelectedPod('all')}
+                                                    style={{
+                                                        padding: '0.5rem 1rem',
+                                                        background: 'rgba(71, 85, 105, 0.5)',
+                                                        border: '1px solid rgba(71, 85, 105, 0.7)',
+                                                        borderRadius: '6px',
+                                                        color: '#e2e8f0',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.875rem'
+                                                    }}
+                                                >
+                                                    View All Pods
+                                                </button>
+                                            </div>
+
+                                            {/* Metrics Overview Grid */}
+                                            <div className="enhanced-metrics-overview">
+                                                {dnsStats && (
+                                                    <div className="enhanced-metric-card">
+                                                        <div className="enhanced-metric-header">DNS Performance</div>
+                                                        <div className="enhanced-metric-value">{dnsAvgLatencyUs.toFixed(2)} μs</div>
+                                                        <div className="enhanced-metric-details">
+                                                            <span>Min: {dnsMinLatencyUs.toFixed(2)} μs</span>
+                                                            <span>Max: {dnsMaxLatencyUs.toFixed(2)} μs</span>
+                                                            <span>Events: {dnsStats.total_events.toLocaleString()}</span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
+                                                {tcpStats && tcpStats.total_events > 0 && (
+                                                    <div className="enhanced-metric-card">
+                                                        <div className="enhanced-metric-header">TCP Metrics</div>
+                                                        <div className="enhanced-metric-value">{((tcpStats.avg_rtt_us || 0) / 1000).toFixed(2)} ms</div>
+                                                        <div className="enhanced-metric-details">
+                                                            <span>Connections: {(tcpStats.connection_count || 0).toLocaleString()}</span>
+                                                            <span>Events: {(tcpStats.total_events || 0).toLocaleString()}</span>
+                                                            <span>Retrans: {(tcpStats.total_retransmissions || 0).toLocaleString()}</span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
+                                                {podSchedMetrics && (
+                                                    <div className="enhanced-metric-card">
+                                                        <div className="enhanced-metric-header">CPU Scheduling</div>
+                                                        <div className="enhanced-metric-value" style={{
+                                                            color: podSchedMetrics.avg_runqueue_latency_us > 10000 ? '#ef4444' : 
+                                                                   podSchedMetrics.avg_runqueue_latency_us > 5000 ? '#f59e0b' : '#10b981'
+                                                        }}>
+                                                            {(podSchedMetrics.avg_runqueue_latency_us || 0).toFixed(0)} μs
+                                                        </div>
+                                                        <div className="enhanced-metric-details">
+                                                            <span>Max: {(podSchedMetrics.max_runqueue_latency_us || 0).toFixed(0)} μs</span>
+                                                            <span>Events: {(podSchedMetrics.event_count || 0).toLocaleString()}</span>
+                                                            <span style={{
+                                                                color: podSchedMetrics.cpu_starvation_count > 0 ? '#ef4444' : '#10b981'
+                                                            }}>
+                                                                Starvation: {podSchedMetrics.cpu_starvation_count || 0}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Detailed Sections */}
+                                            <div className="enhanced-details-grid">
+                                                {/* DNS Details */}
+                                                {dnsStats && (
+                                                    <div className="enhanced-detail-section">
+                                                        <h4>DNS Latency Details</h4>
+                                                        <div className="detail-metrics">
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">Average Latency:</span>
+                                                                <span className="detail-value">{dnsAvgLatencyUs.toFixed(2)} μs</span>
+                                                            </div>
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">Minimum Latency:</span>
+                                                                <span className="detail-value">{dnsMinLatencyUs.toFixed(2)} μs</span>
+                                                            </div>
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">Maximum Latency:</span>
+                                                                <span className="detail-value">{dnsMaxLatencyUs.toFixed(2)} μs</span>
+                                                            </div>
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">Total Queries:</span>
+                                                                <span className="detail-value">{dnsStats.total_events.toLocaleString()}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* TCP Details */}
+                                                {tcpStats && tcpStats.total_events > 0 && (
+                                                    <div className="enhanced-detail-section">
+                                                        <h4>TCP Connection Details</h4>
+                                                        <div className="detail-metrics">
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">Active Connections:</span>
+                                                                <span className="detail-value">{(tcpStats.connection_count || 0).toLocaleString()}</span>
+                                                            </div>
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">Total Events:</span>
+                                                                <span className="detail-value">{(tcpStats.total_events || 0).toLocaleString()}</span>
+                                                            </div>
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">Retransmissions:</span>
+                                                                <span className="detail-value">{(tcpStats.total_retransmissions || 0).toLocaleString()}</span>
+                                                            </div>
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">Average RTT:</span>
+                                                                <span className="detail-value">{((tcpStats.avg_rtt_us || 0) / 1000).toFixed(2)} ms</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* CPU Scheduling Details */}
+                                                {podSchedMetrics && (
+                                                    <div className="enhanced-detail-section">
+                                                        <h4>CPU Scheduling Details</h4>
+                                                        <div className="detail-metrics">
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">Average Run Queue Latency:</span>
+                                                                <span className="detail-value" style={{
+                                                                    color: podSchedMetrics.avg_runqueue_latency_us > 10000 ? '#ef4444' : 
+                                                                           podSchedMetrics.avg_runqueue_latency_us > 5000 ? '#f59e0b' : '#10b981'
+                                                                }}>
+                                                                    {(podSchedMetrics.avg_runqueue_latency_us || 0).toFixed(0)} μs
+                                                                </span>
+                                                            </div>
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">Maximum Latency:</span>
+                                                                <span className="detail-value" style={{
+                                                                    color: podSchedMetrics.max_runqueue_latency_us > 10000 ? '#ef4444' : '#10b981'
+                                                                }}>
+                                                                    {(podSchedMetrics.max_runqueue_latency_us || 0).toFixed(0)} μs
+                                                                </span>
+                                                            </div>
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">Scheduling Events:</span>
+                                                                <span className="detail-value">{(podSchedMetrics.event_count || 0).toLocaleString()}</span>
+                                                            </div>
+                                                            <div className="detail-row">
+                                                                <span className="detail-label">CPU Starvation Events:</span>
+                                                                <span className="detail-value" style={{
+                                                                    color: podSchedMetrics.cpu_starvation_count > 0 ? '#ef4444' : '#10b981'
+                                                                }}>
+                                                                    {podSchedMetrics.cpu_starvation_count || 0} (delays {'>'} 10ms)
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Container Details */}
+                                            {podDetails?.pods[podKey] && podDetails.pods[podKey].containers?.length > 0 && (
+                                                <div className="enhanced-containers-section">
+                                                    <h4>Container Details ({podDetails.pods[podKey].containers.length})</h4>
+                                                    <div className="enhanced-containers-grid">
+                                                        {podDetails.pods[podKey].containers.map((container: any) => {
+                                                            const containerName = container.name;
+                                                            const containerData = containerMetrics[containerName] || {};
+                                                            const containerDns = containerData.dns_latency;
+                                                            const containerTcp = containerData.tcp_metrics;
+                                                            const containerKey = `${podKey}/${containerName}`;
+                                                            const containerSched = containerSchedMetrics[containerKey];
+                                                            const hasMetrics = (containerDns && containerDns.total_events > 0) || 
+                                                                              (containerTcp && containerTcp.total_events > 0);
+
+                                                            return (
+                                                                <div key={containerName} className="enhanced-container-card">
+                                                                    <div className="enhanced-container-header">
+                                                                        <span className="enhanced-container-name">{containerName}</span>
+                                                                        <span className={`enhanced-container-status ${container.ready ? 'ready' : 'not-ready'}`}>
+                                                                            {container.ready ? 'Ready' : 'Not Ready'}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="enhanced-container-image">{container.image}</div>
+                                                                    
+                                                                    <div className="enhanced-container-metrics-section">
+                                                                        {/* DNS Metrics - Always show */}
+                                                                        <div className="enhanced-container-metric-block">
+                                                                            <div className="enhanced-container-metric-title">DNS Metrics</div>
+                                                                            {containerDns && containerDns.total_events > 0 ? (
+                                                                                <>
+                                                                                    <div className="enhanced-container-metric-row">
+                                                                                        <span className="metric-label">Avg Latency:</span>
+                                                                                        <span className="metric-value">{((containerDns.avg_latency_ns || 0) / 1000).toFixed(2)} μs</span>
+                                                                                    </div>
+                                                                                    <div className="enhanced-container-metric-row">
+                                                                                        <span className="metric-label">Events:</span>
+                                                                                        <span className="metric-value">{(containerDns.total_events || 0).toLocaleString()}</span>
+                                                                                    </div>
+                                                                                    <div className="enhanced-container-metric-row">
+                                                                                        <span className="metric-label">Max Latency:</span>
+                                                                                        <span className="metric-value">{((containerDns.max_latency_ns || 0) / 1000).toFixed(2)} μs</span>
+                                                                                    </div>
+                                                                                </>
+                                                                            ) : (
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-value" style={{color: '#64748b', fontStyle: 'italic', width: '100%'}}>No DNS data</span>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* TCP Metrics - Always show */}
+                                                                        <div className="enhanced-container-metric-block">
+                                                                            <div className="enhanced-container-metric-title">TCP Metrics</div>
+                                                                            {containerTcp && containerTcp.total_events > 0 ? (
+                                                                                <>
+                                                                                    <div className="enhanced-container-metric-row">
+                                                                                        <span className="metric-label">Events:</span>
+                                                                                        <span className="metric-value">{(containerTcp.total_events || 0).toLocaleString()}</span>
+                                                                                    </div>
+                                                                                    <div className="enhanced-container-metric-row">
+                                                                                        <span className="metric-label">Retransmissions:</span>
+                                                                                        <span className="metric-value">{(containerTcp.total_retransmissions || 0).toLocaleString()}</span>
+                                                                                    </div>
+                                                                                    <div className="enhanced-container-metric-row">
+                                                                                        <span className="metric-label">Avg RTT:</span>
+                                                                                        <span className="metric-value">{((containerTcp.avg_rtt_us || 0) / 1000).toFixed(2)} ms</span>
+                                                                                    </div>
+                                                                                </>
+                                                                            ) : (
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-value" style={{color: '#64748b', fontStyle: 'italic', width: '100%'}}>No TCP data</span>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+
+                                                                        {/* CPU Scheduling - Per-container */}
+                                                                        <div className="enhanced-container-metric-block">
+                                                                            <div className="enhanced-container-metric-title">CPU Scheduling</div>
+                                                                            {containerSched ? (
+                                                                                <>
+                                                                                    <div className="enhanced-container-metric-row">
+                                                                                        <span className="metric-label">Avg Latency:</span>
+                                                                                        <span className="metric-value" style={{
+                                                                                            color: (containerSched.avg_runqueue_latency_us || 0) > 10000 ? '#ef4444' : 
+                                                                                                   (containerSched.avg_runqueue_latency_us || 0) > 5000 ? '#f59e0b' : '#10b981'
+                                                                                        }}>
+                                                                                            {(containerSched.avg_runqueue_latency_us || 0).toFixed(0)} μs
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <div className="enhanced-container-metric-row">
+                                                                                        <span className="metric-label">Events:</span>
+                                                                                        <span className="metric-value">{(containerSched.event_count || 0).toLocaleString()}</span>
+                                                                                    </div>
+                                                                                    <div className="enhanced-container-metric-row">
+                                                                                        <span className="metric-label">Max Latency:</span>
+                                                                                        <span className="metric-value" style={{
+                                                                                            color: (containerSched.max_runqueue_latency_us || 0) > 10000 ? '#ef4444' : '#10b981'
+                                                                                        }}>
+                                                                                            {(containerSched.max_runqueue_latency_us || 0).toFixed(0)} μs
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <div className="enhanced-container-metric-row">
+                                                                                        <span className="metric-label">Starvation:</span>
+                                                                                        <span className="metric-value" style={{
+                                                                                            color: (containerSched.cpu_starvation_count || 0) > 0 ? '#ef4444' : '#10b981'
+                                                                                        }}>
+                                                                                            {containerSched.cpu_starvation_count || 0}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                </>
+                                                                            ) : (
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-value" style={{color: '#64748b', fontStyle: 'italic', width: '100%'}}>
+                                                                                        No scheduling data yet
+                                                                                    </span>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                    
+                                                                    <div className="enhanced-container-resources">
+                                                                        <div className="resource-item">
+                                                                            <span className="resource-label">CPU:</span>
+                                                                            <span className="resource-value">{container.resources?.requests?.cpu || 'N/A'}</span>
+                                                                        </div>
+                                                                        <div className="resource-item">
+                                                                            <span className="resource-label">Memory:</span>
+                                                                            <span className="resource-value">{container.resources?.requests?.memory || 'N/A'}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
                 )}
 
                 {/* Node System Metrics */}

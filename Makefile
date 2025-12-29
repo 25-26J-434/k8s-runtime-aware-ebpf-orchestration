@@ -17,6 +17,7 @@ DAEMON_IMAGE := ebpf-daemon
 SERVICE_A_IMAGE := service-a
 SERVICE_B_IMAGE := service-b
 TCP_CLIENT_IMAGE := tcp-client
+CPU_STRESS_IMAGE := cpu-stress
 IMAGE_TAG ?= latest
 
 all: build
@@ -41,6 +42,7 @@ build-images: build-ebpf ## Build all Docker images
 	docker build -t $(SERVICE_A_IMAGE):$(IMAGE_TAG) $(EXAMPLES_DIR)/service-a
 	docker build -t $(SERVICE_B_IMAGE):$(IMAGE_TAG) $(EXAMPLES_DIR)/service-b
 	docker build -t $(TCP_CLIENT_IMAGE):$(IMAGE_TAG) $(EXAMPLES_DIR)/tcp-client
+	docker build -t $(CPU_STRESS_IMAGE):$(IMAGE_TAG) $(EXAMPLES_DIR)/cpu-stress
 	@echo "Images built successfully"
 
 push-images: build-images ## Push images to registry (if using remote registry)
@@ -102,6 +104,7 @@ kind-load-images: build-images ## Load images into kind
 	kind load docker-image $(SERVICE_A_IMAGE):$(IMAGE_TAG) --name ebpf-cluster
 	kind load docker-image $(SERVICE_B_IMAGE):$(IMAGE_TAG) --name ebpf-cluster
 	kind load docker-image $(TCP_CLIENT_IMAGE):$(IMAGE_TAG) --name ebpf-cluster
+	kind load docker-image $(CPU_STRESS_IMAGE):$(IMAGE_TAG) --name ebpf-cluster
 	@echo "Images loaded!"
 
 ## Monitoring and debugging

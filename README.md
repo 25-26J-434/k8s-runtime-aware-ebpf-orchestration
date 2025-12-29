@@ -181,6 +181,7 @@ const { metrics } = useMetrics(3000);
 
 ### Component 2: Intelligent Traffic Routing (Planned)
 - Dynamic traffic routing based on real-time telemetry
+- When a rule says **redirect** (e.g., high latency), apply a Cilium `CiliumLocalRedirectPolicy` to steer the frontend Service to a safe backend; see `k8s/component-2/README-routing.md` + `apply-local-redirect.sh`. Ensure Cilium is installed with `--set localRedirectPolicy=true` (Helm) so the CRD exists.
 
 ### Component 3: Latency-Aware Scheduling (Planned)
 - Pod scheduling decisions based on network performance metrics
