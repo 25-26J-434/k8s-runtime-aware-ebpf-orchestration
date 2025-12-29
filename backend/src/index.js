@@ -94,6 +94,12 @@ function normalizeRedirectionEvent(body) {
   if (!body.policy_name) return { error: 'policy_name is required' };
   data.policy_name = body.policy_name;
   if (body.frontend_service !== undefined) data.frontend_service = body.frontend_service;
+  if (body.planned_backend_service !== undefined) data.planned_backend_service = body.planned_backend_service;
+  if (body.planned_backend_label !== undefined) data.planned_backend_label = body.planned_backend_label;
+  if (body.planned_backend_port !== undefined) data.planned_backend_port = String(body.planned_backend_port);
+  if (body.final_backend_service !== undefined) data.final_backend_service = body.final_backend_service;
+  if (body.final_backend_label !== undefined) data.final_backend_label = body.final_backend_label;
+  if (body.final_backend_port !== undefined) data.final_backend_port = String(body.final_backend_port);
   if (body.redirect_backend_label !== undefined) data.redirect_backend_label = body.redirect_backend_label;
   if (body.redirect_backend_port !== undefined) data.redirect_backend_port = String(body.redirect_backend_port);
   if (body.accepted_service !== undefined) data.accepted_service = body.accepted_service;

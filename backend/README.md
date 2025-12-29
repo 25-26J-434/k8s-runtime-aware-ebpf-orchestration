@@ -59,6 +59,12 @@ npm start              # or npm run dev for watch mode
 {
   "policy_name": "redirect-service-a-to-c",
   "frontend_service": "service-a",
+  "planned_backend_service": "service-b",
+  "planned_backend_label": "app=service-b",
+  "planned_backend_port": "5001",
+  "final_backend_service": "service-c",
+  "final_backend_label": "app=service-c",
+  "final_backend_port": "5003",
   "redirect_backend_label": "app=service-c",
   "redirect_backend_port": "5003",
   "violation_triggered": true,

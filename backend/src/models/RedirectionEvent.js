@@ -4,6 +4,12 @@ const RedirectionEventSchema = new Schema(
   {
     policy_name: { type: String, required: true, index: true },
     frontend_service: { type: String },
+    planned_backend_service: { type: String },
+    planned_backend_label: { type: String },
+    planned_backend_port: { type: String },
+    final_backend_service: { type: String },
+    final_backend_label: { type: String },
+    final_backend_port: { type: String },
     redirect_backend_label: { type: String },
     redirect_backend_port: { type: String },
     violation_triggered: { type: Boolean, required: true },
