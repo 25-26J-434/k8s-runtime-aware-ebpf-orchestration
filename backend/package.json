@@ -1,0 +1,17 @@
+{
+  "name": "component2-backend",
+  "version": "0.1.0",
+  "description": "Express API for telemetry-driven redirect rules (Component 2) with MongoDB storage",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mongoose": "^7.6.1",
+    "morgan": "^1.10.0"
+  }
+}

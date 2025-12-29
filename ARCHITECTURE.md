@@ -286,7 +286,7 @@ func main() {
     // go federator.Start()
     
     // Start HTTP API (for external consumers only)
-    go api.StartServer()
+    go api.StartServer(":8080")
     
     // Wait for shutdown
     <-sig
@@ -428,7 +428,5 @@ In-Memory Maps (sync.Map)
 - Cross-cluster communication
 
 **Everything in this repo shares the same eBPF data through simple Go function calls.**
-
-
 
 

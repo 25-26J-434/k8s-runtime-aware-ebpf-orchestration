@@ -8,6 +8,7 @@ import (
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/api"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/loader"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/plugins/routing"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 )
 
@@ -114,6 +115,18 @@ func main() {
 	go telemetry.StartTCPMetricsCollector()
 	go telemetry.StartSchedLatencyCollector()
 
+	// Start the sample latency-based router (Component 2) so routing decisions can
+	// consume telemetry directly in-process.
+	router := routing.NewRouter(nodeName)
+	go router.Start()
+
+	// Components can call telemetry functions directly:
+	//   - telemetry.GetPodDNSMetrics()
+	//   - telemetry.GetPodRTTMetrics()
+	//   - telemetry.GlobalRegistry.Get(type).Subscribe()
+	// No HTTP, no ports, just simple function calls!
+
+	// Start API server for external consumers (dashboard, Prometheus, etc.)
 	go api.StartServer()
 
 	log.Println("[Main] eBPF Daemon is running. Press Ctrl+C to exit.")

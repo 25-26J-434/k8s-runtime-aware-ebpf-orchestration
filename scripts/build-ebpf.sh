@@ -1,3 +1,5 @@
+#Chaneg this content to architecture-aware content : Will not effect to the strcture
+
 #!/bin/bash
 # eBPF Build Script for Runtime-Aware Telemetry Daemon
 # This script compiles the eBPF programs and prepares them for embedding in the Go binary
