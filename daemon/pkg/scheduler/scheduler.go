@@ -3,58 +3,86 @@ package scheduler
 import (
 	"context"
 	"log"
-	"time"
 
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scaling"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes"
 )
 
-const SchedulerName = "intelligent-scheduler"
-
-type Scheduler struct {
-	client *kubernetes.Clientset
-}
-
-func NewScheduler(client *kubernetes.Clientset) *Scheduler {
-	return &Scheduler{
-		client: client,
+func Start(k8s *kubernetes.Clientset) {
+	if k8s == nil {
+		log.Println("[Scheduler] k8s client is nil - scheduler not started")
+		return
 	}
-}
-
-func (s *Scheduler) Run() {
-	log.Println("[SCHEDULER] Intelligent scheduler started")
+	log.Println("[Scheduler] Custom scheduler started")
 
 	for {
-		pods, err := s.client.CoreV1().
-			Pods("").
-			List(context.Background(), 
-				metav1.ListOptions{})
+		pods, _ := k8s.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{
+			FieldSelector: "spec.schedulerName=ebpf-scheduler,status.phase=Pending",
+		})
 
-		if err != nil {
-			log.Println("[SCHEDULER] Failed to list pods:", err)
-			time.Sleep(2 * time.Second)
+		if len(pods.Items) == 0 {
 			continue
 		}
 
+		rules, _ := GetRules()
+
 		for _, pod := range pods.Items {
-
-			// Only pods meant for THIS scheduler
-			if pod.Spec.SchedulerName != SchedulerName {
+			node := pickNode(k8s, pod, rules)
+			if node == "" {
 				continue
 			}
 
-			// Already scheduled → skip
-			if pod.Spec.NodeName != "" {
+			bindPod(k8s, pod, node)
+		}
+	}
+}
+
+func pickNode(k8s *kubernetes.Clientset, pod v1.Pod, rules []Rule) string {
+	nodes, _ := k8s.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+
+	bestNode := ""
+	bestScore := -1
+
+	for _, n := range nodes.Items {
+		score := 0
+
+		for _, r := range rules {
+			if r.Namespace != pod.Namespace {
+				continue
+			}
+			if !MatchLabels(r, pod.Labels) {
 				continue
 			}
 
-			log.Printf(
-				"[SCHEDULER] Pending pod detected: %s/%s\n",
-				pod.Namespace,
-				pod.Name,
-			)
+			val, _ := scaling.GetMetricValue(r.Metric)
+			if Compare(val, r.Threshold, r.Operator) {
+				score++
+			}
 		}
 
-		time.Sleep(2 * time.Second)
+		if score > bestScore {
+			bestScore = score
+			bestNode = n.Name
+		}
 	}
+
+	return bestNode
+}
+
+func bindPod(k8s *kubernetes.Clientset, pod v1.Pod, node string) {
+	binding := &v1.Binding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+		},
+		Target: v1.ObjectReference{
+			Kind: "Node",
+			Name: node,
+		},
+	}
+
+	_ = k8s.CoreV1().Pods(pod.Namespace).Bind(context.TODO(), binding, metav1.CreateOptions{})
+	log.Printf("[Scheduler] Bound pod %s → %s\n", pod.Name, node)
 }

@@ -8,8 +8,9 @@ import (
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/api"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/loader"
-	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scaling"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scheduler"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 )
 
 func main() {
@@ -69,12 +70,26 @@ func main() {
 	telemetry.InitPacketDistributionCollector(nodeName)
 
 	log.Println("[Main] Initializing Service Health collector...")
+
+	if err := api.InitKubernetesClient(); err != nil {
+		log.Fatalf("[Main] Failed to init Kubernetes client: %v", err)
+	}
 	k8sClient := api.GetK8sClient()
 	telemetry.InitServiceHealthCollector(nodeName, k8sClient)
 
 	log.Println("[Main] Starting Intelligent Scheduler...")
-	go scheduler.NewScheduler(k8sClient).Run()
+	go scheduler.Start(k8sClient)
 
+	log.Println("[Main] Initializing Scaling store (MongoDB)...")
+	if err := scaling.InitMongo(); err != nil {
+		log.Fatalf("[Scaling] Mongo init failed: %v", err)
+	}
+
+	// init scheduler store using same mongo client
+	scheduler.InitStore(scaling.MongoDB())
+
+	log.Println("[Main] Starting Scaling Controller...")
+	go scaling.StartScalingController(k8sClient)
 	log.Println("[Main] Initializing NAT Metadata collector...")
 	telemetry.InitNATMetadataCollector(nodeName)
 

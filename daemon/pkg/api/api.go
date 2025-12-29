@@ -9,8 +9,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scaling"
-	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scheduler"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -89,14 +87,13 @@ func StartServer() {
 	http.HandleFunc("/api/rtt/pods", corsMiddleware(handlePodRTTMetrics))
 	http.HandleFunc("/api/cluster/topology", corsMiddleware(handleClusterTopology))
 	http.HandleFunc("/api/cluster/services", corsMiddleware(handleClusterServices))
-	http.HandleFunc("/api/scale", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		scaling.HandleScaling(k8sClient)(w, r)
-	}))
-	http.HandleFunc("/api/scheduler/rules", corsMiddleware(scheduler.HandleSchedulerRules()))
+	// http.HandleFunc("/api/scale", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	// 	if r.Method != http.MethodPost {
+	// 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	// 		return
+	// 	}
+	// 	scaling.HandleScaling(k8sClient)(w, r)
+	// }))
 
 	log.Println("[API] Starting HTTP server on :8080")
 	log.Println("[API] Endpoints:")
