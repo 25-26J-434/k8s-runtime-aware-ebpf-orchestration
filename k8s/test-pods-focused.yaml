@@ -1,0 +1,275 @@
+# Dynamic Test Pods - 4 pods, each with 2 containers ALWAYS generating eBPF metrics
+# No delays - continuous DNS, TCP, and CPU metrics
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-services
+  labels:
+    app.kubernetes.io/name: test-services
+---
+# Pod 1: DNS-focused pod with 2 containers - ALWAYS generating DNS
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dns-test-pod
+  namespace: test-services
+  labels:
+    app: dns-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dns-test
+  template:
+    metadata:
+      labels:
+        app: dns-test
+    spec:
+      containers:
+        - name: dns-container-1
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # ALWAYS generating DNS queries - use working DNS servers
+              while true; do
+                # Use public DNS servers that always work
+                nslookup google.com 8.8.8.8 2>/dev/null || true
+                nslookup github.com 8.8.8.8 2>/dev/null || true
+                nslookup kubernetes.io 8.8.8.8 2>/dev/null || true
+                # Also try cluster DNS
+                nslookup kubernetes.default.svc.cluster.local 2>/dev/null || true
+                # Small delay to prevent overwhelming
+                sleep 0.1
+              done
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+        - name: dns-container-2
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # ALWAYS generating DNS + TCP + CPU
+              while true; do
+                # Use public DNS that works
+                nslookup google.com 8.8.8.8 2>/dev/null || true
+                nslookup github.com 8.8.8.8 2>/dev/null || true
+                # TCP connection to working service
+                curl -s http://kubernetes.default.svc.cluster.local --max-time 1 --connect-timeout 1 2>/dev/null || true
+                curl -s https://www.google.com --max-time 1 --connect-timeout 1 2>/dev/null || true
+                # CPU work
+                i=0
+                while [ $i -lt 5000 ]; do
+                  i=$((i+1))
+                done
+                sleep 0.1
+              done
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 128Mi
+---
+# Pod 2: CPU-intensive pod with 2 containers - ALWAYS generating CPU scheduling
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpu-stress-pod
+  namespace: test-services
+  labels:
+    app: cpu-stress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cpu-stress
+  template:
+    metadata:
+      labels:
+        app: cpu-stress
+    spec:
+      containers:
+        - name: cpu-container-1
+          image: busybox:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # ALWAYS CPU-intensive - generates CPU scheduling eBPF events
+              while true; do
+                i=0
+                while [ $i -lt 100000 ]; do
+                  i=$((i+1))
+                done
+                # No sleep - continuous CPU work
+              done
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+        - name: cpu-container-2
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # ALWAYS CPU + TCP
+              while true; do
+                # CPU work
+                i=0
+                while [ $i -lt 50000 ]; do
+                  i=$((i+1))
+                done
+                # TCP connection
+                curl -s http://kubernetes.default.svc.cluster.local --max-time 1 --connect-timeout 1 2>/dev/null || true
+                sleep 0.1
+              done
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 400m
+              memory: 128Mi
+---
+# Pod 3: TCP-focused pod with 2 containers - ALWAYS generating TCP
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tcp-test-pod
+  namespace: test-services
+  labels:
+    app: tcp-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tcp-test
+  template:
+    metadata:
+      labels:
+        app: tcp-test
+    spec:
+      containers:
+        - name: tcp-container-1
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # ALWAYS TCP connections + GENERATE PACKET LOSS/RETRANS
+              while true; do
+                # Normal connections
+                curl -s http://kubernetes.default.svc.cluster.local --max-time 1 --connect-timeout 1 2>/dev/null || true
+                curl -s https://www.google.com --max-time 1 --connect-timeout 1 2>/dev/null || true
+                # Force retransmissions - connect to filtered/unreachable IPs with very short timeout
+                timeout 0.5 curl -s http://10.255.255.1:80 --max-time 0.3 --connect-timeout 0.3 2>/dev/null || true
+                timeout 0.5 curl -s http://192.0.2.1:80 --max-time 0.3 --connect-timeout 0.3 2>/dev/null || true
+                sleep 0.2
+              done
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+        - name: tcp-container-2
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # ALWAYS TCP + DNS + GENERATE RETRANS
+              while true; do
+                curl -s http://kubernetes.default.svc.cluster.local --max-time 1 --connect-timeout 1 2>/dev/null || true
+                curl -s https://www.google.com --max-time 1 --connect-timeout 1 2>/dev/null || true
+                nslookup google.com 8.8.8.8 2>/dev/null || true
+                nslookup github.com 8.8.8.8 2>/dev/null || true
+                # Force packet loss - unreachable IPs
+                timeout 0.5 curl -s http://203.0.113.1:80 --max-time 0.3 2>/dev/null || true
+                sleep 0.2
+              done
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+# Pod 4: Mixed metrics pod with 2 containers - ALWAYS generating all metrics
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mixed-metrics-pod
+  namespace: test-services
+  labels:
+    app: mixed-metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mixed-metrics
+  template:
+    metadata:
+      labels:
+        app: mixed-metrics
+    spec:
+      containers:
+        - name: mixed-container-1
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # ALWAYS DNS + TCP + RETRANS EVENTS
+              while true; do
+                nslookup google.com 8.8.8.8 2>/dev/null || true
+                nslookup github.com 8.8.8.8 2>/dev/null || true
+                curl -s http://kubernetes.default.svc.cluster.local --max-time 1 --connect-timeout 1 2>/dev/null || true
+                curl -s https://www.google.com --max-time 1 --connect-timeout 1 2>/dev/null || true
+                # Generate retransmissions - connect to blackhole IP
+                timeout 0.5 curl -s http://198.51.100.1:80 --max-time 0.3 2>/dev/null || true
+                sleep 0.2
+              done
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+        - name: mixed-container-2
+          image: busybox:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # ALWAYS CPU-intensive
+              while true; do
+                i=0
+                while [ $i -lt 80000 ]; do
+                  i=$((i+1))
+                done
+                # No sleep - continuous CPU work
+              done
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 400m
+              memory: 128Mi

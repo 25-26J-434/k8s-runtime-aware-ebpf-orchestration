@@ -229,6 +229,22 @@ if [ -f "$COMPONENT_DIR/tcp_metrics.c" ]; then
     fi
 fi
 
+# Build Scheduler Latency eBPF program (if exists)
+if [ -f "$COMPONENT_DIR/sched_latency.c" ]; then
+    echo "[BUILD] Compiling sched_latency.c..."
+    clang $CLANG_FLAGS \
+        -c "$COMPONENT_DIR/sched_latency.c" \
+        -o "$COMPONENT_DIR/sched_latency.o" 2>&1 || {
+        echo "[WARN] Scheduler latency program compilation failed"
+        echo "[WARN] Continuing without scheduler latency..."
+    }
+    
+    if [ -f "$COMPONENT_DIR/sched_latency.o" ]; then
+        cp "$COMPONENT_DIR/sched_latency.o" "$OUTPUT_DIR/sched_latency.o"
+        echo "[OK] Copied sched_latency.o to $OUTPUT_DIR"
+    fi
+fi
+
 # Verify the compiled objects
 echo ""
 echo "[VERIFY] Checking compiled eBPF objects..."

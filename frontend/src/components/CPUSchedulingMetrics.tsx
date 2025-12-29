@@ -1,0 +1,196 @@
+import { useState, useEffect } from 'react';
+import { api } from '../services/api';
+import './CPUSchedulingMetrics.css';
+
+interface SchedMetrics {
+    total_events: number;
+    avg_runqueue_latency_us: number;
+    max_runqueue_latency_us: number;
+    p95_runqueue_latency_us: number;
+    cpu_starvation_count: number;
+}
+
+interface PodSchedMetrics {
+    pod_name: string;
+    namespace: string;
+    avg_runqueue_latency_us: number;
+    max_runqueue_latency_us: number;
+    cpu_starvation_count: number;
+}
+
+export function CPUSchedulingMetrics() {
+    const [nodeMetrics, setNodeMetrics] = useState<SchedMetrics | null>(null);
+    const [topPods, setTopPods] = useState<PodSchedMetrics[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const data = await api.getSchedLatencyMetrics(10);
+                setNodeMetrics(data.node_metrics);
+                
+                // Get top 5 pods with highest latency
+                if (data.pod_metrics) {
+                    const pods = Object.values(data.pod_metrics) as PodSchedMetrics[];
+                    const sorted = pods
+                        .filter((p: PodSchedMetrics) => p.avg_runqueue_latency_us > 0)
+                        .sort((a: PodSchedMetrics, b: PodSchedMetrics) => 
+                            b.avg_runqueue_latency_us - a.avg_runqueue_latency_us
+                        )
+                        .slice(0, 5);
+                    setTopPods(sorted);
+                }
+                setLoading(false);
+            } catch (err) {
+                console.error('Failed to fetch scheduling metrics:', err);
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+        const interval = setInterval(fetchData, 5000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const formatLatency = (us: number | undefined): string => {
+        if (!us || isNaN(us)) return '0 μs';
+        if (us >= 1000) return `${(us / 1000).toFixed(1)} ms`;
+        return `${us.toFixed(0)} μs`;
+    };
+
+    const getLatencyColor = (us: number | undefined): string => {
+        if (!us) return '#10b981';
+        if (us > 10000) return '#ef4444';
+        if (us > 5000) return '#f59e0b';
+        return '#10b981';
+    };
+
+    if (loading) {
+        return (
+            <div className="cpu-sched-loading">
+                <div className="spinner-small"></div>
+                <span>Loading CPU scheduling data...</span>
+            </div>
+        );
+    }
+
+    if (!nodeMetrics || nodeMetrics.total_events === 0) {
+        return (
+            <div className="cpu-sched-empty">
+                <div className="empty-icon">SCHED</div>
+                <p>No CPU scheduling data available yet</p>
+                <span className="empty-hint">Waiting for scheduler events...</span>
+            </div>
+        );
+    }
+
+    return (
+        <div className="cpu-scheduling-container">
+            {/* Node-Level Summary Cards */}
+            <div className="sched-summary-grid">
+                <div className="sched-card highlight">
+                    <div className="sched-card-content">
+                        <div className="sched-card-label">Avg Run Queue Latency</div>
+                        <div className="sched-card-value" style={{ 
+                            color: getLatencyColor(nodeMetrics.avg_runqueue_latency_us) 
+                        }}>
+                            {formatLatency(nodeMetrics.avg_runqueue_latency_us)}
+                        </div>
+                        <div className="sched-card-subtitle">
+                            P95: {formatLatency(nodeMetrics.p95_runqueue_latency_us)}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="sched-card">
+                    <div className="sched-card-content">
+                        <div className="sched-card-label">Max Latency</div>
+                        <div className="sched-card-value" style={{ 
+                            color: getLatencyColor(nodeMetrics.max_runqueue_latency_us) 
+                        }}>
+                            {formatLatency(nodeMetrics.max_runqueue_latency_us)}
+                        </div>
+                        <div className="sched-card-subtitle">Peak delay</div>
+                    </div>
+                </div>
+
+                <div className="sched-card">
+                    <div className="sched-card-content">
+                        <div className="sched-card-label">Total Events</div>
+                        <div className="sched-card-value">
+                            {nodeMetrics.total_events.toLocaleString()}
+                        </div>
+                        <div className="sched-card-subtitle">Scheduling samples</div>
+                    </div>
+                </div>
+
+                <div className={`sched-card ${nodeMetrics.cpu_starvation_count > 0 ? 'alert' : ''}`}>
+                    <div className="sched-card-content">
+                        <div className="sched-card-label">CPU Starvation</div>
+                        <div className="sched-card-value" style={{ 
+                            color: nodeMetrics.cpu_starvation_count > 0 ? '#ef4444' : '#10b981' 
+                        }}>
+                            {nodeMetrics.cpu_starvation_count}
+                        </div>
+                        <div className="sched-card-subtitle">Delays {'>'} 10ms</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Top Pods by Latency */}
+            {topPods.length > 0 && (
+                <div className="sched-top-pods">
+                    <div className="sched-section-header">
+                        <h4>Top Pods by Scheduling Latency</h4>
+                        <span className="sched-badge">Highest Run Queue Delays</span>
+                    </div>
+                    <div className="sched-pods-list">
+                        {topPods.map((pod, idx) => (
+                            <div key={idx} className="sched-pod-item">
+                                <div className="sched-pod-rank">#{idx + 1}</div>
+                                <div className="sched-pod-info">
+                                    <div className="sched-pod-name">{pod.pod_name}</div>
+                                    <div className="sched-pod-ns">{pod.namespace}</div>
+                                </div>
+                                <div className="sched-pod-metrics">
+                                    <div className="sched-pod-metric">
+                                        <span className="metric-label">Avg:</span>
+                                        <span className="metric-value" style={{ 
+                                            color: getLatencyColor(pod.avg_runqueue_latency_us) 
+                                        }}>
+                                            {formatLatency(pod.avg_runqueue_latency_us)}
+                                        </span>
+                                    </div>
+                                    <div className="sched-pod-metric">
+                                        <span className="metric-label">Max:</span>
+                                        <span className="metric-value" style={{ 
+                                            color: getLatencyColor(pod.max_runqueue_latency_us) 
+                                        }}>
+                                            {formatLatency(pod.max_runqueue_latency_us)}
+                                        </span>
+                                    </div>
+                                    {pod.cpu_starvation_count > 0 && (
+                                        <div className="sched-starvation-badge">
+                                            CRIT: {pod.cpu_starvation_count}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Info Footer */}
+            <div className="sched-info-footer">
+                <div className="info-item">
+                    <strong>Run Queue Latency:</strong> Time processes wait in CPU queue before being scheduled
+                </div>
+                <div className="info-item">
+                    <strong>Source:</strong> eBPF tracepoints on <code>sched:sched_wakeup</code> and <code>sched:sched_switch</code>
+                </div>
+            </div>
+        </div>
+    );
+}
+

@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"encoding/binary"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -78,9 +79,30 @@ type PodTCPMetrics struct {
 	RecentEvents     []TCPEventRecord // Recent events for this pod
 }
 
+// ContainerTCPMetrics holds per-container TCP metrics
+type ContainerTCPMetrics struct {
+	ContainerName    string
+	ContainerID      string
+	PodName          string
+	Namespace        string
+	TotalEvents      uint64
+	SmoothedRTTUs    uint64
+	MinRTTUs         uint64
+	Retransmissions  uint64
+	PacketLoss       uint64
+	BadHandshakes    uint64
+	StateTransitions map[string]uint64
+	LastSRTTUs       uint32
+	LastMinRTTUs     uint32
+	LastCWND         uint32
+	RecentEvents     []TCPEventRecord // Recent events for this container
+}
+
 var tcpMetrics TCPMetrics
-var podTCPMetrics = make(map[string]*PodTCPMetrics) // keyed by "namespace/podname"
+var podTCPMetrics = make(map[string]*PodTCPMetrics)            // keyed by "namespace/podname"
+var containerTCPMetrics = make(map[string]*ContainerTCPMetrics) // keyed by "namespace/podname/containername"
 var tcpMetricsMutex sync.RWMutex
+var containerTCPMetricsMutex sync.RWMutex
 
 func init() {
 	tcpMetrics.StateTransitions = make(map[string]uint64)
@@ -90,6 +112,7 @@ func init() {
 
 // Global TCP metrics collector instance
 var globalTCPMetricsCollector *TCPMetricsCollector
+var tcpContainerMapper *ContainerMapper
 
 // InitTCPMetricsCollector initializes the global TCP metrics collector
 func InitTCPMetricsCollector(nodeName string) {
@@ -100,6 +123,11 @@ func InitTCPMetricsCollector(nodeName string) {
 	} else {
 		log.Println("[TCP Metrics Collector] Registered with global registry")
 	}
+}
+
+// SetTCPContainerMapper sets the container mapper for TCP collector
+func SetTCPContainerMapper(cm *ContainerMapper) {
+	tcpContainerMapper = cm
 }
 
 // GetTCPMetrics returns the current node-level TCP metrics
@@ -173,6 +201,48 @@ func GetPodTCPMetrics() map[string]PodTCPMetrics {
 			LastMinRTTUs:     atomic.LoadUint32(&metrics.LastMinRTTUs),
 			LastCWND:         atomic.LoadUint32(&metrics.LastCWND),
 			RecentEvents:     podRecentEvents,
+		}
+	}
+	return result
+}
+
+// GetContainerTCPMetrics returns a copy of all per-container TCP metrics
+func GetContainerTCPMetrics() map[string]ContainerTCPMetrics {
+	containerTCPMetricsMutex.RLock()
+	defer containerTCPMetricsMutex.RUnlock()
+
+	result := make(map[string]ContainerTCPMetrics)
+	for key, metrics := range containerTCPMetrics {
+		containerStateTransitions := make(map[string]uint64)
+		if metrics.StateTransitions != nil {
+			for k, v := range metrics.StateTransitions {
+				containerStateTransitions[k] = v
+			}
+		}
+
+		// Copy recent events for this container (lock already held)
+		containerRecentEvents := make([]TCPEventRecord, 0)
+		if metrics.RecentEvents != nil {
+			containerRecentEvents = make([]TCPEventRecord, len(metrics.RecentEvents))
+			copy(containerRecentEvents, metrics.RecentEvents)
+		}
+
+		result[key] = ContainerTCPMetrics{
+			ContainerName:    metrics.ContainerName,
+			ContainerID:      metrics.ContainerID,
+			PodName:          metrics.PodName,
+			Namespace:        metrics.Namespace,
+			TotalEvents:      atomic.LoadUint64(&metrics.TotalEvents),
+			SmoothedRTTUs:    atomic.LoadUint64(&metrics.SmoothedRTTUs),
+			MinRTTUs:         atomic.LoadUint64(&metrics.MinRTTUs),
+			Retransmissions:  atomic.LoadUint64(&metrics.Retransmissions),
+			PacketLoss:       atomic.LoadUint64(&metrics.PacketLoss),
+			BadHandshakes:    atomic.LoadUint64(&metrics.BadHandshakes),
+			StateTransitions: containerStateTransitions,
+			LastSRTTUs:       atomic.LoadUint32(&metrics.LastSRTTUs),
+			LastMinRTTUs:     atomic.LoadUint32(&metrics.LastMinRTTUs),
+			LastCWND:         atomic.LoadUint32(&metrics.LastCWND),
+			RecentEvents:     containerRecentEvents,
 		}
 	}
 	return result
@@ -262,6 +332,11 @@ func parseTCPMetricsEvent(data []byte) TCPMetricsEvent {
 }
 
 func updateTCPMetrics(event TCPMetricsEvent) {
+	// Track active connections
+	if globalConnectionTracker != nil {
+		globalConnectionTracker.TrackConnection(event)
+	}
+	
 	// Update node-level metrics
 	atomic.AddUint64(&tcpMetrics.TotalEvents, 1)
 
@@ -302,11 +377,22 @@ func updateTCPMetrics(event TCPMetricsEvent) {
 		atomic.AddUint64(&tcpMetrics.BadHandshakes, 1)
 	}
 
-	// Update per-pod metrics (using source IP)
-	ipStr := intToIP(event.SAddr)
-	ipToPodMapMutex.RLock()
-	podKey := ipToPodMap[ipStr]
-	ipToPodMapMutex.RUnlock()
+	// Try PID-based mapping first (more reliable)
+	var podKey string
+	if tcpContainerMapper != nil {
+		containerInfo, err := tcpContainerMapper.GetContainerForPID(int32(event.Pid))
+		if err == nil && containerInfo != nil {
+			podKey = fmt.Sprintf("%s/%s", containerInfo.PodNamespace, containerInfo.PodName)
+		}
+	}
+
+	// Fallback to IP-based mapping if PID mapping failed
+	if podKey == "" {
+		ipStr := intToIP(event.SAddr)
+		ipToPodMapMutex.RLock()
+		podKey = ipToPodMap[ipStr]
+		ipToPodMapMutex.RUnlock()
+	}
 
 	if podKey != "" {
 		tcpMetricsMutex.Lock()
@@ -362,6 +448,71 @@ func updateTCPMetrics(event TCPMetricsEvent) {
 			tcpMetricsMutex.Unlock()
 		case 6: // Bad Handshake
 			atomic.AddUint64(&podMetrics.BadHandshakes, 1)
+		}
+	}
+
+	// Update per-container metrics if container mapper is available
+	if tcpContainerMapper != nil {
+		containerInfo, err := tcpContainerMapper.GetContainerForPID(int32(event.Pid))
+		if err == nil {
+			// Successfully identified container
+			containerKey := fmt.Sprintf("%s/%s/%s", containerInfo.PodNamespace, containerInfo.PodName, containerInfo.ContainerName)
+
+			containerTCPMetricsMutex.Lock()
+			if containerTCPMetrics[containerKey] == nil {
+				containerTCPMetrics[containerKey] = &ContainerTCPMetrics{
+					ContainerName:    containerInfo.ContainerName,
+					ContainerID:      containerInfo.ContainerID,
+					PodName:          containerInfo.PodName,
+					Namespace:        containerInfo.PodNamespace,
+					StateTransitions: make(map[string]uint64),
+					MinRTTUs:         ^uint64(0),
+				}
+			}
+			containerMetrics := containerTCPMetrics[containerKey]
+			containerTCPMetricsMutex.Unlock()
+
+			atomic.AddUint64(&containerMetrics.TotalEvents, 1)
+
+			if event.SRTTUs > 0 {
+				atomic.StoreUint32(&containerMetrics.LastSRTTUs, event.SRTTUs)
+				atomic.AddUint64(&containerMetrics.SmoothedRTTUs, uint64(event.SRTTUs))
+			}
+
+			if event.MinRTTUs > 0 {
+				if uint64(event.MinRTTUs) < atomic.LoadUint64(&containerMetrics.MinRTTUs) {
+					atomic.StoreUint64(&containerMetrics.MinRTTUs, uint64(event.MinRTTUs))
+				}
+				atomic.StoreUint32(&containerMetrics.LastMinRTTUs, event.MinRTTUs)
+			}
+
+			if event.CWND > 0 {
+				atomic.StoreUint32(&containerMetrics.LastCWND, event.CWND)
+			}
+
+			switch event.EventType {
+			case 2: // Retransmission
+				atomic.AddUint64(&containerMetrics.Retransmissions, 1)
+				// Record container-level retransmission event
+				recordContainerRetransmissionEvent(containerKey, containerMetrics, event)
+			case 4: // Packet Loss
+				atomic.AddUint64(&containerMetrics.PacketLoss, 1)
+				// Record container-level packet loss event
+				recordContainerPacketLossEvent(containerKey, containerMetrics, event)
+			case 5: // State Transition
+				stateStr := getTCPStateString(event.TCPState)
+				containerTCPMetricsMutex.Lock()
+				if containerMetrics.StateTransitions == nil {
+					containerMetrics.StateTransitions = make(map[string]uint64)
+				}
+				if containerMetrics.StateTransitions[stateStr] == 0 {
+					containerMetrics.StateTransitions[stateStr] = 0
+				}
+				containerMetrics.StateTransitions[stateStr]++
+				containerTCPMetricsMutex.Unlock()
+			case 6: // Bad Handshake
+				atomic.AddUint64(&containerMetrics.BadHandshakes, 1)
+			}
 		}
 	}
 }
@@ -524,6 +675,70 @@ func recordPodPacketLossEvent(podKey string, podMetrics *PodTCPMetrics, event TC
 		podMetrics.RecentEvents = podMetrics.RecentEvents[1:]
 	}
 	podMetrics.RecentEvents = append(podMetrics.RecentEvents, record)
+}
+
+// recordContainerRetransmissionEvent records a container-level retransmission event
+func recordContainerRetransmissionEvent(containerKey string, containerMetrics *ContainerTCPMetrics, event TCPMetricsEvent) {
+	containerTCPMetricsMutex.Lock()
+	defer containerTCPMetricsMutex.Unlock()
+
+	if containerMetrics.RecentEvents == nil {
+		containerMetrics.RecentEvents = make([]TCPEventRecord, 0, 30)
+	}
+
+	record := TCPEventRecord{
+		Timestamp:    time.Now(),
+		PodKey:       fmt.Sprintf("%s/%s", containerMetrics.Namespace, containerMetrics.PodName),
+		PodName:      containerMetrics.PodName,
+		Namespace:    containerMetrics.Namespace,
+		SourceIP:     intToIP(event.SAddr),
+		DestIP:       intToIP(event.DAddr),
+		SourcePort:   event.Sport,
+		DestPort:     event.Dport,
+		EventType:    "retransmission",
+		SRTTUs:       event.SRTTUs,
+		MinRTTUs:     event.MinRTTUs,
+		CWND:         event.CWND,
+		RetransCount: event.RetransCount,
+	}
+
+	// Keep only last 30 events per container
+	if len(containerMetrics.RecentEvents) >= 30 {
+		containerMetrics.RecentEvents = containerMetrics.RecentEvents[1:]
+	}
+	containerMetrics.RecentEvents = append(containerMetrics.RecentEvents, record)
+}
+
+// recordContainerPacketLossEvent records a container-level packet loss event
+func recordContainerPacketLossEvent(containerKey string, containerMetrics *ContainerTCPMetrics, event TCPMetricsEvent) {
+	containerTCPMetricsMutex.Lock()
+	defer containerTCPMetricsMutex.Unlock()
+
+	if containerMetrics.RecentEvents == nil {
+		containerMetrics.RecentEvents = make([]TCPEventRecord, 0, 30)
+	}
+
+	record := TCPEventRecord{
+		Timestamp:    time.Now(),
+		PodKey:       fmt.Sprintf("%s/%s", containerMetrics.Namespace, containerMetrics.PodName),
+		PodName:      containerMetrics.PodName,
+		Namespace:    containerMetrics.Namespace,
+		SourceIP:     intToIP(event.SAddr),
+		DestIP:       intToIP(event.DAddr),
+		SourcePort:   event.Sport,
+		DestPort:     event.Dport,
+		EventType:    "packet_loss",
+		SRTTUs:       event.SRTTUs,
+		MinRTTUs:     event.MinRTTUs,
+		CWND:         event.CWND,
+		RetransCount: event.RetransCount,
+	}
+
+	// Keep only last 30 events per container
+	if len(containerMetrics.RecentEvents) >= 30 {
+		containerMetrics.RecentEvents = containerMetrics.RecentEvents[1:]
+	}
+	containerMetrics.RecentEvents = append(containerMetrics.RecentEvents, record)
 }
 
 func getEventTypeString(eventType uint8) string {

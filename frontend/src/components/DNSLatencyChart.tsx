@@ -131,3 +131,5 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
 }
 
 
+
+

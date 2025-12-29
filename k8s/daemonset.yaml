@@ -130,6 +130,12 @@ rules:
     resources: ["nodes", "pods", "services", "endpoints"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "daemonsets"]
+    verbs: ["get", "list", "watch", "update", "patch", "delete"]
+  - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "watch", "create", "update"]
 ---
