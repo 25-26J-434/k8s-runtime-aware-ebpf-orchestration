@@ -43,9 +43,24 @@ type PodDNSMetrics struct {
 	MinLatencyNs   uint64
 }
 
+// ContainerDNSMetrics holds per-container DNS metrics
+type ContainerDNSMetrics struct {
+	ContainerName  string
+	ContainerID    string
+	PodName        string
+	Namespace      string
+	TotalEvents    uint64
+	TotalLatencyNs uint64
+	LastLatencyNs  uint64
+	MaxLatencyNs   uint64
+	MinLatencyNs   uint64
+}
+
 var dnsMetrics DNSMetrics
-var podDNSMetrics = make(map[string]*PodDNSMetrics) // keyed by "namespace/podname"
+var podDNSMetrics = make(map[string]*PodDNSMetrics)            // keyed by "namespace/podname"
+var containerDNSMetrics = make(map[string]*ContainerDNSMetrics) // keyed by "namespace/podname/containername"
 var podDNSMetricsMutex sync.RWMutex
+var containerDNSMetricsMutex sync.RWMutex
 var ipToPodMap = make(map[string]string) // IP -> "namespace/podname"
 var ipToPodMapMutex sync.RWMutex
 
@@ -57,12 +72,18 @@ func init() {
 
 // Global DNS collector instance
 var globalDNSCollector *DNSCollector
+var containerMapper *ContainerMapper
 
 // InitDNSCollector initializes the global DNS collector
 func InitDNSCollector(nodeName string) {
 	globalDNSCollector = NewDNSCollector(nodeName)
 	// Register with global registry
 	GlobalRegistry.Register(globalDNSCollector)
+}
+
+// SetContainerMapper sets the container mapper for DNS collector
+func SetContainerMapper(cm *ContainerMapper) {
+	containerMapper = cm
 }
 
 // GetDNSMetrics returns the current DNS metrics
@@ -84,6 +105,28 @@ func GetPodDNSMetrics() map[string]PodDNSMetrics {
 	result := make(map[string]PodDNSMetrics)
 	for key, metrics := range podDNSMetrics {
 		result[key] = PodDNSMetrics{
+			PodName:        metrics.PodName,
+			Namespace:      metrics.Namespace,
+			TotalEvents:    atomic.LoadUint64(&metrics.TotalEvents),
+			TotalLatencyNs: atomic.LoadUint64(&metrics.TotalLatencyNs),
+			LastLatencyNs:  atomic.LoadUint64(&metrics.LastLatencyNs),
+			MaxLatencyNs:   atomic.LoadUint64(&metrics.MaxLatencyNs),
+			MinLatencyNs:   atomic.LoadUint64(&metrics.MinLatencyNs),
+		}
+	}
+	return result
+}
+
+// GetContainerDNSMetrics returns a copy of all per-container DNS metrics
+func GetContainerDNSMetrics() map[string]ContainerDNSMetrics {
+	containerDNSMetricsMutex.RLock()
+	defer containerDNSMetricsMutex.RUnlock()
+
+	result := make(map[string]ContainerDNSMetrics)
+	for key, metrics := range containerDNSMetrics {
+		result[key] = ContainerDNSMetrics{
+			ContainerName:  metrics.ContainerName,
+			ContainerID:    metrics.ContainerID,
 			PodName:        metrics.PodName,
 			Namespace:      metrics.Namespace,
 			TotalEvents:    atomic.LoadUint64(&metrics.TotalEvents),
@@ -351,11 +394,23 @@ func updateDNSMetrics(event DNSEvent) {
 		atomic.StoreUint64(&dnsMetrics.MinLatencyNs, uint64(event.LatencyNs))
 	}
 
-	// Update per-pod metrics
-	ipStr := ipToString(event.SourceIP)
-	ipToPodMapMutex.RLock()
-	podKey := ipToPodMap[ipStr]
-	ipToPodMapMutex.RUnlock()
+	// Try PID-based mapping first (more reliable)
+	var podKey string
+	if containerMapper != nil {
+		// Try to get pod from PID using container mapper
+		containerInfo, err := containerMapper.GetContainerForPID(int32(event.Pid))
+		if err == nil && containerInfo != nil {
+			podKey = fmt.Sprintf("%s/%s", containerInfo.PodNamespace, containerInfo.PodName)
+		}
+	}
+
+	// Fallback to IP-based mapping if PID mapping failed
+	if podKey == "" {
+		ipStr := ipToString(event.SourceIP)
+		ipToPodMapMutex.RLock()
+		podKey = ipToPodMap[ipStr]
+		ipToPodMapMutex.RUnlock()
+	}
 
 	if podKey != "" {
 		podDNSMetricsMutex.Lock()
@@ -381,6 +436,42 @@ func updateDNSMetrics(event DNSEvent) {
 		}
 		if uint64(event.LatencyNs) < atomic.LoadUint64(&podMetrics.MinLatencyNs) {
 			atomic.StoreUint64(&podMetrics.MinLatencyNs, uint64(event.LatencyNs))
+		}
+	}
+
+	// Update per-container metrics using pod IP and container info
+	if containerMapper != nil && podKey != "" {
+		// We already have the podKey from the IP mapping above
+		containerInfo, err := containerMapper.GetContainerForPodAndPID(podKey, int32(event.Pid))
+		if err == nil {
+			// Successfully identified container
+			containerKey := fmt.Sprintf("%s/%s/%s", containerInfo.PodNamespace, containerInfo.PodName, containerInfo.ContainerName)
+
+			containerDNSMetricsMutex.Lock()
+			if containerDNSMetrics[containerKey] == nil {
+				// Initialize new container metrics
+				containerDNSMetrics[containerKey] = &ContainerDNSMetrics{
+					ContainerName: containerInfo.ContainerName,
+					ContainerID:   containerInfo.ContainerID,
+					PodName:       containerInfo.PodName,
+					Namespace:     containerInfo.PodNamespace,
+					MinLatencyNs:  ^uint64(0),
+				}
+			}
+			containerMetrics := containerDNSMetrics[containerKey]
+			containerDNSMetricsMutex.Unlock()
+
+			// Update container-specific metrics
+			atomic.AddUint64(&containerMetrics.TotalEvents, 1)
+			atomic.AddUint64(&containerMetrics.TotalLatencyNs, uint64(event.LatencyNs))
+			atomic.StoreUint64(&containerMetrics.LastLatencyNs, uint64(event.LatencyNs))
+
+			if uint64(event.LatencyNs) > atomic.LoadUint64(&containerMetrics.MaxLatencyNs) {
+				atomic.StoreUint64(&containerMetrics.MaxLatencyNs, uint64(event.LatencyNs))
+			}
+			if uint64(event.LatencyNs) < atomic.LoadUint64(&containerMetrics.MinLatencyNs) {
+				atomic.StoreUint64(&containerMetrics.MinLatencyNs, uint64(event.LatencyNs))
+			}
 		}
 	}
 

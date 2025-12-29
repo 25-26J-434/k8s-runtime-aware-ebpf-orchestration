@@ -27,7 +27,7 @@ export function TopPerformers() {
         const [namespace, name] = podKey.split('/');
         const dnsMetrics = metrics.dns.pods[podKey];
         const tcpMetrics = metrics.tcp?.pods?.[podKey];
-        
+
         // Get metrics (normalize to avoid division by zero)
         const dnsLatency = dnsMetrics?.avg_latency_us || 0;
         const tcpRetrans = tcpMetrics?.retransmissions || 0;
@@ -36,9 +36,9 @@ export function TopPerformers() {
         const dnsEvents = dnsMetrics?.total_events || 0;
         const tcpEvents = tcpMetrics?.total_events || 0;
         const totalEvents = dnsEvents + tcpEvents;
-        
+
         let score = 0;
-        
+
         // Calculate score based on filter
         if (filter === 'dns') {
             // DNS-only ranking: lower latency = better
@@ -48,7 +48,7 @@ export function TopPerformers() {
             const retransRate = tcpEvents > 0 ? (tcpRetrans / tcpEvents) * 100 : 100; // Higher is worse
             const lossRate = tcpEvents > 0 ? (tcpLoss / tcpEvents) * 100 : 100; // Higher is worse
             const srttScore = Math.min(100, (tcpSRTT / 10000)); // 100ms = 1 point, 1000ms = 100 points
-            
+
             // If no TCP events, give worst score
             if (tcpEvents === 0) {
                 score = 100;
@@ -62,11 +62,11 @@ export function TopPerformers() {
             const retransRate = tcpEvents > 0 ? (tcpRetrans / tcpEvents) * 100 : 0;
             const lossRate = tcpEvents > 0 ? (tcpLoss / tcpEvents) * 100 : 0;
             const srttScore = Math.min(100, (tcpSRTT / 10000));
-            
+
             // Weighted average: DNS 40%, TCP metrics 60% (20% each)
             score = (dnsScore * 0.4) + (retransRate * 0.2) + (lossRate * 0.2) + (srttScore * 0.2);
         }
-        
+
         return {
             key: podKey,
             name,
@@ -97,19 +97,19 @@ export function TopPerformers() {
     return (
         <div className="top-performers">
             <div className="performers-filters">
-                <button 
+                <button
                     className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
                     onClick={() => setFilter('all')}
                 >
                     All Metrics
                 </button>
-                <button 
+                <button
                     className={`filter-btn ${filter === 'dns' ? 'active' : ''}`}
                     onClick={() => setFilter('dns')}
                 >
                     DNS Only
                 </button>
-                <button 
+                <button
                     className={`filter-btn ${filter === 'tcp' ? 'active' : ''}`}
                     onClick={() => setFilter('tcp')}
                 >

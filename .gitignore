@@ -24,6 +24,7 @@ go.mod.bak
 # Node.js / React Frontend
 node_modules/
 frontend/node_modules/
+backend/node_modules/
 frontend/dist/
 frontend/build/
 npm-debug.log*
@@ -39,6 +40,7 @@ package-lock.json.bak
 .env.development.local
 .env.test.local
 .env.production.local
+backend/.env
 
 # IDE / Editor
 .vscode/

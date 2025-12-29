@@ -1,0 +1,74 @@
+.routing-charts {
+  background: linear-gradient(135deg, rgba(24, 29, 50, 0.9) 0%, rgba(16, 20, 38, 0.85) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.charts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.charts-header h2 {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: #e4e4e7;
+}
+
+.charts-header p {
+  margin: 0.2rem 0 0 0;
+  color: #94a3b8;
+}
+
+.charts-controls label {
+  color: #cbd5e1;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.charts-controls select {
+  background: rgba(10, 14, 39, 0.7);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #e2e8f0;
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+}
+
+.charts-error {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+}
+
+.charts-empty {
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  padding: 1rem;
+  border-radius: 10px;
+}
+
+.chart-wrapper {
+  height: 320px;
+}
+
+@media (max-width: 768px) {
+  .charts-header {
+    align-items: flex-start;
+  }
+}

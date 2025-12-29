@@ -40,7 +40,15 @@ int BPF_KPROBE(dns_end_probe, struct sock *sk)
 
     e->timestamp_ns = end_ts;
     e->pid = pid;
-    e->saddr = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);  // Capture source IP
+    // Capture source IP - use skc_daddr for destination (DNS server) or skc_rcv_saddr for local bind
+    // For DNS queries, we want the source IP of the sender (local IP that sent the query)
+    // Try skc_rcv_saddr first (local bind address), fallback to skc_daddr
+    __u32 saddr = BPF_CORE_READ(sk, __sk_common.skc_rcv_saddr);
+    if (saddr == 0) {
+        // If no local bind, try to get from socket state
+        saddr = BPF_CORE_READ(sk, __sk_common.skc_daddr);
+    }
+    e->saddr = saddr;
     e->latency_ns = diff_ns;
 
     bpf_ringbuf_submit(e, 0);

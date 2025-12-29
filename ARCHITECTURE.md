@@ -286,7 +286,7 @@ func main() {
     // go federator.Start()
     
     // Start HTTP API (for external consumers only)
-    go api.StartServer()
+    go api.StartServer(":8080")
     
     // Wait for shutdown
     <-sig
