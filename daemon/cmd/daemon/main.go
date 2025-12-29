@@ -46,6 +46,16 @@ func main() {
 		}
 	}
 
+	log.Println("[Main] Loading Scheduling Latency BPF program...")
+	if err := loader.LoadSchedLatencyBPF(); err != nil {
+		log.Printf("[Main] WARNING: Failed to load Scheduling Latency BPF: %v", err)
+		log.Println("[Main] Continuing without scheduling latency collection...")
+	} else {
+		if err := loader.AttachSchedLatencyProbes(); err != nil {
+			log.Printf("[Main] WARNING: Failed to attach Scheduling Latency probes: %v", err)
+		}
+	}
+
 	nodeName := os.Getenv("NODE_NAME")
 	if nodeName == "" {
 		nodeName = "unknown"
@@ -67,12 +77,31 @@ func main() {
 	log.Println("[Main] Initializing Packet Distribution collector...")
 	telemetry.InitPacketDistributionCollector(nodeName)
 
-	log.Println("[Main] Initializing Service Health collector...")
+	log.Println("[Main] Initializing Kubernetes client...")
+	if err := api.InitKubernetesClient(); err != nil {
+		log.Printf("[Main] WARNING: Failed to initialize K8s client: %v", err)
+		log.Println("[Main] Container-level metrics will not be available")
+	}
 	k8sClient := api.GetK8sClient()
+	
+	log.Println("[Main] Initializing Service Health collector...")
 	telemetry.InitServiceHealthCollector(nodeName, k8sClient)
 
 	log.Println("[Main] Initializing NAT Metadata collector...")
 	telemetry.InitNATMetadataCollector(nodeName)
+
+	// Initialize Container Mapper for container-level metrics
+	log.Println("[Main] Initializing Container Mapper...")
+	if k8sClient == nil {
+		log.Println("[Main] WARNING: k8sClient is nil! Container-level metrics will not work.")
+	} else {
+		log.Println("[Main] k8sClient is valid, proceeding with ContainerMapper initialization")
+	}
+	containerMapper := telemetry.NewContainerMapper(k8sClient)
+	telemetry.SetContainerMapper(containerMapper)
+	telemetry.SetTCPContainerMapper(containerMapper)
+	telemetry.SetSchedContainerMapper(containerMapper)
+	log.Println("[Main] Container Mapper initialized successfully")
 
 	if err := loader.AttachDNSProbes(); err != nil {
 		log.Fatalf("[FATAL] Failed to attach DNS probes: %v", err)
@@ -83,6 +112,7 @@ func main() {
 	go telemetry.StartDNSLatencyCollector()
 	go telemetry.StartRTTCollector()
 	go telemetry.StartTCPMetricsCollector()
+	go telemetry.StartSchedLatencyCollector()
 
 	go api.StartServer()
 

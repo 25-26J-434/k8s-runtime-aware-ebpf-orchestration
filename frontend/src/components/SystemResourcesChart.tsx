@@ -156,3 +156,5 @@ export function SystemResourcesChart({ cpuUsage, memoryUsage, title = 'System Re
     );
 }
 
+
+

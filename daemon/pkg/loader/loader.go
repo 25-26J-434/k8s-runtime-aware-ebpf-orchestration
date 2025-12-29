@@ -21,18 +21,26 @@ var rttObj []byte
 //go:embed bpf/tcp_metrics.o
 var tcpMetricsObj []byte
 
+//go:embed bpf/sched_latency.o
+var schedLatencyObj []byte
+
 var DNSSpec *ebpf.CollectionSpec
 var DNSObjs *ebpf.Collection
 var RTTSpec *ebpf.CollectionSpec
 var RTTObjs *ebpf.Collection
 var TCPMetricsSpec *ebpf.CollectionSpec
 var TCPMetricsObjs *ebpf.Collection
+var SchedLatencySpec *ebpf.CollectionSpec
+var SchedLatencyObjs *ebpf.Collection
 
 // Store links for cleanup
 var dnsStartLink link.Link
 var dnsEndLink link.Link
 var rttConnectLink link.Link
 var rttFinishLink link.Link
+var schedWakeupLink link.Link
+var schedWakeupNewLink link.Link
+var schedSwitchLink link.Link
 
 func LoadDNSLatencyBPF() error {
 	log.Println("[Loader] Loading DNS Latency BPF program...")
@@ -200,6 +208,88 @@ func AttachRTTProbes() error {
 	return nil
 }
 
+// LoadSchedLatencyBPF loads the Scheduling Latency eBPF program
+func LoadSchedLatencyBPF() error {
+	log.Println("[Loader] Loading Scheduling Latency BPF program...")
+
+	if len(schedLatencyObj) == 0 {
+		log.Println("[Loader] WARNING: Scheduling Latency BPF object is empty - sched latency collection disabled")
+		return fmt.Errorf("embedded Scheduling Latency BPF object is empty - ensure sched_latency.o is compiled")
+	}
+
+	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(schedLatencyObj))
+	if err != nil {
+		return fmt.Errorf("failed to load Scheduling Latency collection spec: %w", err)
+	}
+	SchedLatencySpec = spec
+
+	log.Println("[Loader] Available Scheduling Latency programs:")
+	for name := range spec.Programs {
+		log.Printf("  - %s", name)
+	}
+
+	objs, err := ebpf.NewCollection(SchedLatencySpec)
+	if err != nil {
+		return fmt.Errorf("failed to create Scheduling Latency collection: %w", err)
+	}
+	SchedLatencyObjs = objs
+
+	log.Println("[Loader] Scheduling Latency BPF programs loaded successfully")
+	return nil
+}
+
+// AttachSchedLatencyProbes attaches the tracepoints to scheduler events
+func AttachSchedLatencyProbes() error {
+	log.Println("[Loader] Attaching Scheduling Latency tracepoints...")
+
+	// Attach tracepoint to sched:sched_wakeup
+	wakeupProg := SchedLatencyObjs.Programs["trace_sched_wakeup"]
+	if wakeupProg == nil {
+		return fmt.Errorf("program 'trace_sched_wakeup' not found")
+	}
+
+	var err error
+	schedWakeupLink, err = link.Tracepoint("sched", "sched_wakeup", wakeupProg, nil)
+	if err != nil {
+		return fmt.Errorf("failed to attach tracepoint to sched:sched_wakeup: %w", err)
+	}
+	log.Println("[Loader] Attached tracepoint to sched:sched_wakeup")
+
+	// Attach tracepoint to sched:sched_wakeup_new
+	wakeupNewProg := SchedLatencyObjs.Programs["trace_sched_wakeup_new"]
+	if wakeupNewProg == nil {
+		schedWakeupLink.Close()
+		return fmt.Errorf("program 'trace_sched_wakeup_new' not found")
+	}
+
+	schedWakeupNewLink, err = link.Tracepoint("sched", "sched_wakeup_new", wakeupNewProg, nil)
+	if err != nil {
+		schedWakeupLink.Close()
+		return fmt.Errorf("failed to attach tracepoint to sched:sched_wakeup_new: %w", err)
+	}
+	log.Println("[Loader] Attached tracepoint to sched:sched_wakeup_new")
+
+	// Attach tracepoint to sched:sched_switch
+	switchProg := SchedLatencyObjs.Programs["trace_sched_switch"]
+	if switchProg == nil {
+		schedWakeupLink.Close()
+		schedWakeupNewLink.Close()
+		return fmt.Errorf("program 'trace_sched_switch' not found")
+	}
+
+	schedSwitchLink, err = link.Tracepoint("sched", "sched_switch", switchProg, nil)
+	if err != nil {
+		schedWakeupLink.Close()
+		schedWakeupNewLink.Close()
+		return fmt.Errorf("failed to attach tracepoint to sched:sched_switch: %w", err)
+	}
+	log.Println("[Loader] Attached tracepoint to sched:sched_switch")
+
+	log.Println("[Loader] All Scheduling Latency tracepoints attached successfully")
+	log.Println("[Loader] Monitoring: sched_wakeup -> sched_switch (run queue latency)")
+	return nil
+}
+
 // Close cleans up all resources
 func Close() {
 	log.Println("[Loader] Cleaning up...")
@@ -216,11 +306,23 @@ func Close() {
 	if rttFinishLink != nil {
 		rttFinishLink.Close()
 	}
+	if schedWakeupLink != nil {
+		schedWakeupLink.Close()
+	}
+	if schedWakeupNewLink != nil {
+		schedWakeupNewLink.Close()
+	}
+	if schedSwitchLink != nil {
+		schedSwitchLink.Close()
+	}
 	if DNSObjs != nil {
 		DNSObjs.Close()
 	}
 	if RTTObjs != nil {
 		RTTObjs.Close()
+	}
+	if SchedLatencyObjs != nil {
+		SchedLatencyObjs.Close()
 	}
 
 	log.Println("[Loader] Cleanup complete")
