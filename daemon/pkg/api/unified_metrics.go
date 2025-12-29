@@ -38,7 +38,7 @@ func handleUnifiedMetrics(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-<!-- (Remove this duplicate function entirely; no replacement needed) -->
+
 
 func selectCollectors(metricType string) []telemetry.Collector {
 	if metricType == "" {
