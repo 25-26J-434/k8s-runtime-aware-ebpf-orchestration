@@ -36,6 +36,13 @@ Leave this running. Endpoints:
 - RTT (empty in this lab): `http://127.0.0.1:8080/api/rtt/pods`
 - DNS (we use this): `http://127.0.0.1:8080/api/dns/pods`
 
+
+cilium install --helm-set localRedirectPolicy=true
+
+helm upgrade --install cilium cilium/cilium \
+--namespace kube-system \
+--set localRedirectPolicy=true
+
 Quick check:
 ```bash
 kubectl -n ebpf-telemetry exec ebpf-daemon-5stch -- sh -c "wget -qO- http://127.0.0.1:8080/api/dns/pods | head"

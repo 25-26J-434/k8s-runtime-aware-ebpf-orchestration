@@ -1,7 +1,24 @@
-import type { MetricsResponse, ClusterTopology, Service, UnifiedMetricsResponse, RedirectionEvent, RedirectionEventPayload } from '../types/api';
+import type {
+    MetricsResponse,
+    ClusterTopology,
+    Service,
+    UnifiedMetricsResponse,
+    RedirectionEvent,
+    RedirectionEventPayload,
+} from '../types/api';
 
 const API_BASE = '';  // Proxy handles routing
 const ROUTING_API_BASE = import.meta.env.VITE_ROUTING_API || 'http://localhost:4000';
+
+type ApplyResponse = {
+    message: string;
+    stdout?: string;
+    stderr?: string;
+    helper?: string;
+    rule?: string;
+    exitCode?: number;
+    signal?: string;
+};
 
 // Transform unified metrics to expected format
 function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
@@ -249,6 +266,71 @@ export const api = {
         if (!response.ok) {
             const text = await response.text();
             throw new Error(`Failed to create redirection event: ${response.status} ${response.statusText} - ${text}`);
+        }
+
+        return response.json();
+    },
+
+    async applyRuleByPolicy(policyName: string): Promise<ApplyResponse> {
+        const response = await fetch(
+            `${ROUTING_API_BASE}/api/rules/by-policy/${encodeURIComponent(policyName)}/apply`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to apply policy: ${response.status} ${response.statusText} - ${text}`);
+        }
+
+        return response.json();
+    },
+
+    async getRuleByPolicy(policyName: string): Promise<{ id: string }> {
+        const response = await fetch(`${ROUTING_API_BASE}/api/rules/by-policy/${encodeURIComponent(policyName)}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch rule: ${response.status} ${response.statusText}`);
+        }
+
+        return response.json();
+    },
+
+    async deleteRule(id: string): Promise<void> {
+        const response = await fetch(`${ROUTING_API_BASE}/api/rules/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to delete rule: ${response.status} ${response.statusText} - ${text}`);
+        }
+    },
+
+    async createRule(rule: any): Promise<any> {
+        const response = await fetch(`${ROUTING_API_BASE}/api/rules`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rule),
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to create rule: ${response.status} ${response.statusText} - ${text}`);
         }
 
         return response.json();

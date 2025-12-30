@@ -149,22 +149,24 @@ if [[ "$choose_best_pod" == "true" ]]; then
   done
 
   if [[ -z "$best_pod" ]]; then
-    echo "No telemetry values available for candidate pods; skipping redirect."
-    exit 0
+    echo "No telemetry values available for candidate pods; falling back to all pods with selector $candidate_selector without winner labeling."
+    # Fall back to the broader redirect_backend_label (or candidate selector) instead of aborting
+    backend_label_key=${candidate_selector%%=*}
+    backend_label_value=${candidate_selector#*=}
+  else
+    # Label winner and clear label from others
+    echo "Best pod selected (lowest $VALUE_FIELD): $best_pod ($best_value)"
+    for pod in "${candidate_pods[@]}"; do
+      if [[ "$pod" == "$best_pod" ]]; then
+        kubectl -n "$namespace" label pod "$pod" "${redirect_winner_label}" --overwrite
+      else
+        kubectl -n "$namespace" label pod "$pod" "${winner_label_key}-" --overwrite
+      fi
+    done
+
+    backend_label_key=$winner_label_key
+    backend_label_value=$winner_label_value
   fi
-
-  # Label winner and clear label from others
-  echo "Best pod selected (lowest $VALUE_FIELD): $best_pod ($best_value)"
-  for pod in "${candidate_pods[@]}"; do
-    if [[ "$pod" == "$best_pod" ]]; then
-      kubectl -n "$namespace" label pod "$pod" "${redirect_winner_label}" --overwrite
-    else
-      kubectl -n "$namespace" label pod "$pod" "${winner_label_key}-" --overwrite
-    fi
-  done
-
-  backend_label_key=$winner_label_key
-  backend_label_value=$winner_label_value
 fi
 
 # Apply LRP with selected backend label
