@@ -1,6 +1,7 @@
-import type { MetricsResponse, ClusterTopology, Service, UnifiedMetricsResponse } from '../types/api';
+import type { MetricsResponse, ClusterTopology, Service, UnifiedMetricsResponse, RedirectionEvent, RedirectionEventPayload } from '../types/api';
 
 const API_BASE = '';  // Proxy handles routing
+const ROUTING_API_BASE = import.meta.env.VITE_ROUTING_API || 'http://localhost:4000';
 
 // Transform unified metrics to expected format
 function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
@@ -234,5 +235,46 @@ export const api = {
             throw new Error(`Failed to fetch container scheduling latency metrics: ${response.status} ${response.statusText}`);
         }
         return response.json();
+    },
+
+    async createRedirectionEvent(payload: RedirectionEventPayload): Promise<RedirectionEvent> {
+        const response = await fetch(`${ROUTING_API_BASE}/api/redirections`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to create redirection event: ${response.status} ${response.statusText} - ${text}`);
+        }
+
+        return response.json();
+    },
+
+    async getRedirectionEvents(policyName?: string): Promise<RedirectionEvent[]> {
+        const query = policyName ? `?policy_name=${encodeURIComponent(policyName)}` : '';
+        const response = await fetch(`${ROUTING_API_BASE}/api/redirections${query}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch redirection events: ${response.status} ${response.statusText}`);
+        }
+
+        return response.json();
+    },
+
+    async getRoutingIdentity(): Promise<string> {
+        const response = await fetch(`${ROUTING_API_BASE}/whoami`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch routing service identity: ${response.status} ${response.statusText}`);
+        }
+        return response.text();
     },
 };

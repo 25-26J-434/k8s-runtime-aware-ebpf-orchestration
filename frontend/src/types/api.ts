@@ -257,3 +257,29 @@ export interface Service {
     cluster_ip: string;
     ports: string[];
 }
+
+export type RedirectionStatus = 'applied' | 'expired' | 'deleted' | 'skipped' | 'observed';
+
+export interface RedirectionEventPayload {
+    policy_name: string;
+    frontend_service?: string;
+    planned_backend_service?: string;
+    planned_backend_label?: string;
+    planned_backend_port?: string;
+    final_backend_service?: string;
+    final_backend_label?: string;
+    final_backend_port?: string;
+    redirect_backend_label?: string;
+    redirect_backend_port?: string;
+    violation_triggered: boolean;
+    accepted_service?: string;
+    status?: RedirectionStatus;
+    notes?: string;
+    occurred_at?: string;
+}
+
+export interface RedirectionEvent extends RedirectionEventPayload {
+    id?: string;
+    createdAt?: string;
+    updatedAt?: string;
+}

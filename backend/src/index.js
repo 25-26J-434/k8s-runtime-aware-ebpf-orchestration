@@ -5,6 +5,8 @@ const cors = require('cors');
 const os = require('os');
 require('dotenv').config();
 
+const fs = require('fs');
+const https = require('https');
 const RedirectRule = require('./models/RedirectRule');
 const RedirectionEvent = require('./models/RedirectionEvent');
 
@@ -89,6 +91,79 @@ function normalizeRule(body, { requireAll } = { requireAll: true }) {
 
 const VALID_EVENT_STATUSES = ['applied', 'expired', 'deleted', 'skipped', 'observed'];
 
+async function validateServicePortViaK8sAPI({ namespace, serviceName, expectedPort }) {
+  const tokenPath = '/var/run/secrets/kubernetes.io/serviceaccount/token';
+  const caPath = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt';
+  const host = process.env.KUBERNETES_SERVICE_HOST;
+  const port = process.env.KUBERNETES_SERVICE_PORT || '443';
+
+  if (!host) {
+    return { ok: false, error: 'Not running inside Kubernetes (KUBERNETES_SERVICE_HOST missing)' };
+  }
+
+  if (!fs.existsSync(tokenPath) || !fs.existsSync(caPath)) {
+    return { ok: false, error: 'Service account credentials not found for Kubernetes API access' };
+  }
+
+  const token = fs.readFileSync(tokenPath, 'utf8');
+  const ca = fs.readFileSync(caPath);
+
+  const requestOptions = {
+    hostname: host,
+    port,
+    path: `/api/v1/namespaces/${namespace}/services/${serviceName}`,
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    ca,
+    rejectUnauthorized: true,
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(requestOptions, (res) => {
+      let body = '';
+      res.on('data', (chunk) => {
+        body += chunk;
+      });
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          return resolve({ ok: false, error: `K8s API returned ${res.statusCode}` });
+        }
+        try {
+          const svc = JSON.parse(body);
+          const ports = svc?.spec?.ports || [];
+          const match = ports.find((p) => Number(p.port) === Number(expectedPort));
+          if (!match) {
+            return resolve({
+              ok: false,
+              error: `Service ${serviceName} in ${namespace} does not expose port ${expectedPort}`,
+            });
+          }
+          return resolve({ ok: true });
+        } catch (parseErr) {
+          return reject(parseErr);
+        }
+      });
+    });
+
+    req.on('error', (err) => reject(err));
+    req.end();
+  });
+}
+
+function validatePortNumber(value, fieldName) {
+  if (value === undefined || value === null || value === '') return { ok: true };
+  const num = Number(value);
+  if (!Number.isFinite(num) || !Number.isInteger(num)) {
+    return { ok: false, error: `${fieldName} must be an integer port` };
+  }
+  if (num < 1 || num > 65535) {
+    return { ok: false, error: `${fieldName} must be between 1 and 65535` };
+  }
+  return { ok: true, value: num };
+}
+
 function normalizeRedirectionEvent(body) {
   const data = {};
   if (!body.policy_name) return { error: 'policy_name is required' };
@@ -96,12 +171,12 @@ function normalizeRedirectionEvent(body) {
   if (body.frontend_service !== undefined) data.frontend_service = body.frontend_service;
   if (body.planned_backend_service !== undefined) data.planned_backend_service = body.planned_backend_service;
   if (body.planned_backend_label !== undefined) data.planned_backend_label = body.planned_backend_label;
-  if (body.planned_backend_port !== undefined) data.planned_backend_port = String(body.planned_backend_port);
+  if (body.planned_backend_port !== undefined) data.planned_backend_port = Number(body.planned_backend_port);
   if (body.final_backend_service !== undefined) data.final_backend_service = body.final_backend_service;
   if (body.final_backend_label !== undefined) data.final_backend_label = body.final_backend_label;
-  if (body.final_backend_port !== undefined) data.final_backend_port = String(body.final_backend_port);
+  if (body.final_backend_port !== undefined) data.final_backend_port = Number(body.final_backend_port);
   if (body.redirect_backend_label !== undefined) data.redirect_backend_label = body.redirect_backend_label;
-  if (body.redirect_backend_port !== undefined) data.redirect_backend_port = String(body.redirect_backend_port);
+  if (body.redirect_backend_port !== undefined) data.redirect_backend_port = Number(body.redirect_backend_port);
   if (body.accepted_service !== undefined) data.accepted_service = body.accepted_service;
   if (body.notes !== undefined) data.notes = body.notes;
 
@@ -283,8 +358,66 @@ app.get('/api/redirections/by-policy/:policyName', async (req, res, next) => {
 
 app.post('/api/redirections', async (req, res, next) => {
   try {
+    // 1) Validate port numbers are syntactically valid
+    const portFields = [
+      ['planned_backend_port', req.body.planned_backend_port],
+      ['final_backend_port', req.body.final_backend_port],
+      ['redirect_backend_port', req.body.redirect_backend_port],
+    ];
+
+    for (const [field, value] of portFields) {
+      const result = validatePortNumber(value, field);
+      if (!result.ok) return res.status(400).json({ message: result.error });
+    }
+
+    // 2) Ensure the referenced rule exists so we can cross-check declared ports/labels
+    const rule = await RedirectRule.findOne({ policy_name: req.body.policy_name });
+    if (!rule) {
+      return res.status(404).json({ message: `Rule not found for policy_name ${req.body.policy_name}` });
+    }
+
     const { data, error } = normalizeRedirectionEvent(req.body);
     if (error) return res.status(400).json({ message: error });
+
+    // Cross-check redirect target consistency with the stored rule
+    if (data.redirect_backend_port !== undefined) {
+      const rulePort = Number(rule.redirect_backend_port);
+      if (data.redirect_backend_port !== rulePort) {
+        return res
+          .status(400)
+          .json({ message: `redirect_backend_port must match rule (${rulePort}) for policy ${rule.policy_name}` });
+      }
+    }
+    if (data.final_backend_port !== undefined) {
+      const rulePort = Number(rule.redirect_backend_port);
+      if (data.final_backend_port !== rulePort) {
+        return res
+          .status(400)
+          .json({ message: `final_backend_port must match rule (${rulePort}) for policy ${rule.policy_name}` });
+      }
+    }
+    if (data.redirect_backend_label && data.redirect_backend_label !== rule.redirect_backend_label) {
+      return res
+        .status(400)
+        .json({ message: `redirect_backend_label must match rule (${rule.redirect_backend_label}) for policy ${rule.policy_name}` });
+    }
+
+    // 3) Optionally enforce live Kubernetes Service port match (opt-in to avoid blocking local dev)
+    const shouldValidateK8s = process.env.ENABLE_K8S_PORT_CHECK === 'true';
+    if (shouldValidateK8s && data.final_backend_service && rule.namespace) {
+      try {
+        const matches = await validateServicePortViaK8sAPI({
+          namespace: rule.namespace,
+          serviceName: data.final_backend_service,
+          expectedPort: data.final_backend_port || data.redirect_backend_port || Number(rule.redirect_backend_port),
+        });
+        if (!matches.ok) {
+          return res.status(400).json({ message: matches.error || 'Kubernetes service port validation failed' });
+        }
+      } catch (k8sErr) {
+        return res.status(400).json({ message: `Kubernetes service validation failed: ${k8sErr.message}` });
+      }
+    }
 
     const created = await RedirectionEvent.create(data);
     res.status(201).json(created);
