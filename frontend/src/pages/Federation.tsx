@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './Page.css';
 import './Federation.css';
 import { api } from '../services/api';
@@ -331,366 +331,366 @@ export function Federation() {
         }
     };
 
+    // Sidebar navigation items
+    const navItems = [
+        { id: 'overview', label: 'Overview' },
+        { id: 'snapshot', label: 'Cluster Snapshot' },
+        { id: 'nodes', label: 'Nodes' },
+        { id: 'console', label: 'Messaging Console' },
+        { id: 'logs', label: 'Comm Logs' },
+    ];
+    const [activeSection, setActiveSection] = useState('overview');
+    const sectionRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+
+    const scrollToSection = (sectionId: string) => {
+        const el = sectionRefs.current[sectionId];
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setActiveSection(sectionId);
+        }
+    };
+
+    useEffect(() => {
+        const handleScroll = () => {
+            const sections = Object.keys(sectionRefs.current);
+            const scrollPosition = window.scrollY + 150;
+            for (let i = sections.length - 1; i >= 0; i--) {
+                const section = sectionRefs.current[sections[i]];
+                if (section && section.offsetTop <= scrollPosition) {
+                    setActiveSection(sections[i]);
+                    break;
+                }
+            }
+        };
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
+
     return (
-        <div className="page-container">
-            <div className="page-header">
-                <div className="page-title-section">
-                    <h1 className="page-title">Node Federation Control</h1>
-                    <p className="page-subtitle">
-                        Coordinate runtime-aware messaging between daemon instances and monitor Component 4 activity.
-                    </p>
-                </div>
-            </div>
-
-            <div className="page-content">
-                <section className="feature-card">
-                    <div className="section-header">
-                        <h2>Cluster Snapshot</h2>
-                        <div className="section-actions">
-                            <span className={`status-pill ${loadingNodes ? 'is-syncing' : ''}`}>
-                                {loadingNodes ? 'Refreshing' : 'Live'}
-                            </span>
-                            <button className="action-button" onClick={fetchTopology} disabled={loadingNodes}>
-                                Refresh Nodes
-                            </button>
-                        </div>
-                    </div>
-                    <div className="federation-summary">
-                        <div className="summary-card">
-                            <span className="summary-card__label">Cluster Nodes</span>
-                            <span className="summary-card__value">{summary.totalNodes}</span>
-                            <span className="summary-card__detail">{summary.readyNodes} reporting ready</span>
-                        </div>
-                        <div className="summary-card">
-                            <span className="summary-card__label">Workload Pods</span>
-                            <span className="summary-card__value">{summary.runningPods}</span>
-                            <span className="summary-card__detail">{summary.totalPods} total scheduled</span>
-                        </div>
-                        <div className="summary-card">
-                            <span className="summary-card__label">Comm. Activity</span>
-                            <span className="summary-card__value">{summary.messageCount}</span>
-                            <span className="summary-card__detail">
-                                {summary.broadcastCount} broadcast · {summary.unicastCount} unicast · {summary.multicastCount} multicast
-                            </span>
-                        </div>
-                        <div className="summary-card">
-                            <span className="summary-card__label">Peers Discovered</span>
-                            <span className="summary-card__value">{summary.peerCount}</span>
-                            <span className="summary-card__detail">
-                                {summary.lastUpdate ? `Updated ${formatTime(summary.lastUpdate)}` : 'Awaiting activity'}
-                            </span>
-                        </div>
-                    </div>
-                </section>
-
-                <section className="feature-card">
-                    <div className="section-header">
-                        <h2>Cluster Nodes</h2>
-                        <div className="section-actions">
-                            {messageType !== 'BROADCAST' && (
-                                <span className="status-pill">
-                                    Targets · {selectedNodes.size}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                    {topologyError && <div className="error-banner">{topologyError}</div>}
-                    {!nodes.length && !loadingNodes ? (
-                        <div className="empty-state">No nodes reported yet. Ensure the daemonset is running.</div>
-                    ) : (
-                        <div className="node-grid">
-                            {nodes.map((node) => {
-                                const isSelected = selectedNodes.has(node.ip);
-                                const statusClass = node.status === 'Ready' ? 'is-ready' : 'is-warning';
-                                const selectable = messageType !== 'BROADCAST';
-                                return (
-                                    <button
-                                        type="button"
-                                        key={node.name}
-                                        onClick={() => handleToggleNode(node.ip)}
-                                        className={`node-card${selectable ? ' is-selectable' : ''}${isSelected ? ' is-selected' : ''}`}
-                                    >
-                                        <div className="node-card__header">
-                                            <div className="node-card__identity">
-                                                <div className="node-card__icon">🖥️</div>
-                                                <div>
-                                                    <div className="node-card__name">{node.name}</div>
-                                                    <div className="node-card__meta">{node.role}</div>
-                                                </div>
-                                            </div>
-                                            <span className={`node-card__status ${statusClass}`}>
-                                                {node.status}
-                                            </span>
-                                        </div>
-                                        <div className="node-card__kv">
-                                            <div className="node-card__kv-row">
-                                                <span className="node-card__kv-label">IP</span>
-                                                <span className="node-card__kv-value">{node.ip}</span>
-                                            </div>
-                                            <div className="node-card__kv-row">
-                                                <span className="node-card__kv-label">Pods</span>
-                                                <span className="node-card__kv-value">{node.runningPods}/{node.podCount} running</span>
-                                            </div>
-                                            {node.kernelVersion && (
-                                                <div className="node-card__kv-row">
-                                                    <span className="node-card__kv-label">Kernel</span>
-                                                    <span className="node-card__kv-value">{node.kernelVersion}</span>
-                                                </div>
-                                            )}
-                                            {node.osImage && (
-                                                <div className="node-card__kv-row">
-                                                    <span className="node-card__kv-label">OS</span>
-                                                    <span className="node-card__kv-value">{node.osImage}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    )}
-                </section>
-
-                <section className="feature-card">
-                    <div className="section-header">
-                        <h2>Communication Console</h2>
-                        <div className="section-actions">
-                            <button className="action-button" onClick={fetchStats}>
-                                Refresh Stats
-                            </button>
-                        </div>
-                    </div>
-                    {statsError && <div className="error-banner">{statsError}</div>}
-                    <div className="mode-selector">
-                        {COMMUNICATION_MODES.map((mode) => (
-                            <button
-                                key={mode.value}
-                                type="button"
-                                className={`mode-card${messageType === mode.value ? ' is-active' : ''}`}
-                                onClick={() => handleModeChange(mode.value)}
-                            >
-                                <span className="mode-card__icon">{mode.icon}</span>
-                                <span className="mode-card__title">{mode.title}</span>
-                                <span className="mode-card__help">{mode.description}</span>
-                            </button>
-                        ))}
-                    </div>
-
-                    <div style={{ marginTop: '1.5rem' }}>
-                        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#cbd5ff' }}>
-                            Event Type
-                        </h3>
-                        <div className="event-selector">
-                            {EVENT_OPTIONS.map((option) => (
+        <div className="dashboard-content federation-dashboard">
+            <div className="dashboard-main-wrapper">
+                {/* Sidebar Navigation */}
+                <nav className="dashboard-nav federation-nav">
+                    <div className="nav-header"><h3>Federation</h3></div>
+                    <ul className="nav-list">
+                        {navItems.map((item) => (
+                            <li key={item.id}>
                                 <button
-                                    key={option}
-                                    type="button"
-                                    className={`event-chip${eventType === option ? ' is-active' : ''}`}
-                                    onClick={() => setEventType(option)}
+                                    className={`nav-item ${activeSection === item.id ? 'active' : ''}`}
+                                    onClick={() => scrollToSection(item.id)}
                                 >
-                                    {option}
+                                    <span className="nav-label">{item.label}</span>
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                </nav>
+
+                <main className="dashboard-main federation-main">
+                    
+
+                    {/* Cluster Snapshot Section */}
+                    <section id="snapshot" ref={el => (sectionRefs.current['snapshot'] = el as HTMLDivElement | null)} className="feature-card">
+                        <div className="section-header">
+                            <h2>Cluster Snapshot</h2>
+                            <div className="section-actions">
+                                <span className={`status-pill ${loadingNodes ? 'is-syncing' : ''}`}>{loadingNodes ? 'Refreshing' : 'Live'}</span>
+                                <button className="action-button" onClick={fetchTopology} disabled={loadingNodes}>Refresh Nodes</button>
+                            </div>
+                        </div>
+                        <div className="federation-summary">
+                            <div className="summary-card">
+                                <span className="summary-card__label">Cluster Nodes</span>
+                                <span className="summary-card__value">{summary.totalNodes}</span>
+                                <span className="summary-card__detail">{summary.readyNodes} reporting ready</span>
+                            </div>
+                            <div className="summary-card">
+                                <span className="summary-card__label">Workload Pods</span>
+                                <span className="summary-card__value">{summary.runningPods}</span>
+                                <span className="summary-card__detail">{summary.totalPods} total scheduled</span>
+                            </div>
+                            <div className="summary-card">
+                                <span className="summary-card__label">Comm. Activity</span>
+                                <span className="summary-card__value">{summary.messageCount}</span>
+                                <span className="summary-card__detail">{summary.broadcastCount} broadcast · {summary.unicastCount} unicast · {summary.multicastCount} multicast</span>
+                            </div>
+                            <div className="summary-card">
+                                <span className="summary-card__label">Peers Discovered</span>
+                                <span className="summary-card__value">{summary.peerCount}</span>
+                                <span className="summary-card__detail">{summary.lastUpdate ? `Updated ${formatTime(summary.lastUpdate)}` : 'Awaiting activity'}</span>
+                            </div>
+                            {/* Additional summary cards for health, mode, etc. */}
+                            <div className="summary-card">
+                                <span className="summary-card__label">Federation Health</span>
+                                <span className="summary-card__value" style={{ color: summary.readyNodes === summary.totalNodes ? '#10b981' : '#f59e0b' }}>
+                                    {summary.readyNodes === summary.totalNodes ? 'Healthy' : 'Degraded'}
+                                </span>
+                                <span className="summary-card__detail">{summary.readyNodes} / {summary.totalNodes} nodes ready</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* Nodes Section */}
+                    <section id="nodes" ref={el => (sectionRefs.current['nodes'] = el as HTMLDivElement | null)} className="feature-card">
+                        <div className="section-header">
+                            <h2>Cluster Nodes</h2>
+                            <div className="section-actions">
+                                {messageType !== 'BROADCAST' && (<span className="status-pill">Targets · {selectedNodes.size}</span>)}
+                            </div>
+                        </div>
+                        {topologyError && <div className="error-banner">{topologyError}</div>}
+                        {!nodes.length && !loadingNodes ? (
+                            <div className="empty-state">No nodes reported yet. Ensure the daemonset is running.</div>
+                        ) : (
+                            <div className="node-grid">
+                                {nodes.map((node) => {
+                                    const isSelected = selectedNodes.has(node.ip);
+                                    const statusClass = node.status === 'Ready' ? 'is-ready' : 'is-warning';
+                                    const selectable = messageType !== 'BROADCAST';
+                                    return (
+                                        <button
+                                            type="button"
+                                            key={node.name}
+                                            onClick={() => handleToggleNode(node.ip)}
+                                            className={`node-card${selectable ? ' is-selectable' : ''}${isSelected ? ' is-selected' : ''}`}
+                                        >
+                                            <div className="node-card__header">
+                                                <div className="node-card__identity">
+                                                    <div className="node-card__icon">🖥️</div>
+                                                    <div>
+                                                        <div className="node-card__name">{node.name}</div>
+                                                        <div className="node-card__meta">{node.role}</div>
+                                                    </div>
+                                                </div>
+                                                <span className={`node-card__status ${statusClass}`}>{node.status}</span>
+                                            </div>
+                                            <div className="node-card__kv">
+                                                <div className="node-card__kv-row">
+                                                    <span className="node-card__kv-label">IP</span>
+                                                    <span className="node-card__kv-value">{node.ip}</span>
+                                                </div>
+                                                <div className="node-card__kv-row">
+                                                    <span className="node-card__kv-label">Pods</span>
+                                                    <span className="node-card__kv-value">{node.runningPods}/{node.podCount} running</span>
+                                                </div>
+                                                {node.kernelVersion && (
+                                                    <div className="node-card__kv-row">
+                                                        <span className="node-card__kv-label">Kernel</span>
+                                                        <span className="node-card__kv-value">{node.kernelVersion}</span>
+                                                    </div>
+                                                )}
+                                                {node.osImage && (
+                                                    <div className="node-card__kv-row">
+                                                        <span className="node-card__kv-label">OS</span>
+                                                        <span className="node-card__kv-value">{node.osImage}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </section>
+
+                    {/* Messaging Console Section */}
+                    <section id="console" ref={el => (sectionRefs.current['console'] = el as HTMLDivElement | null)} className="feature-card">
+                        <div className="section-header">
+                            <h2>Communication Console</h2>
+                            <div className="section-actions">
+                                <button className="action-button" onClick={fetchStats}>Refresh Stats</button>
+                            </div>
+                        </div>
+                        {statsError && <div className="error-banner">{statsError}</div>}
+                        <div className="mode-selector">
+                            {COMMUNICATION_MODES.map((mode) => (
+                                <button
+                                    key={mode.value}
+                                    type="button"
+                                    className={`mode-card${messageType === mode.value ? ' is-active' : ''}`}
+                                    onClick={() => handleModeChange(mode.value)}
+                                >
+                                    <span className="mode-card__icon">{mode.icon}</span>
+                                    <span className="mode-card__title">{mode.title}</span>
+                                    <span className="mode-card__help">{mode.description}</span>
                                 </button>
                             ))}
                         </div>
-                    </div>
-
-                    {messageType !== 'BROADCAST' && (
-                        <div className="selected-targets" style={{ marginTop: '1.5rem' }}>
-                            <span className="selected-targets__label">
-                                {messageType === 'UNICAST' ? 'Single target required' : 'Multicast targets'}
-                            </span>
-                            <span className="selected-targets__value">
-                                {selectedNodes.size === 0
-                                    ? 'Select nodes from the grid above to build the target list.'
-                                    : Array.from(selectedNodes)
-                                          .map((ip) => nodeMap.get(ip)?.name || ip)
-                                          .join(', ')}
-                            </span>
-                        </div>
-                    )}
-
-                    <div style={{ marginTop: '1.5rem' }}>
-                        <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#cbd5ff' }}>
-                            Message Payload
-                        </h3>
-                        <textarea
-                            className="payload-textarea"
-                            value={messagePayload}
-                            onChange={(event) => setMessagePayload(event.target.value)}
-                            placeholder='{"message": "Hello nodes!", "priority": "high"}'
-                        />
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-                        <button
-                            type="button"
-                            className="send-button"
-                            onClick={handleSendMessage}
-                            disabled={!canSend || sending}
-                        >
-                            {sending ? 'Sending…' : `Send ${messageType}`}
-                        </button>
-                    </div>
-
-                    {consoleError && (
-                        <div className="error-banner" style={{ marginTop: '1rem' }}>
-                            {consoleError}
-                        </div>
-                    )}
-
-                    {stats && (
-                        <div className="stats-grid">
-                            <div className="stats-card">
-                                <span className="stats-card__label">Broadcast</span>
-                                <span className="stats-card__value">{stats.broadcast}</span>
-                                <span className="stats-card__hint">Messages fan-out to all peers</span>
-                            </div>
-                            <div className="stats-card">
-                                <span className="stats-card__label">Unicast</span>
-                                <span className="stats-card__value">{stats.unicast}</span>
-                                <span className="stats-card__hint">Direct node-to-node deliveries</span>
-                            </div>
-                            <div className="stats-card">
-                                <span className="stats-card__label">Multicast</span>
-                                <span className="stats-card__value">{stats.multicast}</span>
-                                <span className="stats-card__hint">Targeted cohort messaging</span>
-                            </div>
-                            <div className="stats-card">
-                                <span className="stats-card__label">Received</span>
-                                <span className="stats-card__value">{stats.received}</span>
-                                <span className="stats-card__hint">Inbound messages processed</span>
+                        <div style={{ marginTop: '1.5rem' }}>
+                            <h3 className="event-type-label">Event Type</h3>
+                            <div className="event-selector">
+                                {EVENT_OPTIONS.map((option) => (
+                                    <button
+                                        key={option}
+                                        type="button"
+                                        className={`event-chip${eventType === option ? ' is-active' : ''}`}
+                                        onClick={() => setEventType(option)}
+                                    >
+                                        {option}
+                                    </button>
+                                ))}
                             </div>
                         </div>
-                    )}
-                </section>
+                        {messageType !== 'BROADCAST' && (
+                            <div className="selected-targets">
+                                <span className="selected-targets__label">{messageType === 'UNICAST' ? 'Single target required' : 'Multicast targets'}</span>
+                                <span className="selected-targets__value">
+                                    {selectedNodes.size === 0
+                                        ? 'Select nodes from the grid above to build the target list.'
+                                        : Array.from(selectedNodes).map((ip) => nodeMap.get(ip)?.name || ip).join(', ')}
+                                </span>
+                            </div>
+                        )}
+                        <div style={{ marginTop: '1.5rem' }}>
+                            <h3 className="payload-label">Message Payload</h3>
+                            <textarea
+                                className="payload-textarea"
+                                value={messagePayload}
+                                onChange={(event) => setMessagePayload(event.target.value)}
+                                placeholder='{"message": "Hello nodes!", "priority": "high"}'
+                            />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+                            <button
+                                type="button"
+                                className="send-btn"
+                                onClick={handleSendMessage}
+                                disabled={!canSend || sending}
+                            >
+                                {sending ? 'Sending…' : `Send ${messageType}`}
+                            </button>
+                        </div>
+                        {consoleError && (
+                            <div className="error-banner" style={{ marginTop: '1rem' }}>{consoleError}</div>
+                        )}
+                        {stats && (
+                            <div className="stats-grid">
+                                <div className="stats-card">
+                                    <span className="stats-card__label">Broadcast</span>
+                                    <span className="stats-card__value">{stats.broadcast}</span>
+                                    <span className="stats-card__hint">Messages fan-out to all peers</span>
+                                </div>
+                                <div className="stats-card">
+                                    <span className="stats-card__label">Unicast</span>
+                                    <span className="stats-card__value">{stats.unicast}</span>
+                                    <span className="stats-card__hint">Direct node-to-node deliveries</span>
+                                </div>
+                                <div className="stats-card">
+                                    <span className="stats-card__label">Multicast</span>
+                                    <span className="stats-card__value">{stats.multicast}</span>
+                                    <span className="stats-card__hint">Targeted cohort messaging</span>
+                                </div>
+                                <div className="stats-card">
+                                    <span className="stats-card__label">Received</span>
+                                    <span className="stats-card__value">{stats.received}</span>
+                                    <span className="stats-card__hint">Inbound messages processed</span>
+                                </div>
+                            </div>
+                        )}
+                    </section>
 
-                <section className="feature-card">
-                    <div className="section-header">
-                        <h2>Realtime Communication Logs</h2>
-                        <div className="section-actions log-controls">
-                            <span className={`status-pill ${logsLoading ? 'is-syncing' : ''}`}>
-                                {logsLoading ? 'Refreshing' : 'Live'}
-                            </span>
-                            <label className="log-node-picker">
-                                <span>Node</span>
-                                <select
-                                    className="log-node-select"
-                                    value={logNodeFilter}
-                                    onChange={(event) => setLogNodeFilter(event.target.value)}
+                    {/* Logs Section */}
+                    <section id="logs" ref={el => (sectionRefs.current['logs'] = el as HTMLDivElement | null)} className="feature-card">
+                        <div className="section-header">
+                            <h2>Realtime Communication Logs</h2>
+                            <div className="section-actions log-controls">
+                                <span className={`status-pill ${logsLoading ? 'is-syncing' : ''}`}>{logsLoading ? 'Refreshing' : 'Live'}</span>
+                                <label className="log-node-picker">
+                                    <span>Node</span>
+                                    <select
+                                        className="log-node-select"
+                                        value={logNodeFilter}
+                                        onChange={(event) => setLogNodeFilter(event.target.value)}
+                                    >
+                                        {logNodeOptions.map((option) => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <button
+                                    type="button"
+                                    className={`action-button${autoRefreshLogs ? ' is-active' : ''}`}
+                                    onClick={() => setAutoRefreshLogs((prev) => !prev)}
                                 >
-                                    {logNodeOptions.map((option) => (
-                                        <option key={option.value} value={option.value}>
-                                            {option.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-                            <button
-                                type="button"
-                                className={`action-button${autoRefreshLogs ? ' is-active' : ''}`}
-                                onClick={() => setAutoRefreshLogs((prev) => !prev)}
-                            >
-                                Auto Refresh {autoRefreshLogs ? 'On' : 'Off'}
-                            </button>
-                            <button
-                                type="button"
-                                className="action-button"
-                                onClick={() => fetchCommLogs()}
-                                disabled={logsLoading}
-                            >
-                                {logsLoading ? 'Refreshing…' : 'Refresh Logs'}
-                            </button>
+                                    Auto Refresh {autoRefreshLogs ? 'On' : 'Off'}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="action-button"
+                                    onClick={() => fetchCommLogs()}
+                                    disabled={logsLoading}
+                                >
+                                    {logsLoading ? 'Refreshing…' : 'Refresh Logs'}
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    {logsError && <div className="error-banner">{logsError}</div>}
-                    <div className="log-summary">
-                        <span>{filteredLogEntries.length} entries</span>
-                        <span>{`Source: ${selectedNodeLabel}`}</span>
-                    </div>
-                    {!filteredLogEntries.length && !logsLoading ? (
-                        <div className="empty-state">
-                            No communication activity captured yet for this node. Send a message or wait for incoming traffic.
+                        {logsError && <div className="error-banner">{logsError}</div>}
+                        <div className="log-summary">
+                            <span>{filteredLogEntries.length} entries</span>
+                            <span>{`Source: ${selectedNodeLabel}`}</span>
                         </div>
-                    ) : (
-                        <div className="log-feed">
-                            {filteredLogEntries.map((entry, index) => {
-                                const key = entry.id || `${entry.timestamp}-${index}`;
-                                const targets = (entry.targets && entry.targets.length > 0
-                                    ? entry.targets
-                                    : entry.target_ips) || [];
-                                const delivered = (entry.delivered && entry.delivered.length > 0
-                                    ? entry.delivered
-                                    : entry.delivered_ips) || [];
-                                const failed = (entry.failed && entry.failed.length > 0
-                                    ? entry.failed
-                                    : entry.failed_ips) || [];
-                                const isFailure = entry.result ? FAILURE_RESULTS.has(entry.result) : false;
-                                const resultLabel = entry.result ? entry.result.replace(/_/g, ' ') : null;
-                                const nodeLabel = getNodeLabel(entry.node, entry.node_ip);
-                                return (
-                                    <div key={key} className={`log-feed__item${isFailure ? ' is-error' : ''}`}>
-                                        <div className="log-feed__meta">
-                                            <span className="log-feed__title">{entry.event}</span>
-                                            <span>{formatTime(entry.timestamp)}</span>
-                                        </div>
-                                        <div className="log-feed__badges">
-                                            <span className={`badge badge-${entry.direction.toLowerCase()}`}>
-                                                {entry.direction}
-                                            </span>
-                                            <span className="badge">{entry.mode}</span>
-                                            {resultLabel && (
-                                                <span className={`badge badge-result-${entry.result}`}>
-                                                    {resultLabel}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="log-feed__line">
-                                            <strong>{nodeLabel}</strong>{' '}
-                                            {entry.direction === 'SENT' ? 'sent' : 'processed'} a {entry.mode.toLowerCase()} message
-                                            {entry.direction === 'RECEIVED' && (entry.source || entry.source_ip) && (
-                                                <> from <strong>{entry.source || entry.source_ip}</strong></>
-                                            )}
-                                            .
-                                        </div>
-                                        <div className="log-feed__line log-feed__line--meta">
-                                            <span>Node IP: {entry.node_ip}</span>
-                                            {entry.direction === 'RECEIVED' && entry.source_ip && (
-                                                <span>Source IP: {entry.source_ip}</span>
-                                            )}
-                                            {entry.direction === 'SENT' && delivered.length > 0 && (
-                                                <span>Delivered: {delivered.length}</span>
-                                            )}
-                                        </div>
-                                        {targets.length > 0 && (
-                                            <div className="log-feed__line">
-                                                <span className="log-label">Targets:</span>
-                                                <span>{formatList(targets)}</span>
+                        {!filteredLogEntries.length && !logsLoading ? (
+                            <div className="empty-state">No communication activity captured yet for this node. Send a message or wait for incoming traffic.</div>
+                        ) : (
+                            <div className="log-feed">
+                                {filteredLogEntries.map((entry, index) => {
+                                    const key = entry.id || `${entry.timestamp}-${index}`;
+                                    const targets = (entry.targets && entry.targets.length > 0 ? entry.targets : entry.target_ips) || [];
+                                    const delivered = (entry.delivered && entry.delivered.length > 0 ? entry.delivered : entry.delivered_ips) || [];
+                                    const failed = (entry.failed && entry.failed.length > 0 ? entry.failed : entry.failed_ips) || [];
+                                    const isFailure = entry.result ? FAILURE_RESULTS.has(entry.result) : false;
+                                    const resultLabel = entry.result ? entry.result.replace(/_/g, ' ') : null;
+                                    const nodeLabel = getNodeLabel(entry.node, entry.node_ip);
+                                    return (
+                                        <div key={key} className={`log-feed__item${isFailure ? ' is-error' : ''}`}>
+                                            <div className="log-feed__meta">
+                                                <span className="log-feed__title">{entry.event}</span>
+                                                <span>{formatTime(entry.timestamp)}</span>
                                             </div>
-                                        )}
-                                        {delivered.length > 0 && (
-                                            <div className="log-feed__line">
-                                                <span className="log-label success">Delivered:</span>
-                                                <span>{formatList(delivered)}</span>
+                                            <div className="log-feed__badges">
+                                                <span className={`badge badge-${entry.direction.toLowerCase()}`}>{entry.direction}</span>
+                                                <span className="badge">{entry.mode}</span>
+                                                {resultLabel && (
+                                                    <span className={`badge badge-result-${entry.result}`}>{resultLabel}</span>
+                                                )}
                                             </div>
-                                        )}
-                                        {failed.length > 0 && (
                                             <div className="log-feed__line">
-                                                <span className="log-label error">Failed:</span>
-                                                <span>{formatList(failed)}</span>
+                                                <strong>{nodeLabel}</strong>{' '}
+                                                {entry.direction === 'SENT' ? 'sent' : 'processed'} a {entry.mode.toLowerCase()} message
+                                                {entry.direction === 'RECEIVED' && (entry.source || entry.source_ip) && (
+                                                    <> from <strong>{entry.source || entry.source_ip}</strong></>
+                                                )}
+                                                .
                                             </div>
-                                        )}
-                                        {entry.payload && Object.keys(entry.payload).length > 0 && (
-                                            <pre className="log-feed__payload">
-                                                {JSON.stringify(entry.payload, null, 2)}
-                                            </pre>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </section>
+                                            <div className="log-feed__line log-feed__line--meta">
+                                                <span>Node IP: {entry.node_ip}</span>
+                                                {entry.direction === 'RECEIVED' && entry.source_ip && (<span>Source IP: {entry.source_ip}</span>)}
+                                                {entry.direction === 'SENT' && delivered.length > 0 && (<span>Delivered: {delivered.length}</span>)}
+                                            </div>
+                                            {targets.length > 0 && (
+                                                <div className="log-feed__line"><span className="log-label">Targets:</span><span>{formatList(targets)}</span></div>
+                                            )}
+                                            {delivered.length > 0 && (
+                                                <div className="log-feed__line"><span className="log-label success">Delivered:</span><span>{formatList(delivered)}</span></div>
+                                            )}
+                                            {failed.length > 0 && (
+                                                <div className="log-feed__line"><span className="log-label error">Failed:</span><span>{formatList(failed)}</span></div>
+                                            )}
+                                            {entry.payload && Object.keys(entry.payload).length > 0 && (
+                                                <pre className="log-feed__payload">{JSON.stringify(entry.payload, null, 2)}</pre>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </section>
+                </main>
             </div>
+            <footer className="dashboard-footer federation-footer">
+                <span>Powered by eBPF - Federation & Control</span>
+                <span>Auto-refresh: 5s</span>
+            </footer>
         </div>
     );
 }
