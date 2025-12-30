@@ -3,10 +3,13 @@ const mongoose = require('mongoose');
 const morgan = require('morgan');
 const cors = require('cors');
 const os = require('os');
+const path = require('path');
+const util = require('util');
 require('dotenv').config();
 
 const fs = require('fs');
 const https = require('https');
+const { execFile } = require('child_process');
 const RedirectRule = require('./models/RedirectRule');
 const RedirectionEvent = require('./models/RedirectionEvent');
 
@@ -43,6 +46,14 @@ const REQUIRED_FIELDS = [
 
 const NUMERIC_FIELDS = ['violation_threshold', 'ttl_seconds', 'redirect_backend_port', 'frontend_service_port'];
 const BOOLEAN_FIELDS = ['choose_best_pod'];
+const execFileAsync = util.promisify(execFile);
+const APPLY_SCRIPT_CANDIDATES = [
+  process.env.LRP_HELPER_PATH,
+  path.resolve(__dirname, 'k8s', 'component-2', 'apply-local-redirect.sh'),
+  path.resolve(__dirname, '..', 'k8s', 'component-2', 'apply-local-redirect.sh'),
+  path.resolve(__dirname, '..', '..', 'k8s', 'component-2', 'apply-local-redirect.sh'),
+].filter(Boolean);
+const APPLY_HELPER_TIMEOUT_MS = Number(process.env.LRP_HELPER_TIMEOUT_MS || 60000);
 
 function normalizeRule(body, { requireAll } = { requireAll: true }) {
   const data = {};
@@ -199,6 +210,54 @@ function normalizeRedirectionEvent(body) {
   return { data };
 }
 
+function resolveApplyScript() {
+  const match = APPLY_SCRIPT_CANDIDATES.find((p) => fs.existsSync(p));
+  if (!match) {
+    throw new Error(
+      `Local redirect helper not found. Checked: ${APPLY_SCRIPT_CANDIDATES.join(', ')}. Set LRP_HELPER_PATH to override.`
+    );
+  }
+  return match;
+}
+
+async function applyLocalRedirectPolicy(ruleDoc) {
+  const scriptPath = resolveApplyScript();
+
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'lrp-rule-'));
+  const rulePath = path.join(tempDir, 'rule.json');
+
+  try {
+    // Persist rule in the exact JSON shape expected by the helper
+    await fs.promises.writeFile(rulePath, JSON.stringify(toRuleFile(ruleDoc), null, 2), 'utf8');
+
+    const env = {
+      ...process.env,
+      // Optional override to point helper at a non-default telemetry API
+      API_URL: process.env.TELEMETRY_API_URL || process.env.API_URL || undefined,
+    };
+
+    // Use bash explicitly to avoid PATH/shebang issues in different environments
+    const { stdout, stderr } = await execFileAsync('bash', [scriptPath, rulePath], {
+      env,
+      timeout: APPLY_HELPER_TIMEOUT_MS,
+    });
+    return { stdout, stderr };
+  } catch (err) {
+    const stdout = err?.stdout?.toString();
+    const stderr = err?.stderr?.toString();
+    const message = err?.killed
+      ? `Helper timed out after ${APPLY_HELPER_TIMEOUT_MS}ms`
+      : err?.message || 'Failed to apply local redirect policy';
+    const error = new Error(message);
+    error.stdout = stdout;
+    error.stderr = stderr;
+    throw error;
+  } finally {
+    // Best-effort cleanup
+    fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 function toRuleFile(doc) {
   return {
     policy_name: doc.policy_name,
@@ -244,6 +303,39 @@ app.get('/api/rules/:id', async (req, res, next) => {
     const rule = await RedirectRule.findById(req.params.id);
     if (!rule) return res.status(404).json({ message: 'Rule not found' });
     res.json(rule);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Apply LocalRedirectPolicy via the helper script using the stored rule
+app.post('/api/rules/by-policy/:policyName/apply', async (req, res, next) => {
+  try {
+    const rule = await RedirectRule.findOne({ policy_name: req.params.policyName });
+    if (!rule) return res.status(404).json({ message: 'Rule not found' });
+
+    try {
+      const result = await applyLocalRedirectPolicy(rule);
+      res.json({
+        message: `Applied local redirect for policy ${rule.policy_name}`,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      });
+    } catch (err) {
+      // Surface as much detail as possible for debugging
+      const message = err?.message || 'Failed to apply local redirect policy';
+      const stdout = err?.stdout || '';
+      const stderr = err?.stderr || '';
+      return res.status(500).json({
+        message,
+        stdout,
+        stderr,
+        helper: resolveApplyScript(),
+        rule: rule.policy_name,
+        exitCode: err?.code,
+        signal: err?.signal,
+      });
+    }
   } catch (err) {
     next(err);
   }
