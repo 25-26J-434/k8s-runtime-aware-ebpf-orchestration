@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useMetrics } from '../hooks/useMetrics';
 import { useClusterInfo } from '../hooks/useClusterInfo';
 import { usePodDetails } from '../hooks/usePodDetails';
@@ -11,6 +11,7 @@ import { SystemHealth } from '../components/SystemHealth';
 import { TopPerformers } from '../components/TopPerformers';
 import { NetworkStats } from '../components/NetworkStats';
 import { CPUSchedulingMetrics } from '../components/CPUSchedulingMetrics';
+import DiskIOMetrics from '../components/DiskIOMetrics';
 import { api } from '../services/api';
 import { 
     FiBarChart2, 
@@ -30,14 +31,17 @@ import '../App.css';
 import '../styles/clean-pods.css';
 
 export function Dashboard() {
-    const { metrics, loading, error } = useMetrics(3000);
-    const clusterInfo = useClusterInfo(5000);
-    const { data: podDetails, loading: podDetailsLoading } = usePodDetails(5000);
+    const { metrics, loading, error } = useMetrics(5000); // Increased from 3000ms to 5000ms
+    const clusterInfo = useClusterInfo(10000); // Increased from 5000ms to 10000ms
+    const { data: podDetails, loading: podDetailsLoading } = usePodDetails(10000); // Increased from 5000ms to 10000ms
     const [activeSection, setActiveSection] = useState<string>('overview');
     const sectionRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
     const [schedMetrics, setSchedMetrics] = useState<any>(null);
     const [containerSchedMetrics, setContainerSchedMetrics] = useState<any>({});
     const [selectedPod, setSelectedPod] = useState<string>('all');
+    const [diskIOMetrics, setDiskIOMetrics] = useState<any>(null);
+    const [diskIOPodMetrics, setDiskIOPodMetrics] = useState<any>({});
+    const [diskIOContainerMetrics, setDiskIOContainerMetrics] = useState<any>({});
 
     // Scroll to section
     const scrollToSection = (sectionId: string) => {
@@ -65,36 +69,63 @@ export function Dashboard() {
 
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
-    }, [metrics]);
-
-    // Fetch scheduling metrics
-    useEffect(() => {
-        const fetchSchedMetrics = async () => {
-            try {
-                const data = await api.getSchedLatencyMetrics(10);
-                setSchedMetrics(data);
-            } catch (err) {
-                // Silently fail if scheduling metrics not available
-            }
-        };
-        
-        const fetchContainerSchedMetrics = async () => {
-            try {
-                const data = await api.getSchedLatencyContainers();
-                setContainerSchedMetrics(data || {});
-            } catch (err) {
-                // Silently fail if container scheduling metrics not available
-            }
-        };
-        
-        fetchSchedMetrics();
-        fetchContainerSchedMetrics();
-        const interval = setInterval(() => {
-            fetchSchedMetrics();
-            fetchContainerSchedMetrics();
-        }, 3000); // Update every 3 seconds for real-time
-        return () => clearInterval(interval);
     }, []);
+
+    // Extract supplementary metrics from WebSocket metrics updates
+    useEffect(() => {
+        if (!metrics) return;
+        
+        // Extract scheduling latency from metrics
+        const schedData = (metrics as any).sched_latency;
+        if (schedData) {
+            console.log('[Dashboard] Found sched_latency data:', schedData);
+            setSchedMetrics(schedData);
+        } else {
+            console.log('[Dashboard] No sched_latency data found in metrics');
+        }
+        
+        // Extract disk I/O from metrics
+        if (metrics.node_system?.disk_io) {
+            setDiskIOMetrics(metrics.node_system.disk_io);
+        }
+        
+        // Extract pod-level scheduling and disk I/O
+        if (metrics.pods) {
+            const schedByPod: any = {};
+            const diskIOByPod: any = {};
+            
+            Object.entries(metrics.pods).forEach(([podKey, podData]: [string, any]) => {
+                if (podData.sched_latency) {
+                    schedByPod[podKey] = podData.sched_latency;
+                }
+                if (podData.disk_io) {
+                    diskIOByPod[podKey] = podData.disk_io;
+                }
+            });
+            
+            if (Object.keys(schedByPod).length > 0) {
+                setContainerSchedMetrics(schedByPod);
+            }
+            if (Object.keys(diskIOByPod).length > 0) {
+                setDiskIOPodMetrics(diskIOByPod);
+            }
+        }
+        
+        // Extract container-level metrics
+        if (metrics.containers) {
+            const diskIOByContainer: any = {};
+            
+            Object.entries(metrics.containers).forEach(([containerKey, containerData]: [string, any]) => {
+                if (containerData.disk_io) {
+                    diskIOByContainer[containerKey] = containerData.disk_io;
+                }
+            });
+            
+            if (Object.keys(diskIOByContainer).length > 0) {
+                setDiskIOContainerMetrics(diskIOByContainer);
+            }
+        }
+    }, [metrics]);
 
     if (loading && !metrics) {
         return (
@@ -128,7 +159,6 @@ export function Dashboard() {
         { id: 'pod-metrics', label: 'Pod Metrics', icon: FiPackage },
         { id: 'packets', label: 'Packet Distribution', icon: FiDownload },
         { id: 'services', label: 'Service Health', icon: FiSettings },
-        { id: 'nat', label: 'NAT Metadata', icon: FiRefreshCw },
     ];
 
     return (
@@ -391,6 +421,14 @@ export function Dashboard() {
                             </>
                         )}
                     </div>
+                    
+                    {/* Disk I/O Metrics - Node Level */}
+                    {diskIOMetrics && (
+                        <DiskIOMetrics 
+                            data={diskIOMetrics}
+                            title="Node Disk I/O Metrics"
+                        />
+                    )}
                 </section>
 
                 {/* TCP Events Timeline - Enhanced */}
@@ -726,14 +764,14 @@ export function Dashboard() {
                                             </div>
                                         </div>
 
-                                        {/* Container-Level eBPF Metrics & Details */}
-                                        {podDetails?.pods[podKey] && podDetails.pods[podKey].containers?.length > 0 && (
-                                            <div className="container-section-clean">
-                                                <div className="section-title-clean">
-                                                    <span>Container Metrics</span>
-                                                    <span className="count-badge-clean">{podDetails.pods[podKey].containers.length}</span>
-                                                </div>
-                                                <div className="container-grid-clean">
+                            {/* Container-Level eBPF Metrics & Details */}
+                            {podDetails?.pods[podKey] && podDetails.pods[podKey].containers?.length > 0 && (
+                                <div className="container-section-clean">
+                                    <div className="section-title-clean">
+                                        <span>Container Metrics</span>
+                                        <span className="count-badge-clean">{podDetails.pods[podKey].containers.length}</span>
+                                    </div>
+                                    <div className="container-grid-clean">
                                                     {podDetails.pods[podKey].containers.map((container: any) => {
                                                         const containerName = container.name;
                                                         const containerData = containerMetrics[containerName] || {};
@@ -1287,19 +1325,26 @@ export function Dashboard() {
                         className="section"
                     >
                         <div className="section-header">
-                            <h2>SERVICE HEALTH</h2>
+                            <div>
+                                <h2>SERVICE HEALTH</h2>
+                                <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.5rem' }}>
+                                    Real-time monitoring of Kubernetes services and their endpoint health status
+                                </p>
+                            </div>
                             <span className="section-badge">
                                 {metrics.service_health.healthy_services} Healthy / {metrics.service_health.total_services} Total
                             </span>
                         </div>
-                        <div className="metrics-grid">
+
+                        {/* Summary Cards */}
+                        <div className="metrics-grid" style={{ marginBottom: '2rem' }}>
                             <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)', borderColor: 'rgba(16, 185, 129, 0.3)'}}>
                                 <div className="stat-header">
                                     <h3>Healthy Services</h3>
                                 </div>
                                 <div className="stat-value" style={{color: '#10b981'}}>{metrics.service_health.healthy_services}</div>
                                 <div className="stat-details">
-                                    <span className="stat-label">Fully Operational</span>
+                                    <span className="stat-label">All endpoints ready</span>
                                 </div>
                             </div>
 
@@ -1309,57 +1354,255 @@ export function Dashboard() {
                                 </div>
                                 <div className="stat-value" style={{color: '#ef4444'}}>{metrics.service_health.unhealthy_services}</div>
                                 <div className="stat-details">
-                                    <span className="stat-label">Needs Attention</span>
+                                    <span className="stat-label">Needs attention</span>
+                                </div>
+                            </div>
+
+                            <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%)', borderColor: 'rgba(245, 158, 11, 0.3)'}}>
+                                <div className="stat-header">
+                                    <h3>Total Services</h3>
+                                </div>
+                                <div className="stat-value" style={{color: '#f59e0b'}}>{metrics.service_health.total_services}</div>
+                                <div className="stat-details">
+                                    <span className="stat-label">Monitored</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Service Details Table */}
+                        {metrics.service_health.service_details && Object.keys(metrics.service_health.service_details).length > 0 && (
+                            <div style={{ marginTop: '2rem' }}>
+                                <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', color: '#e2e8f0' }}>Service Details</h3>
+                                <div style={{ 
+                                    background: 'rgba(15, 23, 42, 0.6)', 
+                                    borderRadius: '8px', 
+                                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                                    overflow: 'hidden'
+                                }}>
+                                    <div style={{ 
+                                        display: 'grid', 
+                                        gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr 1fr',
+                                        gap: '1rem',
+                                        padding: '1rem',
+                                        borderBottom: '1px solid rgba(59, 130, 246, 0.1)',
+                                        fontWeight: 600,
+                                        fontSize: '0.85rem',
+                                        color: '#94a3b8',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px'
+                                    }}>
+                                        <div>Service Name</div>
+                                        <div>Namespace</div>
+                                        <div>Type</div>
+                                        <div>Status</div>
+                                        <div>Endpoints</div>
+                                        <div>Last Check</div>
+                                    </div>
+                                    {Object.entries(metrics.service_health.service_details).map(([serviceKey, service]: [string, any]) => {
+                                        const statusColor = service.status === 'healthy' ? '#10b981' : 
+                                                          service.status === 'degraded' ? '#f59e0b' : '#ef4444';
+                                        const statusLabel = service.status === 'healthy' ? 'Healthy' : 
+                                                           service.status === 'degraded' ? 'Degraded' : 'Unhealthy';
+                                        const endpointRatio = `${service.ready_endpoints || 0} / ${service.total_endpoints || 0}`;
+                                        
+                                        return (
+                                            <div 
+                                                key={serviceKey}
+                                                style={{ 
+                                                    display: 'grid', 
+                                                    gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr 1fr',
+                                                    gap: '1rem',
+                                                    padding: '1rem',
+                                                    borderBottom: '1px solid rgba(59, 130, 246, 0.05)',
+                                                    alignItems: 'center',
+                                                    transition: 'background 0.2s'
+                                                }}
+                                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'}
+                                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                            >
+                                                <div>
+                                                    <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{service.name}</div>
+                                                    {service.cluster_ip && (
+                                                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                                                            IP: {service.cluster_ip}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>{service.namespace}</div>
+                                                <div style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>{service.type || 'ClusterIP'}</div>
+                                                <div>
+                                                    <span style={{ 
+                                                        padding: '0.25rem 0.75rem',
+                                                        borderRadius: '4px',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: 600,
+                                                        backgroundColor: statusColor + '20',
+                                                        color: statusColor,
+                                                        border: `1px solid ${statusColor}40`
+                                                    }}>
+                                                        {statusLabel}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <div style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>
+                                                        {endpointRatio} ready
+                                                    </div>
+                                                    {service.total_endpoints > 0 && (
+                                                        <div style={{ 
+                                                            width: '100%', 
+                                                            height: '4px', 
+                                                            background: 'rgba(59, 130, 246, 0.2)', 
+                                                            borderRadius: '2px',
+                                                            marginTop: '0.5rem',
+                                                            overflow: 'hidden'
+                                                        }}>
+                                                            <div style={{ 
+                                                                width: `${(service.ready_endpoints / service.total_endpoints) * 100}%`,
+                                                                height: '100%',
+                                                                background: statusColor,
+                                                                transition: 'width 0.3s'
+                                                            }} />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                                                    {service.last_check ? new Date(service.last_check).toLocaleTimeString() : 'N/A'}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Endpoint Details */}
+                        {metrics.service_health.service_details && Object.entries(metrics.service_health.service_details).some(([_, service]: [string, any]) => 
+                            service.endpoint_health && Object.keys(service.endpoint_health).length > 0
+                        ) && (
+                            <div style={{ marginTop: '2rem' }}>
+                                <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', color: '#e2e8f0' }}>Endpoint Health</h3>
+                                <div style={{ 
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+                                    gap: '1rem'
+                                }}>
+                                    {Object.entries(metrics.service_health.service_details).map(([serviceKey, service]: [string, any]) => {
+                                        if (!service.endpoint_health || Object.keys(service.endpoint_health).length === 0) return null;
+                                        
+                                        return (
+                                            <div 
+                                                key={serviceKey}
+                                                style={{ 
+                                                    background: 'rgba(15, 23, 42, 0.6)', 
+                                                    borderRadius: '8px', 
+                                                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                                                    padding: '1rem'
+                                                }}
+                                            >
+                                                <div style={{ 
+                                                    fontSize: '0.9rem', 
+                                                    fontWeight: 600, 
+                                                    color: '#e2e8f0',
+                                                    marginBottom: '0.75rem',
+                                                    paddingBottom: '0.75rem',
+                                                    borderBottom: '1px solid rgba(59, 130, 246, 0.1)'
+                                                }}>
+                                                    {service.name} ({service.namespace})
+                                                </div>
+                                                {Object.entries(service.endpoint_health).map(([endpointKey, endpoint]: [string, any]) => {
+                                                    const endpointStatusColor = endpoint.status === 'ready' ? '#10b981' : '#ef4444';
+                                                    const httpCheckColor = endpoint.http_check ? '#10b981' : '#ef4444';
+                                                    
+                                                    return (
+                                                        <div 
+                                                            key={endpointKey}
+                                                            style={{ 
+                                                                padding: '0.75rem',
+                                                                marginBottom: '0.5rem',
+                                                                background: 'rgba(59, 130, 246, 0.05)',
+                                                                borderRadius: '6px',
+                                                                border: `1px solid ${endpointStatusColor}30`
+                                                            }}
+                                                        >
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                                                <div>
+                                                                    <div style={{ fontWeight: 600, color: '#e2e8f0', fontSize: '0.9rem' }}>
+                                                                        {endpoint.pod_name || 'Unknown Pod'}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                                                                        {endpoint.pod_ip}
+                                                                    </div>
+                                                                </div>
+                                                                <span style={{ 
+                                                                    padding: '0.25rem 0.5rem',
+                                                                    borderRadius: '4px',
+                                                                    fontSize: '0.7rem',
+                                                                    fontWeight: 600,
+                                                                    backgroundColor: endpointStatusColor + '20',
+                                                                    color: endpointStatusColor,
+                                                                    border: `1px solid ${endpointStatusColor}40`
+                                                                }}>
+                                                                    {endpoint.status === 'ready' ? 'Ready' : 'Not Ready'}
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem', color: '#94a3b8' }}>
+                                                                <div>
+                                                                    <span style={{ color: '#64748b' }}>HTTP Check: </span>
+                                                                    <span style={{ color: httpCheckColor, fontWeight: 600 }}>
+                                                                        {endpoint.http_check ? '✓ Pass' : '✗ Fail'}
+                                                                    </span>
+                                                                </div>
+                                                                {endpoint.latency_ms > 0 && (
+                                                                    <div>
+                                                                        <span style={{ color: '#64748b' }}>Latency: </span>
+                                                                        <span style={{ color: '#cbd5e1', fontWeight: 600 }}>
+                                                                            {endpoint.latency_ms.toFixed(2)} ms
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Info Box */}
+                        <div style={{ 
+                            marginTop: '2rem',
+                            padding: '1rem',
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(59, 130, 246, 0.2)'
+                        }}>
+                            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                                <div style={{ fontSize: '1.2rem' }}>ℹ️</div>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem' }}>How Service Health Works</div>
+                                    <div style={{ fontSize: '0.85rem', color: '#94a3b8', lineHeight: '1.6' }}>
+                                        <div style={{ marginBottom: '0.5rem' }}>
+                                            <strong style={{ color: '#cbd5e1' }}>Healthy:</strong> All endpoints are ready and responding
+                                        </div>
+                                        <div style={{ marginBottom: '0.5rem' }}>
+                                            <strong style={{ color: '#cbd5e1' }}>Degraded:</strong> Some endpoints are ready, but not all
+                                        </div>
+                                        <div>
+                                            <strong style={{ color: '#cbd5e1' }}>Unhealthy:</strong> No endpoints are ready or service has no endpoints
+                                        </div>
+                                        <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#64748b' }}>
+                                            Health checks are performed every 10 seconds. HTTP checks are attempted when service ports are available.
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </section>
                 )}
 
-                {/* NAT Metadata */}
-                {metrics?.nat_metadata && (
-                    <section 
-                        id="nat" 
-                        ref={(el) => (sectionRefs.current['nat'] = el)}
-                        className="section"
-                    >
-                        <div className="section-header">
-                            <h2>NAT TRANSLATION METADATA</h2>
-                            <span className="section-badge">Connection Tracking</span>
-                        </div>
-                        <div className="metrics-grid">
-                            <div className="stat-card">
-                                <div className="stat-header">
-                                    <h3>Active Connections</h3>
-                                </div>
-                                <div className="stat-value">{metrics.nat_metadata.active_connections.toLocaleString()}</div>
-                                <div className="stat-details">
-                                    <span className="stat-label">Currently Tracked</span>
-                                </div>
-                            </div>
-
-                            <div className="stat-card">
-                                <div className="stat-header">
-                                    <h3>SNAT Translations</h3>
-                                </div>
-                                <div className="stat-value">{metrics.nat_metadata.snat_translations.toLocaleString()}</div>
-                                <div className="stat-details">
-                                    <span className="stat-label">Source NAT</span>
-                                </div>
-                            </div>
-
-                            <div className="stat-card">
-                                <div className="stat-header">
-                                    <h3>DNAT Translations</h3>
-                                </div>
-                                <div className="stat-value">{metrics.nat_metadata.dnat_translations.toLocaleString()}</div>
-                                <div className="stat-details">
-                                    <span className="stat-label">Destination NAT</span>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-                )}
             </main>
             </div>
 

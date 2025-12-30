@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api } from '../services/api';
+import { useMetrics } from '../hooks/useMetrics';
 import './CPUSchedulingMetrics.css';
 
 interface SchedMetrics {
@@ -19,38 +19,55 @@ interface PodSchedMetrics {
 }
 
 export function CPUSchedulingMetrics() {
+    const { metrics } = useMetrics(5000);
     const [nodeMetrics, setNodeMetrics] = useState<SchedMetrics | null>(null);
     const [topPods, setTopPods] = useState<PodSchedMetrics[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const data = await api.getSchedLatencyMetrics(10);
-                setNodeMetrics(data.node_metrics);
-                
-                // Get top 5 pods with highest latency
-                if (data.pod_metrics) {
-                    const pods = Object.values(data.pod_metrics) as PodSchedMetrics[];
-                    const sorted = pods
-                        .filter((p: PodSchedMetrics) => p.avg_runqueue_latency_us > 0)
-                        .sort((a: PodSchedMetrics, b: PodSchedMetrics) => 
-                            b.avg_runqueue_latency_us - a.avg_runqueue_latency_us
-                        )
-                        .slice(0, 5);
-                    setTopPods(sorted);
-                }
-                setLoading(false);
-            } catch (err) {
-                console.error('Failed to fetch scheduling metrics:', err);
-                setLoading(false);
-            }
-        };
+        if (!metrics) {
+            setLoading(true);
+            return;
+        }
 
-        fetchData();
-        const interval = setInterval(fetchData, 5000);
-        return () => clearInterval(interval);
-    }, []);
+        // Extract scheduling latency from WebSocket metrics
+        const schedData = (metrics as any).sched_latency;
+        
+        console.log('[CPUSchedulingMetrics] Metrics received:', metrics);
+        console.log('[CPUSchedulingMetrics] sched_latency data:', schedData);
+        
+        if (schedData && schedData.node_metrics) {
+            const nodeData = schedData.node_metrics;
+            console.log('[CPUSchedulingMetrics] Node metrics:', nodeData);
+            
+            setNodeMetrics({
+                total_events: nodeData.total_events || 0,
+                avg_runqueue_latency_us: nodeData.avg_runqueue_latency_us || 0,
+                max_runqueue_latency_us: nodeData.max_runqueue_latency_us || 0,
+                p95_runqueue_latency_us: nodeData.p95_runqueue_latency_us || 0,
+                cpu_starvation_count: nodeData.cpu_starvation_count || 0,
+            });
+
+            // Extract pod metrics
+            if (schedData.pod_metrics && Object.keys(schedData.pod_metrics).length > 0) {
+                const pods = Object.values(schedData.pod_metrics) as PodSchedMetrics[];
+                const sorted = pods
+                    .filter((p: PodSchedMetrics) => p.avg_runqueue_latency_us > 0)
+                    .sort((a: PodSchedMetrics, b: PodSchedMetrics) => 
+                        b.avg_runqueue_latency_us - a.avg_runqueue_latency_us
+                    )
+                    .slice(0, 5);
+                setTopPods(sorted);
+            } else {
+                setTopPods([]);
+            }
+            
+            setLoading(false);
+        } else {
+            console.log('[CPUSchedulingMetrics] No sched_latency data found');
+            setLoading(false);
+        }
+    }, [metrics]);
 
     const formatLatency = (us: number | undefined): string => {
         if (!us || isNaN(us)) return '0 μs';

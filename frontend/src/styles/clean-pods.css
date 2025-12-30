@@ -5,7 +5,8 @@
   border: 1px solid rgba(148, 163, 184, 0.1);
   border-radius: 12px;
   padding: 1.5rem;
-  transition: all 0.3s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  will-change: transform;
 }
 
 .pod-card-clean:hover {

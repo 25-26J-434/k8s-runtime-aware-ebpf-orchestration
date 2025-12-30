@@ -146,6 +146,25 @@ export const api = {
         return data.services || [];
     },
 
+    // Disk I/O endpoints
+    async getDiskIOMetrics() {
+        const response = await fetch(`${API_BASE}/api/disk/metrics`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O metrics');
+        return response.json();
+    },
+    
+    async getDiskIOPods() {
+        const response = await fetch(`${API_BASE}/api/disk/pods`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O pod metrics');
+        return response.json();
+    },
+    
+    async getDiskIOContainers() {
+        const response = await fetch(`${API_BASE}/api/disk/containers`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O container metrics');
+        return response.json();
+    },
+    
     async getPodDNSMetrics() {
         const response = await fetch(`${API_BASE}/api/dns/pods`);
         if (!response.ok) throw new Error('Failed to fetch pod DNS metrics');

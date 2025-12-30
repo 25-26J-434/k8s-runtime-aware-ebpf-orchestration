@@ -1,0 +1,14 @@
+{
+  "name": "io-test-app",
+  "version": "1.0.0",
+  "description": "Express app to generate disk I/O metrics for eBPF monitoring",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "better-sqlite3": "^9.2.2"
+  }
+}
+

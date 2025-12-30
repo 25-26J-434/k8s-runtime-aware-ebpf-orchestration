@@ -40,6 +40,23 @@ function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse 
         }
     });
     
+    // Extract scheduling latency metrics
+    const schedNode = node.sched_latency || {};
+    const schedPods: Record<string, any> = {};
+    Object.entries(pods).forEach(([podKey, podMetrics]) => {
+        if (podMetrics.sched_latency) {
+            schedPods[podKey] = podMetrics.sched_latency;
+        }
+    });
+
+    // Debug logging
+    if (schedNode && Object.keys(schedNode).length > 0) {
+        console.log('[useMetrics] Found sched_latency in node:', schedNode);
+    }
+    if (Object.keys(schedPods).length > 0) {
+        console.log('[useMetrics] Found sched_latency in pods:', Object.keys(schedPods).length, 'pods');
+    }
+
     return {
         timestamp: data.timestamp,
         node_name: data.node_name,
@@ -95,6 +112,10 @@ function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse 
         packet_distribution: node.packet_distribution || undefined,
         service_health: node.service_health || undefined,
         nat_metadata: node.nat_metadata || undefined,
+        sched_latency: schedNode && Object.keys(schedNode).length > 0 ? {
+            node_metrics: schedNode,
+            pod_metrics: schedPods,
+        } : undefined,
         pods: data.pods,
         containers: data.containers || {},
     };
@@ -119,7 +140,7 @@ export function useMetrics(refreshInterval = 3000) {
 
     useEffect(() => {
         let mounted = true;
-        let fallbackInterval: NodeJS.Timeout | null = null;
+        let fallbackInterval: number | null = null;
 
         // Try WebSocket connection first
         metricsWebSocket.connect();
@@ -144,11 +165,11 @@ export function useMetrics(refreshInterval = 3000) {
             }
         };
 
-        // Check connection status periodically and fallback if needed
-        fallbackInterval = setInterval(checkConnectionAndFallback, refreshInterval);
+        // Only use fallback if WebSocket disconnects (check every 10 seconds)
+        fallbackInterval = setInterval(checkConnectionAndFallback, 10000);
         
-        // Initial fallback check after a short delay
-        setTimeout(checkConnectionAndFallback, 1000);
+        // Initial fallback check after 2 seconds (give WebSocket time to connect)
+        setTimeout(checkConnectionAndFallback, 2000);
 
         return () => {
             mounted = false;
