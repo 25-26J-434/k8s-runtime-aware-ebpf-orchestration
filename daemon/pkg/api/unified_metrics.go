@@ -160,7 +160,7 @@ func buildUnifiedMetricsResponse(metricType, level string) UnifiedMetricsRespons
 			ctx := context.Background()
 			var allPods *corev1.PodList
 			var err error
-			
+
 			if nodeName != "" && nodeName != "unknown" {
 				allPods, err = k8sClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{
 					FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName),
@@ -168,17 +168,17 @@ func buildUnifiedMetricsResponse(metricType, level string) UnifiedMetricsRespons
 			} else {
 				allPods, err = k8sClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 			}
-			
+
 			if err == nil {
 				// System namespaces to exclude
 				systemNamespaces := map[string]bool{
-					"kube-system":          true,
-					"local-path-storage":   true,
-					"ebpf-telemetry":       true,
-					"kube-public":          true,
-					"kube-node-lease":      true,
+					"kube-system":        true,
+					"local-path-storage": true,
+					"ebpf-telemetry":     true,
+					"kube-public":        true,
+					"kube-node-lease":    true,
 				}
-				
+
 				// Pre-populate all non-system pods with empty metrics
 				for _, pod := range allPods.Items {
 					if !systemNamespaces[pod.Namespace] && pod.Status.PodIP != "" {
@@ -190,7 +190,7 @@ func buildUnifiedMetricsResponse(metricType, level string) UnifiedMetricsRespons
 				}
 			}
 		}
-		
+
 		// Now add actual eBPF metrics for pods that have generated events
 		for _, collector := range collectors {
 			podMetrics := collector.GetPodMetrics()
@@ -214,12 +214,12 @@ func buildUnifiedMetricsResponse(metricType, level string) UnifiedMetricsRespons
 			if response.Containers[containerKey] == nil {
 				response.Containers[containerKey] = make(map[string]interface{})
 			}
-			
+
 			avgLatency := float64(0)
 			if metrics.TotalEvents > 0 {
 				avgLatency = float64(metrics.TotalLatencyNs) / float64(metrics.TotalEvents)
 			}
-			
+
 			response.Containers[containerKey]["dns_latency"] = map[string]interface{}{
 				"container_name":   metrics.ContainerName,
 				"container_id":     metrics.ContainerID,
@@ -234,19 +234,19 @@ func buildUnifiedMetricsResponse(metricType, level string) UnifiedMetricsRespons
 				"last_latency_ns":  metrics.LastLatencyNs,
 			}
 		}
-		
+
 		// Get container TCP metrics
 		tcpContainerMetrics := telemetry.GetContainerTCPMetrics()
 		for containerKey, metrics := range tcpContainerMetrics {
 			if response.Containers[containerKey] == nil {
 				response.Containers[containerKey] = make(map[string]interface{})
 			}
-			
+
 			avgSRTT := float64(0)
 			if metrics.TotalEvents > 0 && metrics.SmoothedRTTUs > 0 {
 				avgSRTT = float64(metrics.SmoothedRTTUs) / float64(metrics.TotalEvents)
 			}
-			
+
 			// Convert recent events to API format
 			recentEventsAPI := make([]map[string]interface{}, 0, len(metrics.RecentEvents))
 			for _, evt := range metrics.RecentEvents {
@@ -266,7 +266,7 @@ func buildUnifiedMetricsResponse(metricType, level string) UnifiedMetricsRespons
 					"retrans_count": evt.RetransCount,
 				})
 			}
-			
+
 			response.Containers[containerKey]["tcp_metrics"] = map[string]interface{}{
 				"container_name":    metrics.ContainerName,
 				"container_id":      metrics.ContainerID,
@@ -284,6 +284,33 @@ func buildUnifiedMetricsResponse(metricType, level string) UnifiedMetricsRespons
 				"last_min_rtt_us":   metrics.LastMinRTTUs,
 				"last_cwnd":         metrics.LastCWND,
 				"recent_events":     recentEventsAPI,
+			}
+		}
+
+		// Get container disk I/O metrics
+		diskIOContainerMetrics := telemetry.GetContainerDiskIOMetrics()
+		for containerKey, metrics := range diskIOContainerMetrics {
+			if response.Containers[containerKey] == nil {
+				response.Containers[containerKey] = make(map[string]interface{})
+			}
+
+			response.Containers[containerKey]["disk_io"] = map[string]interface{}{
+				"total_reads":          metrics.TotalReads,
+				"avg_read_latency_ns":  metrics.AvgReadLatencyNs,
+				"max_read_latency_ns":  metrics.MaxReadLatencyNs,
+				"total_read_bytes":     metrics.TotalReadBytes,
+				"total_writes":         metrics.TotalWrites,
+				"avg_write_latency_ns": metrics.AvgWriteLatencyNs,
+				"max_write_latency_ns": metrics.MaxWriteLatencyNs,
+				"total_write_bytes":    metrics.TotalWriteBytes,
+				"total_opens":          metrics.TotalOpens,
+				"total_closes":         metrics.TotalCloses,
+				"current_queue_depth":  metrics.CurrentQueueDepth,
+				"max_queue_depth":      metrics.MaxQueueDepth,
+				"avg_queue_depth":      metrics.AvgQueueDepth,
+				"total_io_operations":  metrics.TotalIOOperations,
+				"total_io_bytes":       metrics.TotalIOBytes,
+				"avg_io_latency_ns":    metrics.AvgIOLatencyNs,
 			}
 		}
 	}

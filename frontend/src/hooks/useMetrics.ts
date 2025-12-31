@@ -49,12 +49,45 @@ function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse 
         }
     });
 
+    // Extract disk I/O metrics
+    const diskIONode = node.disk_io || {};
+    const diskIOPods: Record<string, any> = {};
+    Object.entries(pods).forEach(([podKey, podMetrics]) => {
+        if (podMetrics.disk_io) {
+            diskIOPods[podKey] = podMetrics.disk_io;
+        }
+    });
+
+    // Extract container-level disk I/O
+    const diskIOContainers: Record<string, any> = {};
+    const containers = data.containers || {};
+    Object.entries(containers).forEach(([containerKey, containerMetrics]: [string, any]) => {
+        if (containerMetrics.disk_io) {
+            diskIOContainers[containerKey] = containerMetrics.disk_io;
+        }
+    });
+
     // Debug logging
     if (schedNode && Object.keys(schedNode).length > 0) {
         console.log('[useMetrics] Found sched_latency in node:', schedNode);
     }
     if (Object.keys(schedPods).length > 0) {
         console.log('[useMetrics] Found sched_latency in pods:', Object.keys(schedPods).length, 'pods');
+    }
+    if (diskIONode && Object.keys(diskIONode).length > 0) {
+        console.log('[useMetrics] Found disk_io in node:', diskIONode);
+    }
+    if (Object.keys(diskIOPods).length > 0) {
+        console.log('[useMetrics] Found disk_io in pods:', Object.keys(diskIOPods).length, 'pods');
+    }
+    if (Object.keys(diskIOContainers).length > 0) {
+        console.log('[useMetrics] Found disk_io in containers:', Object.keys(diskIOContainers).length, 'containers');
+    }
+
+    // Build node_system object with disk_io
+    const nodeSystem: any = node.node_system || {};
+    if (diskIONode && Object.keys(diskIONode).length > 0) {
+        nodeSystem.disk_io = diskIONode;
     }
 
     return {
@@ -108,7 +141,7 @@ function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse 
                 return tcpPods;
             })(),
         },
-        node_system: node.node_system || undefined,
+        node_system: Object.keys(nodeSystem).length > 0 ? nodeSystem : undefined,
         packet_distribution: node.packet_distribution || undefined,
         service_health: node.service_health || undefined,
         nat_metadata: node.nat_metadata || undefined,
