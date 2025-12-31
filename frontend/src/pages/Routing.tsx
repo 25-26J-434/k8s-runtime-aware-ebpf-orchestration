@@ -69,6 +69,9 @@ export function Routing() {
     const [createStatus, setCreateStatus] = useState<string | null>(null);
     const [createError, setCreateError] = useState<string | null>(null);
     const [connectivityWarning, setConnectivityWarning] = useState<string | null>(null);
+    const [probing, setProbing] = useState(false);
+    const [probeOutput, setProbeOutput] = useState<string | null>(null);
+    const [probeError, setProbeError] = useState<string | null>(null);
 
     const flowFrontend = payload.frontend_service || 'service-a';
     const flowPlanned = payload.planned_backend_service || 'service-b';
@@ -130,6 +133,8 @@ export function Routing() {
         setRedirectApplied(false);
         setShowRedirect(false);
         setRedirectUnlocked(false);
+        setProbeOutput(null);
+        setProbeError(null);
     };
 
     const parsedIdentity = useMemo(() => {
@@ -257,10 +262,24 @@ export function Routing() {
                 frontend_service: payload.frontend_service,
                 notes: payload.notes,
             });
+            await probeServiceResponse();
         } catch (err: any) {
             setError(err?.message || 'Failed to apply local redirect policy');
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const probeServiceResponse = async () => {
+        setProbing(true);
+        setProbeError(null);
+        try {
+            const text = await api.getServiceAWhoami();
+            setProbeOutput(text.trim());
+        } catch (err: any) {
+            setProbeError(err?.message || 'Failed to fetch service response');
+        } finally {
+            setProbing(false);
         }
     };
 
@@ -388,11 +407,19 @@ export function Routing() {
                             <FiSend />
                             <span>Apply Redirect Policy</span>
                         </div>
-                        <p className="info-copy">Fill in the policy name you want to apply. The backend uses the stored rule.</p>
+                        <p className="info-copy">
+                            Apply uses the rule already stored in the backend. Only the policy name matters here; the fields below are for creating/updating a rule.
+                        </p>
                     </div>
                     <div className="header-actions">
                         <button type="button" className="ghost-button" onClick={resetPayload} disabled={submitting}>
                             <FiRefreshCw /> Reset to sample
+                        </button>
+                        <button type="button" className="ghost-button" onClick={handleCreatePolicy} disabled={creating}>
+                            {creating ? 'Creating…' : 'Create policy'}
+                        </button>
+                        <button type="button" className="ghost-button danger" onClick={handleDeletePolicy} disabled={deleting}>
+                            {deleting ? 'Deleting…' : 'Delete policy'}
                         </button>
                         <button type="submit" form="routing-form" className="primary-button" disabled={submitting}>
                             {submitting ? 'Applying...' : 'Apply policy'}
@@ -528,7 +555,7 @@ export function Routing() {
                     </div>
 
                     <label className="form-field">
-                        <span className="form-label">Notes</span>
+                        <span className="form-label">Notes (saved with the rule)</span>
                         <textarea
                             rows={3}
                             value={payload.notes || ''}
@@ -563,6 +590,22 @@ export function Routing() {
                             <pre className="payload-preview small">{applyOutput}</pre>
                         </div>
                     )}
+                    <div className="probe-row">
+                        <button type="button" className="ghost-button" onClick={probeServiceResponse} disabled={probing}>
+                            {probing ? 'Probing…' : 'Check frontend response'}
+                        </button>
+                        {probeError && (
+                            <span className="probe-error">
+                                <FiAlertTriangle /> {probeError}
+                            </span>
+                        )}
+                    </div>
+                    {probeOutput && (
+                        <div className="alert success">
+                            <div className="output-title">Service response</div>
+                            <pre className="payload-preview small">{probeOutput}</pre>
+                        </div>
+                    )}
                 </form>
             </div>
 
@@ -572,27 +615,9 @@ export function Routing() {
                         <FiZap />
                         <span>Packet Path</span>
                     </div>
-                    <div className="packet-actions">
-                        <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={handleCreatePolicy}
-                            disabled={creating}
-                        >
-                            {creating ? 'Creating…' : 'Create policy'}
-                        </button>
-                        <button
-                            type="button"
-                            className="ghost-button danger"
-                            onClick={handleDeletePolicy}
-                            disabled={deleting}
-                        >
-                            {deleting ? 'Deleting…' : 'Delete policy'}
-                        </button>
-                    </div>
                 </div>
                 <p className="info-copy">
-                    Visual cue of the planned path (A → B) and the redirect path (A → C). The planned arrow turns red when a violation is detected; the green arrow lights up to show the new route.
+                    Visual cue of the planned path (A → B) and the redirect path (A → C). The planned arrow turns red when a violation is detected; the green arrow lights up to show the new route. Use &quot;Create policy&quot; below to write/update the rule, then &quot;Apply policy&quot; above to execute it.
                 </p>
                 {deleteError && (
                     <div className="alert error">

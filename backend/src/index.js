@@ -12,6 +12,7 @@ const https = require('https');
 const { execFile } = require('child_process');
 const RedirectRule = require('./models/RedirectRule');
 const RedirectionEvent = require('./models/RedirectionEvent');
+const http = require('http');
 
 const app = express();
 app.use(express.json());
@@ -288,6 +289,36 @@ app.get('/whoami', (_req, res) => {
   const identity = process.env.SERVICE_NAME || os.hostname();
   res.status(200).send(`Hi, I am component2-backend (${identity})\n`);
 });
+
+// Proxy whoami for service-a so the frontend can see the redirected backend message
+app.get('/api/probe/service-a', async (_req, res) => {
+  const target = process.env.SERVICE_A_WHOAMI_URL || 'http://localhost:5000/whoami';
+  try {
+    const body = await fetchPlainText(target, 4000);
+    res.status(200).send(body);
+  } catch (err) {
+    const message = err?.message || 'Failed to reach service-a whoami';
+    res.status(502).json({ message, target });
+  }
+});
+
+async function fetchPlainText(targetUrl, timeoutMs = 4000) {
+  return new Promise((resolve, reject) => {
+    const { protocol } = new URL(targetUrl);
+    const client = protocol === 'https:' ? https : http;
+    const req = client.get(targetUrl, { timeout: timeoutMs }, (resp) => {
+      let data = '';
+      resp.on('data', (chunk) => {
+        data += chunk;
+      });
+      resp.on('end', () => resolve(data));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy(new Error(`Request to ${targetUrl} timed out after ${timeoutMs}ms`));
+    });
+  });
+}
 
 app.get('/api/rules', async (_req, res, next) => {
   try {

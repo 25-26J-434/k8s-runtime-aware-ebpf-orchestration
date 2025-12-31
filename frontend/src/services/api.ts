@@ -143,6 +143,20 @@ export const api = {
         return response.json();
     },
 
+    async getServiceAWhoami(): Promise<string> {
+        const response = await fetch(`${ROUTING_API_BASE}/api/probe/service-a`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to fetch service-a whoami: ${response.status} ${response.statusText} - ${text}`);
+        }
+        return response.text();
+    },
+
     async getClusterTopology(): Promise<ClusterTopology> {
         const response = await fetch(`${API_BASE}/api/cluster/topology`, {
             method: 'GET',
