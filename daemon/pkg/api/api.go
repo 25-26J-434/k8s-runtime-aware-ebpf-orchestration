@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -70,6 +71,8 @@ func StartServer() {
 		go refreshPodIPMappingPeriodically()
 	}
 
+	initMetricsStreaming()
+
 	// Initialize WebSocket hub
 	InitWebSocket()
 
@@ -95,6 +98,11 @@ func StartServer() {
 	http.HandleFunc("/api/rtt/pods", corsMiddleware(handlePodRTTMetrics))
 	http.HandleFunc("/api/cluster/topology", corsMiddleware(handleClusterTopology))
 	http.HandleFunc("/api/cluster/services", corsMiddleware(handleClusterServices))
+
+	initMetricsStreaming()
+
+	// Register in-process communication handlers (broadcast/unicast/multicast/stats/health).
+	comm.RegisterHandlers(nil, corsMiddleware)
 	http.HandleFunc("/api/pod/action", corsMiddleware(handlePodAction))
 	http.HandleFunc("/api/pod/logs", corsMiddleware(handlePodLogs))
 	http.HandleFunc("/api/pod/ebpf-action", corsMiddleware(handleEBPFAction))
@@ -122,25 +130,16 @@ func StartServer() {
 	http.HandleFunc("/ws/pod-details", corsMiddleware(handleWebSocketPodDetails))
 
 	log.Println("[API] Starting HTTP server on :8080")
-	log.Println("[API] REST API Endpoints:")
-	log.Println("[API]   GET /health                      - Health check")
-	log.Println("[API]   GET /ready                       - Readiness check")
-	log.Println("[API]   GET /metrics                     - Prometheus metrics")
-	log.Println("[API]   GET /metrics/json                - JSON metrics")
-	log.Println("[API]   GET /api/metrics                 - Unified metrics (extensible)")
-	log.Println("[API]   GET /api/dns/pods                - Per-pod DNS metrics")
-	log.Println("[API]   GET /api/rtt/pods                - Per-pod RTT metrics")
-	log.Println("[API]   GET /api/cluster/topology        - Cluster topology")
-	log.Println("[API]   GET /api/cluster/services        - Services info")
-	log.Println("[API]   GET /api/connections/topology    - Real TCP connections")
-	log.Println("[API]   GET /api/connections/pod         - Pod-specific connections")
-	log.Println("[API]   POST /api/pod/action             - Perform pod actions")
-	log.Println("[API]   POST /api/pod/ebpf-action        - eBPF-based pod actions")
-	log.Println("[API]   GET /api/pod/details             - Pod details")
-	log.Println("[API] WebSocket Endpoints:")
-	log.Println("[API]   WS /ws/metrics                   - Real-time metrics stream")
-	log.Println("[API]   WS /ws/topology                  - Real-time topology stream")
-	log.Println("[API]   WS /ws/pod-details               - Real-time pod details stream")
+	log.Println("[API] Endpoints:")
+	log.Println("[API]   GET /health                  - Health check")
+	log.Println("[API]   GET /ready                   - Readiness check")
+	log.Println("[API]   GET /metrics                 - Prometheus metrics")
+	log.Println("[API]   GET /metrics/json            - JSON metrics")
+	log.Println("[API]   GET /api/metrics             - Unified metrics (extensible)")
+	log.Println("[API]   GET /api/dns/pods            - Per-pod DNS metrics")
+	log.Println("[API]   GET /api/rtt/pods            - Per-pod RTT metrics")
+	log.Println("[API]   GET /api/cluster/topology    - Cluster topology")
+	log.Println("[API]   GET /api/cluster/services    - Services info")
 
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalf("[API] Server failed: %v", err)
@@ -408,9 +407,11 @@ func updatePodIPMappingFromK8s() {
 	// Get node name - only map pods on this node
 	nodeName := os.Getenv("NODE_NAME")
 
+
 	ctx := context.Background()
 	var pods *corev1.PodList
 	var err error
+
 
 	if nodeName != "" {
 		// Only get pods on this node

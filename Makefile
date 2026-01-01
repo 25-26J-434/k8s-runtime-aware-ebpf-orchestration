@@ -1,7 +1,8 @@
 # Makefile for eBPF Runtime-Aware Kubernetes Telemetry
 # Component 1: Sidecar-less Orchestration Daemon
 
-.PHONY: all build build-ebpf build-daemon build-images clean deploy test help
+.PHONY: all build build-ebpf build-daemon build-images clean deploy test help \
+	node-comm-build node-comm-docker node-comm-deploy node-comm-restart node-comm-logs
 
 # Configuration
 DAEMON_DIR := daemon
@@ -9,6 +10,7 @@ EBPF_DIR := ebpf
 SCRIPTS_DIR := scripts
 K8S_DIR := k8s
 EXAMPLES_DIR := examples
+NODE_COMM_DIR := component-4-node-communication
 
 # Docker image names (no registry prefix for local kind)
 DAEMON_IMAGE := ebpf-daemon
@@ -119,6 +121,22 @@ metrics: ## Get metrics from daemon
 
 port-forward: ## Port forward daemon API
 	kubectl -n ebpf-telemetry port-forward svc/ebpf-daemon 8080:8080
+
+## Component 4: Node-to-Node communication helpers
+node-comm-build: ## Build the node-to-node communication daemon only (no dashboard)
+	$(MAKE) -C $(NODE_COMM_DIR) build-daemon
+
+node-comm-docker: ## Build + load Docker image for node-to-node daemon into kind
+	$(MAKE) -C $(NODE_COMM_DIR) docker-load
+
+node-comm-deploy: node-comm-docker ## Deploy node-to-node daemonset and peers ConfigMap
+	$(MAKE) -C $(NODE_COMM_DIR) deploy
+
+node-comm-restart: ## Restart node-to-node daemonset
+	$(MAKE) -C $(NODE_COMM_DIR) restart
+
+node-comm-logs: ## Tail node-to-node daemon logs
+	$(MAKE) -C $(NODE_COMM_DIR) logs
 
 ## Cleanup
 

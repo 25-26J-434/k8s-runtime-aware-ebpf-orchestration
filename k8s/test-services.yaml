@@ -1,0 +1,288 @@
+# Test Services for eBPF Telemetry Testing
+# Deploy these to generate DNS and RTT traffic for the daemon to capture
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-services
+  labels:
+    app.kubernetes.io/name: test-services
+---
+# Service A - Makes calls to Service B
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-a
+  namespace: test-services
+  labels:
+    app: service-a
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: service-a
+  template:
+    metadata:
+      labels:
+        app: service-a
+    spec:
+      containers:
+        - name: service-a
+          image: service-a:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5000
+          env:
+            - name: SERVICE_B_URL
+              value: "http://service-b.test-services.svc.cluster.local:5001"
+            - name: PORT
+              value: "5000"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-a
+  namespace: test-services
+  labels:
+    app: service-a
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5000
+      targetPort: 5000
+      name: http
+  selector:
+    app: service-a
+---
+# Service B - Target service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-b
+  namespace: test-services
+  labels:
+    app: service-b
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: service-b
+  template:
+    metadata:
+      labels:
+        app: service-b
+    spec:
+      containers:
+        - name: service-b
+          image: service-b:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5001
+          env:
+            - name: PORT
+              value: "5001"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-b
+  namespace: test-services
+  labels:
+    app: service-b
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5001
+      targetPort: 5001
+      name: http
+  selector:
+    app: service-b
+---
+# Service C - Optional extra backend (same image as service-b, different port)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-c
+  namespace: test-services
+  labels:
+    app: service-c
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: service-c
+  template:
+    metadata:
+      labels:
+        app: service-c
+    spec:
+      containers:
+        - name: service-c
+          image: service-c:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5003
+          env:
+            - name: PORT
+              value: "5003"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5003
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5003
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-c
+  namespace: test-services
+  labels:
+    app: service-c
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5003
+      targetPort: 5003
+      name: http
+  selector:
+    app: service-c
+---
+# Load generator CronJob - Periodically calls Service A to generate traffic
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: traffic-generator
+  namespace: test-services
+spec:
+  schedule: "*/1 * * * *"  # Every minute
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: curl
+              image: curlimages/curl:latest
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  echo "Generating DNS and HTTP traffic..."
+                  for i in $(seq 1 10); do
+                    curl -s http://service-a.test-services.svc.cluster.local:5000/dns-test
+                    curl -s http://service-a.test-services.svc.cluster.local:5000/call-service-b
+                    sleep 1
+                  done
+                  echo "Traffic generation complete"
+          restartPolicy: OnFailure
+---
+# TCP Client - Makes continuous TCP connections to test RTT measurement
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tcp-client
+  namespace: test-services
+  labels:
+    app: tcp-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tcp-client
+  template:
+    metadata:
+      labels:
+        app: tcp-client
+    spec:
+      containers:
+        - name: tcp-client
+          image: tcp-client:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5002
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tcp-client
+  namespace: test-services
+  labels:
+    app: tcp-client
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5002
+      targetPort: 5002
+      name: http
+  selector:
+    app: tcp-client

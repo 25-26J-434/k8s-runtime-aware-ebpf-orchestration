@@ -181,12 +181,26 @@ const { metrics } = useMetrics(3000);
 
 ### Component 2: Intelligent Traffic Routing (Planned)
 - Dynamic traffic routing based on real-time telemetry
+- When a rule says **redirect** (e.g., high latency), apply a Cilium `CiliumLocalRedirectPolicy` to steer the frontend Service to a safe backend; see `k8s/component-2/README-routing.md` + `apply-local-redirect.sh`. Ensure Cilium is installed with `--set localRedirectPolicy=true` (Helm) so the CRD exists.
 
 ### Component 3: Latency-Aware Scheduling (Planned)
 - Pod scheduling decisions based on network performance metrics
 
-### Component 4: Multi-Cluster Federation (Planned)
-- Cross-cluster coordination and workload optimization
+### Component 4: Node-to-Node Communication (Demo Included)
+- Peer-to-peer daemon for BROADCAST/UNICAST/MULTICAST control messages
+- Lives in `component-4-node-communication/` with its own Makefile
+- Dashboard is optional; default build deploys daemon only
+
+## Node-to-Node Communication Quickstart (Component 4)
+
+1. `make kind-setup` — brings up a 3-node kind cluster using `k8s/kind-config.yaml` (host networking + eBPF mounts).
+2. `make node-comm-docker` — builds the P2P daemon image (`p2p-node:v3`).
+3. `make node-comm-deploy` — applies `peers-configmap.yaml` and the DaemonSet from `component-4-node-communication/` to `kube-system`.
+4. `make node-comm-logs` — follow logs; send test POSTs to `/broadcast`, `/unicast`, or `/multicast` on port 8080 of any node IP.
+
+Notes:
+- Update `component-4-node-communication/peers-configmap.yaml` if your node IPs differ (defaults match a 3-node kind network: 172.18.0.2/3/4).
+- The dashboard in `component-4-node-communication/client` is optional and not built by default; use `make -C component-4-node-communication build-dashboard` if you need it later.
 
 ## Prerequisites
 
@@ -264,17 +278,18 @@ kubectl cluster-info
 ```
 
 **What this creates:**
-- Single-node Kubernetes cluster
+- Single-node Kubernetes cluster (control-plane + worker)
 - Cluster name: `ebpf-cluster`
 - Node with eBPF capabilities
 - Port mappings for services
+- Optimized for stable, reliable setup
 
 ### Step 3: Build and Deploy eBPF Daemon
 
 ```bash
 # Build eBPF programs
 cd ebpf/component-1-daemon
-clang -O2 -g -target bpf -D__TARGET_ARCH_x86_64 -c dns_latency.c -o dns_latency.o
+clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -c dns_latency.c -o dns_latency.o
 cd ../..
 
 # Build Go daemon
@@ -363,7 +378,103 @@ npm run dev
 
 **Dashboard will be available at:** `http://localhost:5000`
 
-### Step 7: Verify Everything is Working
+### Step 7: Deploy Node-to-Node Communication (Component 4 - Optional)
+
+This component enables peer-to-peer communication. It works with single-node clusters for demos and scales to multi-node setups.
+
+```bash
+# Build and deploy the P2P daemon
+cd component-4-node-communication
+
+# Build the P2P daemon Docker image
+docker build -t p2p-node:v3 .
+
+# Load image into Kind cluster
+kind load docker-image p2p-node:v3 --name ebpf-cluster
+
+# Deploy the P2P daemon
+kubectl apply -f peers-configmap.yaml
+kubectl apply -f daemonset.yaml
+
+# Verify deployment
+kubectl get pods -n kube-system -l app=p2p-node -o wide
+kubectl logs -n kube-system -l app=p2p-node --tail=20
+
+cd ..
+```
+
+**What Component 4 provides:**
+- **BROADCAST**: Send messages to all nodes
+- **UNICAST**: Send messages to a specific node
+- **MULTICAST**: Send messages to groups of nodes
+- **P2P Architecture**: Node-to-node communication
+- **REST API**: HTTP endpoints on port 8080
+- **Dashboard Integration**: Interactive control panel
+
+**Using the Node Communication Dashboard:**
+
+1. Open **Federation** tab in React dashboard (`http://localhost:5000`)
+2. **View Node Status**: See all nodes with IP, status, and pod counts
+3. **Select Communication Type**: BROADCAST, UNICAST, or MULTICAST
+4. **Interactive Node Selection**: Click nodes to select (green highlight + checkmark)
+5. **Choose Event Type**: HANDSHAKE, SCHEDULING, STATE_UPDATE, METRIC_UPDATE, DISCOVERY
+6. **Enter Payload**: JSON or plain text messages
+7. **Send & Monitor**: Real-time logs with success/failure indicators
+
+**Dashboard Features:**
+- 📊 Live stats: Total nodes, ready nodes, messages sent
+- 🖥️ Interactive node cards with visual feedback
+- 🎨 Color-coded communication types
+- ✅ Success/failure indicators
+- 📝 Real-time message logs
+5. **Interactive node selection**:
+   - Click nodes to select them (they turn green and scale up)
+   - Selected nodes show a checkmark
+   - Works with UNICAST (1 node) and MULTICAST (multiple nodes)
+6. **Enter payload** as JSON or plain text
+7. **Click "🚀 Send"** to broadcast the message
+8. **View real-time logs** with success/failure indicators
+
+**Dashboard Features:**
+- 📊 Stats cards showing total nodes, ready nodes, messages sent, and last sent time
+- 🖥️ Interactive node cards that respond to clicks
+- 🎨 Color-coded communication types
+- ✅ Success/failure indicators in logs
+- 📝 Real-time message logging with timestamps
+- 🧹 Clear logs button
+
+**Testing P2P Communication via CLI:**
+```bash
+# Get a node IP
+NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+
+# Send broadcast message to all nodes
+curl -X POST http://$NODE_IP:8080/broadcast \
+  -H "Content-Type: application/json" \
+  -d '{"event": "HANDSHAKE", "payload": {"message": "Hello from all nodes!"}, "action": "NONE"}'
+
+# Send unicast message to specific node
+curl -X POST http://$NODE_IP:8080/unicast \
+  -H "Content-Type: application/json" \
+  -d '{"event": "STATE_UPDATE", "targets": ["172.18.0.2"], "payload": {"status": "active"}, "action": "UPDATE_STATE"}'
+
+# Send multicast message to group of nodes
+curl -X POST http://$NODE_IP:8080/multicast \
+  -H "Content-Type: application/json" \
+  -d '{"event": "METRIC_UPDATE", "targets": ["172.18.0.2", "172.18.0.3"], "payload": {"metrics": "data"}, "action": "NONE"}'
+
+# View logs on receiving nodes
+kubectl logs -n kube-system -l app=p2p-node -f
+```
+
+**Use Cases:**
+- Coordinating eBPF program updates across nodes
+- Sharing local metrics aggregations between nodes
+- Implementing distributed consensus for routing decisions
+- Cross-node health checks and status updates
+- State synchronization across the cluster
+
+### Step 8: Verify Everything is Working
 
 ```bash
 # Terminal 3: Test the API
@@ -403,7 +514,8 @@ You should now have:
 **eBPF Daemon**: Collecting DNS latency from kernel  
 **Sample Services**: 3 pods generating DNS traffic  
 **REST API**: Available at `http://localhost:8080`  
-**React Dashboard**: Available at `http://localhost:5000`
+**React Dashboard**: Available at `http://localhost:5000`  
+**P2P Communication** (optional): Node-to-node messaging via Federation tab
 
 **Dashboard Features:**
 - Real-time DNS latency graphs per node
@@ -411,6 +523,11 @@ You should now have:
 - Cluster information (name, node, pod count)
 - Live metric updates every 3 seconds
 - Dark theme UI
+- **Node Communication Panel** (Federation tab):
+  - View all cluster nodes with status
+  - Send BROADCAST/UNICAST/MULTICAST messages
+  - Real-time communication logs
+  - Event-driven message types (HANDSHAKE, SCHEDULING, etc.)
 
 ## Using Make Commands (Alternative)
 
@@ -1013,6 +1130,10 @@ sudo bpftool map dump name dns_events
 kubectl delete -f k8s/simple-test-pods.yaml
 kubectl delete -f k8s/daemonset.yaml
 kubectl delete namespace dns-test ebpf-telemetry
+
+# If you deployed Component 4 (P2P communication)
+kubectl delete -f component-4-node-communication/daemonset.yaml
+kubectl delete -f component-4-node-communication/peers-configmap.yaml
 
 # Delete Kind cluster
 kind delete cluster --name ebpf-cluster

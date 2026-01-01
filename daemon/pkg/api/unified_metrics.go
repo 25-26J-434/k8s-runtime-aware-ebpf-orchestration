@@ -32,14 +32,59 @@ type UnifiedMetricsResponse struct {
 
 // handleUnifiedMetrics returns metrics from all collectors
 func handleUnifiedMetrics(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameters
-	metricType := r.URL.Query().Get("type")
-	level := r.URL.Query().Get("level")
-
-	response := buildUnifiedMetricsResponse(metricType, level)
+	response := buildUnifiedMetricsResponse(r.URL.Query().Get("type"), r.URL.Query().Get("level"))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+
+
+func selectCollectors(metricType string) []telemetry.Collector {
+	if metricType == "" {
+		return telemetry.GlobalRegistry.GetAll()
+	}
+
+	collector, ok := telemetry.GlobalRegistry.Get(telemetry.MetricType(metricType))
+	if !ok {
+		return nil
+	}
+	return []telemetry.Collector{collector}
+}
+
+func populateNodeMetrics(nodeName string, collectors []telemetry.Collector, dest map[string]interface{}) {
+	for _, collector := range collectors {
+		nodeMetric := collector.GetNodeMetrics()
+		if nodeMetric.NodeName == "" {
+			nodeMetric.NodeName = nodeName
+		}
+		if nodeMetric.NodeName == "" || nodeMetric.NodeName == nodeName {
+			dest[string(nodeMetric.Type)] = nodeMetric.Value
+		}
+	}
+}
+
+func populatePodMetrics(nodeName string, collectors []telemetry.Collector, dest map[string]map[string]interface{}) {
+	podCount := 0
+	filteredCount := 0
+
+	for _, collector := range collectors {
+		podMetrics := collector.GetPodMetrics()
+		for podKey, podMetric := range podMetrics {
+			podCount++
+			if podMetric.NodeName != "" && podMetric.NodeName == nodeName {
+				filteredCount++
+				if dest[podKey] == nil {
+					dest[podKey] = make(map[string]interface{})
+				}
+				dest[podKey][string(podMetric.Type)] = podMetric.Value
+			}
+		}
+	}
+
+	if podCount > 0 && filteredCount != podCount {
+		log.Printf("[API] Pod filtering: %d total pod metrics, %d filtered for node %s", podCount, filteredCount, nodeName)
+	}
 }
 
 // getNodeIP retrieves the node IP address from Kubernetes API

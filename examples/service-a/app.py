@@ -14,13 +14,27 @@ app = Flask(__name__)
 SERVICE_B_URL = os.getenv("SERVICE_B_URL", "http://service-b:5001")
 DNS_TEST_DOMAINS = ["google.com", "kubernetes.default.svc.cluster.local", "service-b"]
 
+# @app.route("/")
+# def home():
+#     return jsonify({
+#         "service": "service-a",
+#         "status": "running",
+#         "message": "eBPF Telemetry Test Service A"
+#     })
+
+# app.py in service-a
 @app.route("/")
-def home():
+def root():
     return jsonify({
-        "service": "service-a",
-        "status": "running",
-        "message": "eBPF Telemetry Test Service A"
+        "message": "Hello from backend",
+        "served_by": os.environ.get("SERVICE_NAME", "unknown")
     })
+
+@app.route("/whoami")
+def whoami():
+    """Plain text identity to match service-b/service-c behavior."""
+    identity = os.environ.get("SERVICE_NAME", socket.gethostname())
+    return f"Hi, I am service A ({identity})\n", 200, {"Content-Type": "text/plain"}
 
 @app.route("/health")
 def health():
