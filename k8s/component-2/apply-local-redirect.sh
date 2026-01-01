@@ -92,17 +92,29 @@ if [[ "$choose_best_pod" == "true" ]]; then
   winner_label_value=${redirect_winner_label#*=}
 fi
 
-telemetry_json=$(curl -sf "$API_URL")
+telemetry_json=$(curl -sf "$API_URL" || true)
+if [[ -z "$telemetry_json" ]]; then
+  echo "Telemetry API response empty/unreachable at $API_URL; skipping redirect. (Check API endpoint and port-forward.)"
+  exit 0
+fi
+if ! jq empty <<<"$telemetry_json" >/dev/null 2>&1; then
+  echo "Telemetry API returned invalid JSON from $API_URL; skipping redirect. (Inspect telemetry service output.)"
+  exit 0
+fi
 
 # Compute average metric for monitored pods
 avg_value=$(jq --arg ns "$namespace" --arg contains "$monitor_pod_contains" --arg field "$VALUE_FIELD" '
   (.pods // {}) as $pods
-  | [ $pods[] | select(.namespace == $ns and (.pod_name | contains($contains))) | .[$field] ]
+  | [ $pods[]
+      | select(.namespace == $ns and (.pod_name | contains($contains)))
+      | select(.[$field] != null)
+      | .[$field]
+    ]
   | if length == 0 then null else (add / length) end
 ' <<<"$telemetry_json")
 
 if [[ "$avg_value" == "null" ]]; then
-  echo "No telemetry found for namespace=$namespace pods containing \"$monitor_pod_contains\"; skipping redirect."
+  echo "No usable telemetry for namespace=$namespace pods containing \"$monitor_pod_contains\"; skipping redirect. (Ensure telemetry API has data and labels/pod names match.)"
   exit 0
 fi
 
@@ -131,7 +143,11 @@ if [[ "$choose_best_pod" == "true" ]]; then
   for pod in "${candidate_pods[@]}"; do
     value=$(jq --arg ns "$namespace" --arg name "$pod" --arg field "$VALUE_FIELD" '
       (.pods // {}) as $pods
-      | [ $pods[] | select(.namespace == $ns and .pod_name == $name) | .[$field] ]
+      | [ $pods[]
+          | select(.namespace == $ns and .pod_name == $name)
+          | select(.[$field] != null)
+          | .[$field]
+        ]
       | if length == 0 then null else .[0] end
     ' <<<"$telemetry_json")
     if [[ "$value" == "null" ]]; then

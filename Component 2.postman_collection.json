@@ -1,0 +1,427 @@
+{
+	"info": {
+		"_postman_id": "13a3c927-666c-430c-92c3-ca14a41bc785",
+		"name": "Component 2",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "33202918"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{BASE_URL}}/health",
+					"host": [
+						"{{BASE_URL}}"
+					],
+					"path": [
+						"health"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Who Am I",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{BASE_URL}}/whoami",
+					"host": [
+						"{{BASE_URL}}"
+					],
+					"path": [
+						"whoami"
+					]
+				}
+			},
+			"response": []
+		},
+    {
+      "name": "Policies",
+      "item": [
+        {
+          "name": "List Policies",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create or Upsert Policy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policy_name\": \"redirect-service-a-to-c\",\n  \"namespace\": \"test-services\",\n  \"frontend_service\": \"service-a\",\n  \"frontend_service_port\": \"5000\",\n  \"monitor_pod_contains\": \"service-a\",\n  \"action\": \"redirect\",\n  \"redirect_backend_label\": \"app=service-c\",\n  \"redirect_backend_port\": \"5003\",\n  \"redirect_backend_protocol\": \"TCP\",\n  \"ttl_seconds\": 300,\n  \"choose_best_pod\": true,\n  \"backend_candidate_label\": \"app=service-c\",\n  \"redirect_winner_label\": \"redirect-winner=yes\",\n  \"notes\": \"example policy\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Policy by Name",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/by-name/{{POLICY_NAME}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "by-name",
+                "{{POLICY_NAME}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Policy by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{POLICY_ID}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{POLICY_ID}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Policy by ID",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"updated note\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{POLICY_ID}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{POLICY_ID}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Policy by ID (also removes rule)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{POLICY_ID}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{POLICY_ID}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Rule for Policy",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{POLICY_NAME}}/rule",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{POLICY_NAME}}",
+                "rule"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upsert Rule for Policy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metric\": \"dns_us\",\n  \"violation_threshold\": 1000,\n  \"notes\": \"example rule\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{POLICY_NAME}}/rule",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{POLICY_NAME}}",
+                "rule"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Apply Policy (helper script)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{POLICY_NAME}}/apply",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{POLICY_NAME}}",
+                "apply"
+              ]
+            },
+            "description": "Triggers apply-local-redirect.sh using the stored policy + rule."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Policy Rule File",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{POLICY_NAME}}/rule-file",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{POLICY_NAME}}",
+                "rule-file"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Expire Policy",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{POLICY_NAME}}/expire",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{POLICY_NAME}}",
+                "expire"
+              ]
+            }
+          },
+          "response": []
+        }
+			]
+		},
+		{
+			"name": "Redirection Events",
+			"item": [
+				{
+					"name": "List Events",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/redirections",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"api",
+								"redirections"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Events by Policy",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/api/redirections/by-policy/{{POLICY_NAME}}",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"api",
+								"redirections",
+								"by-policy",
+								"{{POLICY_NAME}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Redirection Event",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"policy_name\": \"redirect-service-a-to-c\",\n  \"frontend_service\": \"service-a\",\n  \"planned_backend_service\": \"service-b\",\n  \"planned_backend_label\": \"app=service-b\",\n  \"planned_backend_port\": \"5001\",\n  \"final_backend_service\": \"service-c\",\n  \"final_backend_label\": \"app=service-c\",\n  \"final_backend_port\": \"5003\",\n  \"redirect_backend_label\": \"app=service-c\",\n  \"redirect_backend_port\": \"5003\",\n  \"violation_triggered\": true,\n  \"accepted_service\": \"service-c\",\n  \"status\": \"applied\",\n  \"notes\": \"Hello I am service C (redirect winner)\"\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/api/redirections",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"api",
+								"redirections"
+							]
+						}
+					},
+					"response": []
+				},
+    {
+      "name": "Expire Policy (log expiry)",
+      "request": {
+        "method": "POST",
+        "header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"notes\": \"TTL cleanup\"\n}"
+        },
+        "url": {
+          "raw": "{{BASE_URL}}/api/policies/{{POLICY_NAME}}/expire",
+          "host": [
+            "{{BASE_URL}}"
+          ],
+          "path": [
+            "api",
+            "policies",
+            "{{POLICY_NAME}}",
+            "expire"
+          ]
+        }
+      },
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "BASE_URL",
+			"value": "http://localhost:4000"
+		},
+		{
+			"key": "RULE_ID",
+			"value": ""
+		},
+		{
+			"key": "POLICY_NAME",
+			"value": "redirect-service-a-to-c"
+		}
+	]
+}

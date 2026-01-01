@@ -10,7 +10,8 @@ require('dotenv').config();
 const fs = require('fs');
 const https = require('https');
 const { execFile } = require('child_process');
-const RedirectRule = require('./models/RedirectRule');
+const Policy = require('./models/Policy');
+const Rule = require('./models/Rule');
 const RedirectionEvent = require('./models/RedirectionEvent');
 const http = require('http');
 
@@ -30,14 +31,12 @@ mongoose
     process.exit(1);
   });
 
-const REQUIRED_FIELDS = [
+const REQUIRED_POLICY_FIELDS = [
   'policy_name',
   'namespace',
   'frontend_service',
   'frontend_service_port',
   'monitor_pod_contains',
-  'metric',
-  'violation_threshold',
   'action',
   'redirect_backend_label',
   'redirect_backend_port',
@@ -45,7 +44,7 @@ const REQUIRED_FIELDS = [
   'ttl_seconds',
 ];
 
-const NUMERIC_FIELDS = ['violation_threshold', 'ttl_seconds', 'redirect_backend_port', 'frontend_service_port'];
+const POLICY_NUMERIC_FIELDS = ['ttl_seconds', 'redirect_backend_port', 'frontend_service_port'];
 const BOOLEAN_FIELDS = ['choose_best_pod'];
 const execFileAsync = util.promisify(execFile);
 const APPLY_SCRIPT_CANDIDATES = [
@@ -56,9 +55,9 @@ const APPLY_SCRIPT_CANDIDATES = [
 ].filter(Boolean);
 const APPLY_HELPER_TIMEOUT_MS = Number(process.env.LRP_HELPER_TIMEOUT_MS || 60000);
 
-function normalizeRule(body, { requireAll } = { requireAll: true }) {
+function normalizePolicy(body, { requireAll } = { requireAll: true }) {
   const data = {};
-  for (const key of REQUIRED_FIELDS) {
+  for (const key of REQUIRED_POLICY_FIELDS) {
     if (body[key] !== undefined) data[key] = body[key];
   }
   if (body.backend_candidate_label !== undefined) data.backend_candidate_label = body.backend_candidate_label;
@@ -66,7 +65,7 @@ function normalizeRule(body, { requireAll } = { requireAll: true }) {
   if (body.notes !== undefined) data.notes = body.notes;
   if (body.choose_best_pod !== undefined) data.choose_best_pod = body.choose_best_pod;
 
-  for (const field of NUMERIC_FIELDS) {
+  for (const field of POLICY_NUMERIC_FIELDS) {
     if (data[field] !== undefined) {
       const num = Number(data[field]);
       if (!Number.isFinite(num)) {
@@ -86,19 +85,72 @@ function normalizeRule(body, { requireAll } = { requireAll: true }) {
     return { error: 'ttl_seconds must be greater than zero' };
   }
 
-  const missing = requireAll ? REQUIRED_FIELDS.filter((f) => data[f] === undefined) : [];
+  const missing = requireAll ? REQUIRED_POLICY_FIELDS.filter((f) => data[f] === undefined) : [];
   if (missing.length) {
     return { error: `Missing required fields: ${missing.join(', ')}` };
   }
 
-  data.metric = data.metric || 'rtt_us';
-  data.action = data.action || 'redirect';
-  data.redirect_backend_protocol = data.redirect_backend_protocol || 'TCP';
-  data.backend_candidate_label = data.backend_candidate_label || data.redirect_backend_label;
-  data.redirect_winner_label = data.redirect_winner_label || 'redirect-winner=yes';
-  data.choose_best_pod = data.choose_best_pod ?? false;
+  if (requireAll) {
+    data.action = data.action || 'redirect';
+    data.redirect_backend_protocol = data.redirect_backend_protocol || 'TCP';
+    if (data.backend_candidate_label === undefined && data.redirect_backend_label !== undefined) {
+      data.backend_candidate_label = data.redirect_backend_label;
+    }
+    data.redirect_winner_label = data.redirect_winner_label || 'redirect-winner=yes';
+    data.choose_best_pod = data.choose_best_pod ?? false;
+  }
 
   return { data };
+}
+
+function normalizeRuleDefinition(body, { requireAll } = { requireAll: true }, policyNameFromPath) {
+  const data = {};
+  const expectedPolicyName = policyNameFromPath;
+  if (expectedPolicyName && requireAll) data.policy_name = expectedPolicyName;
+  if (body.policy_name !== undefined) {
+    if (expectedPolicyName && body.policy_name !== expectedPolicyName) {
+      return { error: 'policy_name in body must match the policy in the URL' };
+    }
+    data.policy_name = body.policy_name;
+  }
+  if (!data.policy_name && expectedPolicyName && requireAll) data.policy_name = expectedPolicyName;
+  if (body.metric !== undefined) data.metric = body.metric;
+  if (body.violation_threshold !== undefined) {
+    const num = Number(body.violation_threshold);
+    if (!Number.isFinite(num)) {
+      return { error: 'violation_threshold must be a number' };
+    }
+    data.violation_threshold = num;
+  }
+  if (body.notes !== undefined) data.notes = body.notes;
+
+  const missing = [];
+  if (requireAll && !data.policy_name) missing.push('policy_name');
+  if (requireAll && data.violation_threshold === undefined) missing.push('violation_threshold');
+  if (missing.length) {
+    return { error: `Missing required fields: ${missing.join(', ')}` };
+  }
+
+  if (data.violation_threshold !== undefined && data.violation_threshold <= 0) {
+    return { error: 'violation_threshold must be greater than zero' };
+  }
+
+  if (requireAll && data.metric === undefined) {
+    data.metric = 'rtt_us';
+  }
+  return { data };
+}
+
+function combinePolicyAndRule(policyDoc, ruleDoc) {
+  if (!policyDoc || !ruleDoc) return null;
+  const policy = policyDoc.toJSON({ virtuals: false });
+  const rule = ruleDoc.toJSON({ virtuals: false });
+  return {
+    ...policy,
+    metric: rule.metric,
+    violation_threshold: rule.violation_threshold,
+    rule_id: rule.id,
+  };
 }
 
 const VALID_EVENT_STATUSES = ['applied', 'expired', 'deleted', 'skipped', 'observed'];
@@ -221,7 +273,10 @@ function resolveApplyScript() {
   return match;
 }
 
-async function applyLocalRedirectPolicy(ruleDoc) {
+async function applyLocalRedirectPolicy(policyDoc, ruleDoc) {
+  if (!policyDoc || !ruleDoc) {
+    throw new Error('Both policy and rule are required to apply a local redirect');
+  }
   const scriptPath = resolveApplyScript();
 
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'lrp-rule-'));
@@ -229,7 +284,7 @@ async function applyLocalRedirectPolicy(ruleDoc) {
 
   try {
     // Persist rule in the exact JSON shape expected by the helper
-    await fs.promises.writeFile(rulePath, JSON.stringify(toRuleFile(ruleDoc), null, 2), 'utf8');
+    await fs.promises.writeFile(rulePath, JSON.stringify(toRuleFile(policyDoc, ruleDoc), null, 2), 'utf8');
 
     const env = {
       ...process.env,
@@ -259,24 +314,27 @@ async function applyLocalRedirectPolicy(ruleDoc) {
   }
 }
 
-function toRuleFile(doc) {
+function toRuleFile(policyDoc, ruleDoc) {
+  const policy = policyDoc.toJSON ? policyDoc.toJSON({ virtuals: false }) : policyDoc;
+  const rule = ruleDoc.toJSON ? ruleDoc.toJSON({ virtuals: false }) : ruleDoc;
+
   return {
-    policy_name: doc.policy_name,
-    namespace: doc.namespace,
-    frontend_service: doc.frontend_service,
-    frontend_service_port: String(doc.frontend_service_port),
-    monitor_pod_contains: doc.monitor_pod_contains,
-    metric: doc.metric,
-    violation_threshold: doc.violation_threshold,
-    action: doc.action,
-    redirect_backend_label: doc.redirect_backend_label,
-    redirect_backend_port: String(doc.redirect_backend_port),
-    redirect_backend_protocol: doc.redirect_backend_protocol,
-    ttl_seconds: doc.ttl_seconds,
-    choose_best_pod: doc.choose_best_pod,
-    backend_candidate_label: doc.backend_candidate_label,
-    redirect_winner_label: doc.redirect_winner_label,
-    notes: doc.notes,
+    policy_name: policy.policy_name,
+    namespace: policy.namespace,
+    frontend_service: policy.frontend_service,
+    frontend_service_port: String(policy.frontend_service_port),
+    monitor_pod_contains: policy.monitor_pod_contains,
+    metric: rule.metric,
+    violation_threshold: rule.violation_threshold,
+    action: policy.action,
+    redirect_backend_label: policy.redirect_backend_label,
+    redirect_backend_port: String(policy.redirect_backend_port),
+    redirect_backend_protocol: policy.redirect_backend_protocol,
+    ttl_seconds: policy.ttl_seconds,
+    choose_best_pod: policy.choose_best_pod,
+    backend_candidate_label: policy.backend_candidate_label,
+    redirect_winner_label: policy.redirect_winner_label,
+    notes: policy.notes || rule.notes,
   };
 }
 
@@ -292,7 +350,7 @@ app.get('/whoami', (_req, res) => {
 
 // Proxy whoami for service-a so the frontend can see the redirected backend message
 app.get('/api/probe/service-a', async (_req, res) => {
-  const target = process.env.SERVICE_A_WHOAMI_URL || 'http://localhost:5000/whoami';
+  const target = process.env.SERVICE_A_WHOAMI_URL || 'http://service-a.test-services.svc.cluster.local:5000/whoami';
   try {
     const body = await fetchPlainText(target, 4000);
     res.status(200).send(body);
@@ -320,130 +378,77 @@ async function fetchPlainText(targetUrl, timeoutMs = 4000) {
   });
 }
 
-app.get('/api/rules', async (_req, res, next) => {
+app.get('/api/policies', async (_req, res, next) => {
   try {
-    const rules = await RedirectRule.find().sort({ updatedAt: -1 });
-    res.json(rules);
+    const policies = await Policy.find().sort({ updatedAt: -1 });
+    res.json(policies);
   } catch (err) {
     next(err);
   }
 });
 
-app.get('/api/rules/:id', async (req, res, next) => {
+app.get('/api/policies/by-name/:policyName', async (req, res, next) => {
   try {
-    const rule = await RedirectRule.findById(req.params.id);
-    if (!rule) return res.status(404).json({ message: 'Rule not found' });
-    res.json(rule);
+    const policy = await Policy.findOne({ policy_name: req.params.policyName });
+    if (!policy) return res.status(404).json({ message: 'Policy not found' });
+    res.json(policy);
   } catch (err) {
     next(err);
   }
 });
 
-// Apply LocalRedirectPolicy via the helper script using the stored rule
-app.post('/api/rules/by-policy/:policyName/apply', async (req, res, next) => {
+app.get('/api/policies/:id', async (req, res, next) => {
   try {
-    const rule = await RedirectRule.findOne({ policy_name: req.params.policyName });
-    if (!rule) return res.status(404).json({ message: 'Rule not found' });
-
-    try {
-      const result = await applyLocalRedirectPolicy(rule);
-      res.json({
-        message: `Applied local redirect for policy ${rule.policy_name}`,
-        stdout: result.stdout,
-        stderr: result.stderr,
-      });
-    } catch (err) {
-      // Surface as much detail as possible for debugging
-      const message = err?.message || 'Failed to apply local redirect policy';
-      const stdout = err?.stdout || '';
-      const stderr = err?.stderr || '';
-      return res.status(500).json({
-        message,
-        stdout,
-        stderr,
-        helper: resolveApplyScript(),
-        rule: rule.policy_name,
-        exitCode: err?.code,
-        signal: err?.signal,
-      });
-    }
+    const policy = await Policy.findById(req.params.id);
+    if (!policy) return res.status(404).json({ message: 'Policy not found' });
+    res.json(policy);
   } catch (err) {
     next(err);
   }
 });
 
-app.get('/api/rules/by-policy/:policyName', async (req, res, next) => {
+app.post('/api/policies', async (req, res, next) => {
   try {
-    const rule = await RedirectRule.findOne({ policy_name: req.params.policyName });
-    if (!rule) return res.status(404).json({ message: 'Rule not found' });
-    res.json(rule);
-  } catch (err) {
-    next(err);
-  }
-});
-
-app.get('/api/rules/:id/rule-file', async (req, res, next) => {
-  try {
-    const rule = await RedirectRule.findById(req.params.id);
-    if (!rule) return res.status(404).json({ message: 'Rule not found' });
-    res.json(toRuleFile(rule));
-  } catch (err) {
-    next(err);
-  }
-});
-
-app.get('/api/rules/by-policy/:policyName/rule-file', async (req, res, next) => {
-  try {
-    const rule = await RedirectRule.findOne({ policy_name: req.params.policyName });
-    if (!rule) return res.status(404).json({ message: 'Rule not found' });
-    res.json(toRuleFile(rule));
-  } catch (err) {
-    next(err);
-  }
-});
-
-app.post('/api/rules', async (req, res, next) => {
-  try {
-    const { data, error } = normalizeRule(req.body, { requireAll: true });
+    const { data, error } = normalizePolicy(req.body, { requireAll: true });
     if (error) return res.status(400).json({ message: error });
 
-    const rule = await RedirectRule.findOneAndUpdate(
+    const policy = await Policy.findOneAndUpdate(
       { policy_name: data.policy_name },
       { $set: data },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
-    res.status(201).json(rule);
+    res.status(201).json(policy);
   } catch (err) {
     next(err);
   }
 });
 
-app.put('/api/rules/:id', async (req, res, next) => {
+app.put('/api/policies/:id', async (req, res, next) => {
   try {
-    const { data, error } = normalizeRule(req.body, { requireAll: false });
+    const { data, error } = normalizePolicy(req.body, { requireAll: false });
     if (error) return res.status(400).json({ message: error });
     if (!Object.keys(data).length) return res.status(400).json({ message: 'No fields provided to update' });
 
-    const rule = await RedirectRule.findByIdAndUpdate(req.params.id, { $set: data }, { new: true });
-    if (!rule) return res.status(404).json({ message: 'Rule not found' });
-    res.json(rule);
+    const policy = await Policy.findByIdAndUpdate(req.params.id, { $set: data }, { new: true });
+    if (!policy) return res.status(404).json({ message: 'Policy not found' });
+    res.json(policy);
   } catch (err) {
     next(err);
   }
 });
 
-app.delete('/api/rules/:id', async (req, res, next) => {
+app.delete('/api/policies/:id', async (req, res, next) => {
   try {
-    const result = await RedirectRule.findByIdAndDelete(req.params.id);
-    if (!result) return res.status(404).json({ message: 'Rule not found' });
+    const policy = await Policy.findByIdAndDelete(req.params.id);
+    if (!policy) return res.status(404).json({ message: 'Policy not found' });
+    await Rule.findOneAndDelete({ policy_name: policy.policy_name });
 
-    // Record a lifecycle event for bookkeeping
     try {
       await RedirectionEvent.create({
-        policy_name: result.policy_name,
-        frontend_service: result.frontend_service,
-        redirect_backend_label: result.redirect_backend_label,
-        redirect_backend_port: result.redirect_backend_port,
+        policy_name: policy.policy_name,
+        frontend_service: policy.frontend_service,
+        redirect_backend_label: policy.redirect_backend_label,
+        redirect_backend_port: policy.redirect_backend_port,
         violation_triggered: false,
         status: 'deleted',
         notes: 'Policy deleted via API',
@@ -453,6 +458,265 @@ app.delete('/api/rules/:id', async (req, res, next) => {
     }
 
     res.json({ deleted: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/policies/:policyName/rule', async (req, res, next) => {
+  try {
+    const rule = await Rule.findOne({ policy_name: req.params.policyName });
+    if (!rule) return res.status(404).json({ message: 'Rule not found for policy' });
+    res.json(rule);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/policies/:policyName/rule', async (req, res, next) => {
+  try {
+    const policy = await Policy.findOne({ policy_name: req.params.policyName });
+    if (!policy) return res.status(404).json({ message: 'Policy not found' });
+    const { data, error } = normalizeRuleDefinition(req.body, { requireAll: true }, policy.policy_name);
+    if (error) return res.status(400).json({ message: error });
+
+    const rule = await Rule.findOneAndUpdate(
+      { policy_name: policy.policy_name },
+      { $set: data },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    res.status(201).json(rule);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Apply LocalRedirectPolicy via the helper script using the stored policy + rule
+app.post('/api/policies/:policyName/apply', async (req, res, next) => {
+  try {
+    const policy = await Policy.findOne({ policy_name: req.params.policyName });
+    if (!policy) return res.status(404).json({ message: 'Policy not found' });
+    const rule = await Rule.findOne({ policy_name: policy.policy_name });
+    if (!rule) return res.status(404).json({ message: 'Rule not found for policy' });
+
+    try {
+      const result = await applyLocalRedirectPolicy(policy, rule);
+      res.json({
+        message: `Applied local redirect for policy ${policy.policy_name}`,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      });
+    } catch (err) {
+      const message = err?.message || 'Failed to apply local redirect policy';
+      const stdout = err?.stdout || '';
+      const stderr = err?.stderr || '';
+      return res.status(500).json({
+        message,
+        stdout,
+        stderr,
+        helper: resolveApplyScript(),
+        rule: policy.policy_name,
+        exitCode: err?.code,
+        signal: err?.signal,
+      });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/policies/:policyName/rule-file', async (req, res, next) => {
+  try {
+    const policy = await Policy.findOne({ policy_name: req.params.policyName });
+    if (!policy) return res.status(404).json({ message: 'Policy not found' });
+    const rule = await Rule.findOne({ policy_name: policy.policy_name });
+    if (!rule) return res.status(404).json({ message: 'Rule not found for policy' });
+    res.json(toRuleFile(policy, rule));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Legacy combined rule endpoints (kept for compatibility with existing callers)
+app.get('/api/rules', async (_req, res, next) => {
+  try {
+    const policies = await Policy.find().sort({ updatedAt: -1 });
+    const rules = await Rule.find({ policy_name: { $in: policies.map((p) => p.policy_name) } });
+    const ruleMap = new Map(rules.map((r) => [r.policy_name, r]));
+    const combined = policies
+      .map((policy) => combinePolicyAndRule(policy, ruleMap.get(policy.policy_name)))
+      .filter(Boolean);
+    res.json(combined);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/rules/:id', async (req, res, next) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy) return res.status(404).json({ message: 'Rule not found' });
+    const rule = await Rule.findOne({ policy_name: policy.policy_name });
+    if (!rule) return res.status(404).json({ message: 'Rule not found' });
+    res.json(combinePolicyAndRule(policy, rule));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/rules/by-policy/:policyName', async (req, res, next) => {
+  try {
+    const policy = await Policy.findOne({ policy_name: req.params.policyName });
+    if (!policy) return res.status(404).json({ message: 'Rule not found' });
+    const rule = await Rule.findOne({ policy_name: req.params.policyName });
+    if (!rule) return res.status(404).json({ message: 'Rule not found' });
+    res.json(combinePolicyAndRule(policy, rule));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/rules/:id/rule-file', async (req, res, next) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy) return res.status(404).json({ message: 'Rule not found' });
+    const rule = await Rule.findOne({ policy_name: policy.policy_name });
+    if (!rule) return res.status(404).json({ message: 'Rule not found' });
+    res.json(toRuleFile(policy, rule));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/rules/by-policy/:policyName/rule-file', async (req, res, next) => {
+  try {
+    const policy = await Policy.findOne({ policy_name: req.params.policyName });
+    if (!policy) return res.status(404).json({ message: 'Rule not found' });
+    const rule = await Rule.findOne({ policy_name: req.params.policyName });
+    if (!rule) return res.status(404).json({ message: 'Rule not found' });
+    res.json(toRuleFile(policy, rule));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/rules', async (req, res, next) => {
+  try {
+    const { data: policyData, error: policyError } = normalizePolicy(req.body, { requireAll: true });
+    if (policyError) return res.status(400).json({ message: policyError });
+    const { data: ruleData, error: ruleError } = normalizeRuleDefinition(req.body, { requireAll: true }, policyData.policy_name);
+    if (ruleError) return res.status(400).json({ message: ruleError });
+    ruleData.policy_name = policyData.policy_name;
+
+    const policy = await Policy.findOneAndUpdate(
+      { policy_name: policyData.policy_name },
+      { $set: policyData },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    const rule = await Rule.findOneAndUpdate(
+      { policy_name: policyData.policy_name },
+      { $set: ruleData },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+
+    res.status(201).json(combinePolicyAndRule(policy, rule));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.put('/api/rules/:id', async (req, res, next) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy) return res.status(404).json({ message: 'Rule not found' });
+
+    const { data: policyData, error: policyError } = normalizePolicy(req.body, { requireAll: false });
+    if (policyError) return res.status(400).json({ message: policyError });
+    const { data: ruleData, error: ruleError } = normalizeRuleDefinition(
+      req.body,
+      { requireAll: false },
+      policy.policy_name
+    );
+    if (ruleError) return res.status(400).json({ message: ruleError });
+
+    const ruleUpdate = { ...ruleData };
+    delete ruleUpdate.policy_name;
+
+    if (!Object.keys(policyData).length && !Object.keys(ruleUpdate).length) {
+      return res.status(400).json({ message: 'No fields provided to update' });
+    }
+
+    const updatedPolicy = Object.keys(policyData).length
+      ? await Policy.findByIdAndUpdate(req.params.id, { $set: policyData }, { new: true })
+      : policy;
+    const updatedRule = Object.keys(ruleUpdate).length
+      ? await Rule.findOneAndUpdate(
+          { policy_name: policy.policy_name },
+          { $set: ruleUpdate },
+          { new: true, upsert: true, setDefaultsOnInsert: true }
+        )
+      : await Rule.findOne({ policy_name: policy.policy_name });
+
+    res.json(combinePolicyAndRule(updatedPolicy, updatedRule));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/rules/:id', async (req, res, next) => {
+  try {
+    const policy = await Policy.findByIdAndDelete(req.params.id);
+    if (!policy) return res.status(404).json({ message: 'Rule not found' });
+    await Rule.findOneAndDelete({ policy_name: policy.policy_name });
+
+    try {
+      await RedirectionEvent.create({
+        policy_name: policy.policy_name,
+        frontend_service: policy.frontend_service,
+        redirect_backend_label: policy.redirect_backend_label,
+        redirect_backend_port: policy.redirect_backend_port,
+        violation_triggered: false,
+        status: 'deleted',
+        notes: 'Policy deleted via API',
+      });
+    } catch (eventErr) {
+      console.error('Failed to record deletion event', eventErr);
+    }
+
+    res.json({ deleted: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/rules/by-policy/:policyName/apply', async (req, res, next) => {
+  try {
+    const policy = await Policy.findOne({ policy_name: req.params.policyName });
+    if (!policy) return res.status(404).json({ message: 'Rule not found' });
+    const rule = await Rule.findOne({ policy_name: req.params.policyName });
+    if (!rule) return res.status(404).json({ message: 'Rule not found' });
+
+    try {
+      const result = await applyLocalRedirectPolicy(policy, rule);
+      res.json({
+        message: `Applied local redirect for policy ${policy.policy_name}`,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      });
+    } catch (err) {
+      const message = err?.message || 'Failed to apply local redirect policy';
+      const stdout = err?.stdout || '';
+      const stderr = err?.stderr || '';
+      return res.status(500).json({
+        message,
+        stdout,
+        stderr,
+        helper: resolveApplyScript(),
+        rule: policy.policy_name,
+        exitCode: err?.code,
+        signal: err?.signal,
+      });
+    }
   } catch (err) {
     next(err);
   }
@@ -493,10 +757,10 @@ app.post('/api/redirections', async (req, res, next) => {
       if (!result.ok) return res.status(400).json({ message: result.error });
     }
 
-    // 2) Ensure the referenced rule exists so we can cross-check declared ports/labels
-    const rule = await RedirectRule.findOne({ policy_name: req.body.policy_name });
-    if (!rule) {
-      return res.status(404).json({ message: `Rule not found for policy_name ${req.body.policy_name}` });
+    // 2) Ensure the referenced policy exists so we can cross-check declared ports/labels
+    const policy = await Policy.findOne({ policy_name: req.body.policy_name });
+    if (!policy) {
+      return res.status(404).json({ message: `Policy not found for policy_name ${req.body.policy_name}` });
     }
 
     const { data, error } = normalizeRedirectionEvent(req.body);
@@ -504,35 +768,37 @@ app.post('/api/redirections', async (req, res, next) => {
 
     // Cross-check redirect target consistency with the stored rule
     if (data.redirect_backend_port !== undefined) {
-      const rulePort = Number(rule.redirect_backend_port);
-      if (data.redirect_backend_port !== rulePort) {
+      const policyPort = Number(policy.redirect_backend_port);
+      if (data.redirect_backend_port !== policyPort) {
         return res
           .status(400)
-          .json({ message: `redirect_backend_port must match rule (${rulePort}) for policy ${rule.policy_name}` });
+          .json({ message: `redirect_backend_port must match policy (${policyPort}) for policy ${policy.policy_name}` });
       }
     }
     if (data.final_backend_port !== undefined) {
-      const rulePort = Number(rule.redirect_backend_port);
-      if (data.final_backend_port !== rulePort) {
+      const policyPort = Number(policy.redirect_backend_port);
+      if (data.final_backend_port !== policyPort) {
         return res
           .status(400)
-          .json({ message: `final_backend_port must match rule (${rulePort}) for policy ${rule.policy_name}` });
+          .json({ message: `final_backend_port must match policy (${policyPort}) for policy ${policy.policy_name}` });
       }
     }
-    if (data.redirect_backend_label && data.redirect_backend_label !== rule.redirect_backend_label) {
+    if (data.redirect_backend_label && data.redirect_backend_label !== policy.redirect_backend_label) {
       return res
         .status(400)
-        .json({ message: `redirect_backend_label must match rule (${rule.redirect_backend_label}) for policy ${rule.policy_name}` });
+        .json({
+          message: `redirect_backend_label must match policy (${policy.redirect_backend_label}) for policy ${policy.policy_name}`,
+        });
     }
 
     // 3) Optionally enforce live Kubernetes Service port match (opt-in to avoid blocking local dev)
     const shouldValidateK8s = process.env.ENABLE_K8S_PORT_CHECK === 'true';
-    if (shouldValidateK8s && data.final_backend_service && rule.namespace) {
+    if (shouldValidateK8s && data.final_backend_service && policy.namespace) {
       try {
         const matches = await validateServicePortViaK8sAPI({
-          namespace: rule.namespace,
+          namespace: policy.namespace,
           serviceName: data.final_backend_service,
-          expectedPort: data.final_backend_port || data.redirect_backend_port || Number(rule.redirect_backend_port),
+          expectedPort: data.final_backend_port || data.redirect_backend_port || Number(policy.redirect_backend_port),
         });
         if (!matches.ok) {
           return res.status(400).json({ message: matches.error || 'Kubernetes service port validation failed' });
@@ -550,16 +816,16 @@ app.post('/api/redirections', async (req, res, next) => {
 });
 
 // Mark a policy as expired (when TTL cleanup or manual expiry occurs)
-app.post('/api/rules/by-policy/:policyName/expire', async (req, res, next) => {
+async function handlePolicyExpiry(req, res, next) {
   try {
-    const rule = await RedirectRule.findOne({ policy_name: req.params.policyName });
-    if (!rule) return res.status(404).json({ message: 'Rule not found' });
+    const policy = await Policy.findOne({ policy_name: req.params.policyName });
+    if (!policy) return res.status(404).json({ message: 'Policy not found' });
 
     const { data, error } = normalizeRedirectionEvent({
-      policy_name: rule.policy_name,
-      frontend_service: rule.frontend_service,
-      redirect_backend_label: rule.redirect_backend_label,
-      redirect_backend_port: rule.redirect_backend_port,
+      policy_name: policy.policy_name,
+      frontend_service: policy.frontend_service,
+      redirect_backend_label: policy.redirect_backend_label,
+      redirect_backend_port: policy.redirect_backend_port,
       violation_triggered: false,
       status: 'expired',
       notes: req.body?.notes || 'Policy TTL expired or was manually expired',
@@ -572,7 +838,10 @@ app.post('/api/rules/by-policy/:policyName/expire', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
+}
+
+app.post('/api/policies/:policyName/expire', handlePolicyExpiry);
+app.post('/api/rules/by-policy/:policyName/expire', handlePolicyExpiry);
 
 // Basic error handler
 // eslint-disable-next-line no-unused-vars
