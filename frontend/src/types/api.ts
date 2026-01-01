@@ -257,3 +257,5 @@ export interface Service {
     cluster_ip: string;
     ports: string[];
 }
+
+// Scaling types are declared in a separate file `types/scaling.ts` and imported where needed

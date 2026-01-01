@@ -5,7 +5,9 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "scaling": "node src/scaling_server.js",
+    "scaling:dev": "node --watch src/scaling_server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

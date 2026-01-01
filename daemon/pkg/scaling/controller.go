@@ -9,6 +9,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// subscriber pattern
 func StartScalingController(k8sClient *kubernetes.Clientset) {
 	if k8sClient == nil {
 		log.Println("[Scaling] Controller not started (k8sClient is nil)")
@@ -67,6 +68,14 @@ func StartScalingController(k8sClient *kubernetes.Clientset) {
 				desired,
 				action,
 			)
+
+			_ = UpdateScalingRuleStatus(rule.ID, map[string]interface{}{
+				"lastAction":   action,
+				"lastActionAt": time.Now().UTC(),
+				"lastValue":    value,
+				"lastFrom":     current,
+				"lastTo":       desired,
+			})
 		}
 
 		time.Sleep(5 * time.Second)

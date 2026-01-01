@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
-import { FiHome, FiGitBranch, FiGrid, FiClock, FiGlobe, FiChevronRight, FiBarChart2, FiActivity, FiZap, FiServer, FiCpu, FiRadio, FiPackage, FiDownload, FiSettings, FiRefreshCw } from 'react-icons/fi';
+import { FiHome, FiGitBranch, FiGrid, FiClock, FiGlobe, FiChevronRight, FiBarChart2, FiActivity, FiZap, FiServer, FiCpu, FiRadio, FiPackage, FiDownload, FiSettings, FiRefreshCw, FiTrendingUp } from 'react-icons/fi';
 import './Navigation.css';
 
 export function Navigation() {
@@ -127,6 +127,15 @@ export function Navigation() {
                     <FiClock className="nav-icon" />
                     <span className="nav-link-text">Scheduling</span>
                 </Link>
+
+                <Link 
+                    to="/scaling" 
+                    className={`side-nav-link ${isActive('/scaling') ? 'active' : ''}`}
+                    title="Autoscaling Rules"
+                >
+                    <FiTrendingUp className="nav-icon" />
+                    <span className="nav-link-text">Scaling</span>
+                </Link>
                 
                 <Link 
                     to="/federation" 
@@ -147,4 +156,3 @@ export function Navigation() {
         </nav>
     );
 }
-

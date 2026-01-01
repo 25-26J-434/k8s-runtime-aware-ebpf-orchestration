@@ -8,6 +8,11 @@ export default defineConfig({
         port: 5000,
         strictPort: true, // Fail if port 5000 is not available
         proxy: {
+            '/api/scaling-rules': {
+                target: 'http://localhost:3000',
+                changeOrigin: true,
+                secure: false,
+            },
             '/api': {
                 target: 'http://localhost:8080',
                 changeOrigin: true,

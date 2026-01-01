@@ -1,6 +1,8 @@
 import type { MetricsResponse, ClusterTopology, Service, UnifiedMetricsResponse } from '../types/api';
+import type { ScalingRule, LatestMetric, DeploymentInfo } from '../types/scaling';
 
 const API_BASE = '';  // Proxy handles routing
+const SCALING_API_BASE = (import.meta as any).env?.VITE_SCALING_API_BASE || API_BASE;
 
 // Transform unified metrics to expected format
 function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
@@ -232,6 +234,88 @@ export const api = {
         });
         if (!response.ok) {
             throw new Error(`Failed to fetch container scheduling latency metrics: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async getScalingRules(): Promise<ScalingRule[]> {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch scaling rules: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async createScalingRule(rule: Partial<ScalingRule>): Promise<ScalingRule> {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rule),
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to create scaling rule: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async updateScalingRule(id: string, rule: Partial<ScalingRule>): Promise<ScalingRule> {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rule),
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to update scaling rule: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async deleteScalingRule(id: string): Promise<void> {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to delete scaling rule: ${response.status} ${response.statusText}`);
+        }
+    },
+
+    async getDeployments(): Promise<DeploymentInfo[]> {
+        const response = await fetch(`${API_BASE}/api/scaling/deployments`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch deployments: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async getLatestMetrics(): Promise<LatestMetric[]> {
+        const response = await fetch(`${API_BASE}/api/scaling/metrics/latest`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch latest metrics: ${response.status} ${response.statusText}`);
         }
         return response.json();
     },

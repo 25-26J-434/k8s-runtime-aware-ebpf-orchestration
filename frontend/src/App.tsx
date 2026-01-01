@@ -5,6 +5,8 @@ import { Dashboard } from './pages/Dashboard';
 import { Topology } from './pages/Topology';
 import { Routing } from './pages/Routing';
 import { Scheduling } from './pages/Scheduling';
+import { ScalingRules as Scalings } from './pages/ScalingRules';
+import { Deployments } from './pages/Deployments';
 import { Federation } from './pages/Federation';
 import './App.css';
 
@@ -35,6 +37,18 @@ function App() {
                     <>
                         <Navigation />
                         <Scheduling />
+                    </>
+                } />
+                <Route path="/scaling" element={
+                    <>
+                        <Navigation />
+                        <Scalings />
+                    </>
+                } />
+                <Route path="/deployments" element={
+                    <>
+                        <Navigation />
+                        <Deployments />
                     </>
                 } />
                 <Route path="/federation" element={

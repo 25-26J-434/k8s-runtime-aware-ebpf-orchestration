@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -89,21 +90,137 @@ func GetEnabledScalingRules() ([]ScalingRule, error) {
 		return nil, err
 	}
 
-	// Safe defaults
 	for i := range rules {
-		if rules[i].Operator == "" {
-			rules[i].Operator = ">"
-		}
-		if rules[i].MinReplicas == 0 {
-			rules[i].MinReplicas = 1
-		}
-		if rules[i].MaxReplicas == 0 {
-			rules[i].MaxReplicas = 5
-		}
-		if rules[i].Step == 0 {
-			rules[i].Step = 1
-		}
+		applyDefaults(&rules[i])
 	}
 
 	return rules, nil
+}
+
+// GetScalingRules fetches all scaling rules.
+func GetScalingRules() ([]ScalingRule, error) {
+	if mongoClient == nil || collection == nil {
+		return nil, fmt.Errorf("mongo not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cur, err := collection.Find(ctx, bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	var rules []ScalingRule
+	if err := cur.All(ctx, &rules); err != nil {
+		return nil, err
+	}
+
+	for i := range rules {
+		applyDefaults(&rules[i])
+	}
+
+	return rules, nil
+}
+
+// CreateScalingRule inserts a new scaling rule.
+func CreateScalingRule(rule ScalingRule) (ScalingRule, error) {
+	if mongoClient == nil || collection == nil {
+		return ScalingRule{}, fmt.Errorf("mongo not initialized")
+	}
+
+	applyDefaults(&rule)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := collection.InsertOne(ctx, rule)
+	if err != nil {
+		return ScalingRule{}, err
+	}
+
+	if oid, ok := res.InsertedID.(primitive.ObjectID); ok {
+		rule.ID = oid
+	}
+
+	return rule, nil
+}
+
+// UpdateScalingRule updates an existing scaling rule by ID.
+func UpdateScalingRule(id primitive.ObjectID, updates bson.M) (ScalingRule, error) {
+	if mongoClient == nil || collection == nil {
+		return ScalingRule{}, fmt.Errorf("mongo not initialized")
+	}
+	if len(updates) == 0 {
+		return ScalingRule{}, fmt.Errorf("no updates provided")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+	var updated ScalingRule
+	if err := collection.FindOneAndUpdate(ctx, bson.M{"_id": id}, bson.M{"$set": updates}, opts).Decode(&updated); err != nil {
+		return ScalingRule{}, err
+	}
+
+	applyDefaults(&updated)
+	return updated, nil
+}
+
+// ToggleScalingRule flips the enabled flag for a rule.
+func ToggleScalingRule(id primitive.ObjectID) (ScalingRule, error) {
+	if mongoClient == nil || collection == nil {
+		return ScalingRule{}, fmt.Errorf("mongo not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var current ScalingRule
+	if err := collection.FindOne(ctx, bson.M{"_id": id}).Decode(&current); err != nil {
+		return ScalingRule{}, err
+	}
+
+	updates := bson.M{"enabled": !current.Enabled}
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+	var updated ScalingRule
+	if err := collection.FindOneAndUpdate(ctx, bson.M{"_id": id}, bson.M{"$set": updates}, opts).Decode(&updated); err != nil {
+		return ScalingRule{}, err
+	}
+
+	applyDefaults(&updated)
+	return updated, nil
+}
+
+// UpdateScalingRuleStatus updates status fields for a rule (last action/value).
+func UpdateScalingRuleStatus(id primitive.ObjectID, updates bson.M) error {
+	if mongoClient == nil || collection == nil {
+		return fmt.Errorf("mongo not initialized")
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := collection.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": updates})
+	return err
+}
+
+func applyDefaults(rule *ScalingRule) {
+	if rule.Operator == "" {
+		rule.Operator = ">"
+	}
+	if rule.MinReplicas == 0 {
+		rule.MinReplicas = 1
+	}
+	if rule.MaxReplicas == 0 {
+		rule.MaxReplicas = 5
+	}
+	if rule.Step == 0 {
+		rule.Step = 1
+	}
 }
