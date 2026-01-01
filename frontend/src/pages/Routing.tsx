@@ -10,20 +10,20 @@ import './Routing.css';
 type RoutingFormState = RedirectionEventPayload & RedirectRulePayload;
 
 const defaultPayload: RoutingFormState = {
-    policy_name: 'redirect-service-a-to-c',
-    namespace: 'test-services',
-    frontend_service: 'service-a',
-    frontend_service_port: '5000',
-    monitor_pod_contains: 'service-a',
+    policy_name: '',
+    namespace: 'test-service',
+    frontend_service: '',
+    frontend_service_port: '',
+    monitor_pod_contains: '',
     metric: 'dns_us',
     violation_threshold: 1000,
     action: 'redirect',
-    redirect_backend_label: 'app=service-c',
-    redirect_backend_port: '5003',
+    redirect_backend_label: '',
+    redirect_backend_port: '',
     redirect_backend_protocol: 'TCP',
-    ttl_seconds: 300,
-    choose_best_pod: true,
-    backend_candidate_label: 'app=service-c',
+    ttl_seconds: '',
+    choose_best_pod: false,
+    backend_candidate_label: '',
     redirect_winner_label: 'redirect-winner=yes',
     planned_backend_service: 'service-b',
     planned_backend_label: 'app=service-b',
@@ -31,13 +31,30 @@ const defaultPayload: RoutingFormState = {
     final_backend_service: 'service-c',
     final_backend_label: 'app=service-c',
     final_backend_port: '5003',
-    redirect_backend_label: 'app=service-c',
-    redirect_backend_port: '5003',
     violation_triggered: false,
     accepted_service: 'service-c',
     status: 'applied',
     notes: 'Hello I am service C (redirect winner)',
 };
+
+const policyPresets = [
+    {
+        label: 'Redirect service-a → service-c (sample)',
+        value: 'redirect-service-a-to-c',
+        namespace: 'test-service',
+        frontend_service: 'service-a',
+        frontend_service_port: '5000',
+        monitor_pod_contains: 'service-a',
+        redirect_backend_label: 'app=service-c',
+        redirect_backend_port: '5003',
+        backend_candidate_label: 'app=service-c',
+        notes: 'policy',
+    },
+];
+
+const serviceOptions = ['service-a', 'service-b', 'service-c'];
+const portOptions = ['5000', '5001', '5003'];
+const backendLabelOptions = ['app=service-b', 'app=service-c'];
 
 export function Routing() {
     const { metrics } = useMetrics(6000);
@@ -45,7 +62,6 @@ export function Routing() {
     const [payload, setPayload] = useState<RoutingFormState>(defaultPayload);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState<string | null>(null);
     const [lastEvent, setLastEvent] = useState<RedirectionEvent | null>(null);
     const [applyOutput, setApplyOutput] = useState<string | null>(null);
     const [identity, setIdentity] = useState<string>('');
@@ -54,18 +70,18 @@ export function Routing() {
     const [showRedirect, setShowRedirect] = useState(false);
     const [redirectUnlocked, setRedirectUnlocked] = useState(false);
     const [topologyNode, setTopologyNode] = useState<{ name?: string; ip?: string }>({});
-    const [deleting, setDeleting] = useState(false);
-    const [deleteStatus, setDeleteStatus] = useState<string | null>(null);
-    const [deleteError, setDeleteError] = useState<string | null>(null);
     const [showTargetOnly, setShowTargetOnly] = useState(false);
     const [connectivityError, setConnectivityError] = useState<string | null>(null);
     const [creating, setCreating] = useState(false);
-    const [createStatus, setCreateStatus] = useState<string | null>(null);
-    const [createError, setCreateError] = useState<string | null>(null);
     const [connectivityWarning, setConnectivityWarning] = useState<string | null>(null);
     const [probing, setProbing] = useState(false);
     const [probeOutput, setProbeOutput] = useState<string | null>(null);
     const [probeError, setProbeError] = useState<string | null>(null);
+    const [policyStatus, setPolicyStatus] = useState<string | null>(null);
+    const [policyError, setPolicyError] = useState<string | null>(null);
+    const [ruleStatus, setRuleStatus] = useState<string | null>(null);
+    const [ruleError, setRuleError] = useState<string | null>(null);
+    const [applyStatus, setApplyStatus] = useState<string | null>(null);
 
     const flowFrontend = payload.frontend_service || 'service-a';
     const flowPlanned = payload.planned_backend_service || 'service-b';
@@ -114,21 +130,58 @@ export function Routing() {
         }));
     };
 
+    const applyPreset = (value: string) => {
+        if (!value) {
+            setPayload((prev) => ({ ...prev, policy_name: '' }));
+            return;
+        }
+        const preset = policyPresets.find((p) => p.value === value);
+        if (!preset) {
+            setPayload((prev) => ({ ...prev, policy_name: value }));
+            return;
+        }
+        setPayload((prev) => ({
+            ...prev,
+            policy_name: preset.value,
+            namespace: preset.namespace,
+            frontend_service: preset.frontend_service,
+            frontend_service_port: preset.frontend_service_port,
+            monitor_pod_contains: preset.monitor_pod_contains,
+            action: 'redirect',
+            redirect_backend_label: preset.redirect_backend_label,
+            redirect_backend_port: preset.redirect_backend_port,
+            redirect_backend_protocol: 'TCP',
+            ttl_seconds: 300,
+            metric: 'dns_us',
+            violation_threshold: 1000,
+            choose_best_pod: false,
+            backend_candidate_label: preset.backend_candidate_label,
+            redirect_winner_label: 'redirect-winner=yes',
+            planned_backend_service: 'service-b',
+            planned_backend_label: 'app=service-b',
+            planned_backend_port: '5001',
+            final_backend_service: 'service-c',
+            final_backend_label: preset.redirect_backend_label,
+            final_backend_port: preset.redirect_backend_port,
+            notes: preset.notes,
+        }));
+    };
+
     const resetPayload = () => {
         setPayload(defaultPayload);
         setError(null);
-        setSuccess(null);
-        setDeleteStatus(null);
-        setDeleteError(null);
         setShowTargetOnly(false);
-        setCreateStatus(null);
-        setCreateError(null);
         setApplyOutput(null);
         setRedirectApplied(false);
         setShowRedirect(false);
         setRedirectUnlocked(false);
         setProbeOutput(null);
         setProbeError(null);
+        setPolicyStatus(null);
+        setPolicyError(null);
+        setRuleStatus(null);
+        setRuleError(null);
+        setApplyStatus(null);
     };
 
     const parsedIdentity = useMemo(() => {
@@ -173,26 +226,24 @@ export function Routing() {
         return Number.isFinite(num) ? num : value || '';
     };
 
-    const rulePreview = useMemo(
+    const policyPreview = useMemo(
         () =>
             JSON.stringify(
                 {
-                    policy_name: payload.policy_name,
-                    namespace: payload.namespace,
-                    frontend_service: payload.frontend_service,
-                    frontend_service_port: safeNumber(payload.frontend_service_port),
-                    monitor_pod_contains: payload.monitor_pod_contains,
-                    metric: payload.metric,
-                    violation_threshold: safeNumber(payload.violation_threshold),
-                    action: payload.action,
-                    redirect_backend_label: payload.redirect_backend_label,
-                    redirect_backend_port: safeNumber(payload.redirect_backend_port),
-                    redirect_backend_protocol: payload.redirect_backend_protocol,
-                    ttl_seconds: safeNumber(payload.ttl_seconds),
+                    policy_name: payload.policy_name || '<pick a policy>',
+                    namespace: payload.namespace || '<pick a namespace>',
+                    frontend_service: payload.frontend_service || '<frontend>',
+                    frontend_service_port: safeNumber(payload.frontend_service_port) || '<port>',
+                    monitor_pod_contains: payload.monitor_pod_contains || payload.frontend_service,
+                    action: payload.action || 'redirect',
+                    redirect_backend_label: payload.redirect_backend_label || '<label>',
+                    redirect_backend_port: safeNumber(payload.redirect_backend_port) || '<port>',
+                    redirect_backend_protocol: payload.redirect_backend_protocol || 'TCP',
+                    ttl_seconds: safeNumber(payload.ttl_seconds) || '<ttl>',
                     choose_best_pod: payload.choose_best_pod,
                     backend_candidate_label: payload.backend_candidate_label || payload.redirect_backend_label,
                     redirect_winner_label: payload.redirect_winner_label,
-                    notes: payload.notes,
+                    notes: payload.notes || 'policy',
                 },
                 null,
                 2
@@ -203,8 +254,6 @@ export function Routing() {
             payload.frontend_service,
             payload.frontend_service_port,
             payload.monitor_pod_contains,
-            payload.metric,
-            payload.violation_threshold,
             payload.action,
             payload.redirect_backend_label,
             payload.redirect_backend_port,
@@ -217,23 +266,37 @@ export function Routing() {
         ]
     );
 
-    const buildRuleBody = () => {
-        const parseRequired = (value: string | number | undefined, label: string) => {
-            const str = typeof value === 'number' ? String(value) : (value || '').trim();
-            if (!str) {
-                throw new Error(`${label} is required`);
-            }
-            return str;
-        };
+    const rulePreview = useMemo(
+        () =>
+            JSON.stringify(
+                {
+                    metric: payload.metric || 'dns_us',
+                    violation_threshold: safeNumber(payload.violation_threshold) || '<threshold>',
+                    notes: payload.notes || 'example rule',
+                },
+                null,
+                2
+            ),
+        [payload.metric, payload.violation_threshold, payload.notes]
+    );
 
-        const parsePositiveNumber = (value: string | number | undefined, label: string) => {
-            const num = Number(value);
-            if (!Number.isFinite(num) || num <= 0) {
-                throw new Error(`${label} must be a positive number`);
-            }
-            return num;
-        };
+    const parseRequired = (value: string | number | undefined, label: string) => {
+        const str = typeof value === 'number' ? String(value) : (value || '').trim();
+        if (!str) {
+            throw new Error(`${label} is required`);
+        }
+        return str;
+    };
 
+    const parsePositiveNumber = (value: string | number | undefined, label: string) => {
+        const num = Number(value);
+        if (!Number.isFinite(num) || num <= 0) {
+            throw new Error(`${label} must be a positive number`);
+        }
+        return num;
+    };
+
+    const buildPolicyBody = () => {
         return {
             policy_name: parseRequired(payload.policy_name, 'policy_name'),
             namespace: parseRequired(payload.namespace, 'namespace'),
@@ -243,8 +306,6 @@ export function Routing() {
                 payload.monitor_pod_contains || payload.frontend_service,
                 'monitor_pod_contains'
             ),
-            metric: payload.metric || 'dns_us',
-            violation_threshold: parsePositiveNumber(payload.violation_threshold, 'violation_threshold'),
             action: payload.action || 'redirect',
             redirect_backend_label: parseRequired(payload.redirect_backend_label, 'redirect_backend_label'),
             redirect_backend_port: parsePositiveNumber(payload.redirect_backend_port, 'redirect_backend_port'),
@@ -254,28 +315,32 @@ export function Routing() {
             backend_candidate_label: payload.backend_candidate_label || payload.redirect_backend_label,
             redirect_winner_label: payload.redirect_winner_label || 'redirect-winner=yes',
             notes: payload.notes,
-        } as RedirectRulePayload;
+        };
     };
 
-    const getPodsForService = (serviceName: string): string[] => {
-        if (!metrics?.pods) return [];
-        return Object.keys(metrics.pods).filter((podKey) => {
-            const [, podName] = podKey.split('/');
-            return podName && podName.includes(serviceName);
-        });
+    const buildRuleBody = () => {
+        return {
+            metric: payload.metric || 'dns_us',
+            violation_threshold: parsePositiveNumber(payload.violation_threshold, 'violation_threshold'),
+            notes: payload.notes,
+        };
     };
 
-    const handleSubmit = async (event: React.FormEvent) => {
-        event.preventDefault();
+    const handleApplyPolicy = async (event?: React.FormEvent) => {
+        if (event) event.preventDefault();
         setSubmitting(true);
         setError(null);
-        setSuccess(null);
-        setDeleteStatus(null);
-        setDeleteError(null);
+        setApplyStatus(null);
         setShowTargetOnly(false);
         setConnectivityError(null);
         setConnectivityWarning(null);
         setApplyOutput(null);
+        const policyName = payload.policy_name?.trim();
+        if (!policyName) {
+            setError('Pick a policy name before applying.');
+            setSubmitting(false);
+            return;
+        }
 
         // Reachability checks:
         // 1) Block if routing backend (4000) is down
@@ -316,14 +381,14 @@ export function Routing() {
         checkDaemon();
 
         try {
-            const result = await api.applyRuleByPolicy(payload.policy_name.trim());
-            setSuccess(result.message || 'Policy applied.');
+            const result = await api.applyPolicy(policyName);
+            setApplyStatus(result.message || 'Policy applied.');
             setApplyOutput(result.stdout || '');
             setRedirectUnlocked(true);
             setRedirectApplied(true);
             setShowRedirect(true);
             setLastEvent({
-                policy_name: payload.policy_name,
+                policy_name: policyName,
                 accepted_service: payload.final_backend_service,
                 violation_triggered: true,
                 status: 'applied',
@@ -353,53 +418,35 @@ export function Routing() {
         }
     };
 
-    const handleDeletePolicy = async () => {
+    const handleUpsertRule = async () => {
         const policyName = payload.policy_name?.trim();
         if (!policyName) {
-            setDeleteError('Policy name is required to delete a rule.');
+            setRuleError('Pick a policy first.');
             return;
         }
-
-        setDeleting(true);
-        setDeleteStatus(null);
-        setDeleteError(null);
-        setCreateStatus(null);
-        setCreateError(null);
-
+        setRuleError(null);
+        setRuleStatus(null);
         try {
-            const rule = await api.getRuleByPolicy(policyName);
-            if (!rule?.id) {
-                throw new Error('Policy found but missing ID');
-            }
-
-            await api.deleteRule(rule.id);
-
-            setLastEvent(null);
-            setShowRedirect(true);
-            setRedirectUnlocked(true);
-            setShowTargetOnly(true);
-            setDeleteStatus(`Policy ${policyName} deleted. Visualization locked to target route.`);
+            const ruleBody = buildRuleBody();
+            await api.upsertPolicyRule(policyName, ruleBody);
+            setRuleStatus(`Rule saved for ${policyName}.`);
         } catch (err: any) {
-            setDeleteError(err?.message || 'Failed to delete policy');
-        } finally {
-            setDeleting(false);
+            setRuleError(err?.message || 'Failed to save rule');
         }
     };
 
     const handleCreatePolicy = async () => {
         setCreating(true);
-        setCreateStatus(null);
-        setCreateError(null);
-        setDeleteStatus(null);
-        setDeleteError(null);
+        setPolicyStatus(null);
+        setPolicyError(null);
 
         try {
-            const ruleBody = buildRuleBody();
-            await api.createRule(ruleBody);
-            setCreateStatus(`Policy ${ruleBody.policy_name} saved to DB.`);
+            const policyBody = buildPolicyBody();
+            await api.createPolicy(policyBody);
+            setPolicyStatus(`Policy ${policyBody.policy_name} saved.`);
             setShowTargetOnly(false);
         } catch (err: any) {
-            setCreateError(err?.message || 'Failed to create policy');
+            setPolicyError(err?.message || 'Failed to create policy');
         } finally {
             setCreating(false);
         }
@@ -456,277 +503,251 @@ export function Routing() {
                 <div className="routing-card info">
                     <div className="card-title">
                         <FiAlertTriangle />
-                        <span>What this form does</span>
+                        <span>How to run it</span>
                     </div>
                     <p className="info-copy">
-                        This is a UI wrapper for the Postman/terminal call:
-                        <code className="inline-code">POST http://localhost:4000/api/rules/by-policy/redirect-service-a-to-c/apply</code>.
-                        It kicks off the helper script that writes the CiliumLocalRedirectPolicy.
+                        Walk through the exact Postman calls in order: create the policy, visualize, upsert the rule, then apply.
+                        All calls hit <code className="inline-code">http://localhost:4000</code>.
                     </p>
                     <div className="curl-block">
-                        curl -X POST http://localhost:4000/api/rules/by-policy/redirect-service-a-to-c/apply \
-                        <br />
-                        &nbsp;&nbsp;--header &apos;Content-Type: application/json&apos;
+                        Step 1: POST http://localhost:4000/api/policies<br />
+                        Step 3: POST http://localhost:4000/api/policies/&lt;policy&gt;/rule<br />
+                        Step 4: POST http://localhost:4000/api/policies/&lt;policy&gt;/apply
                     </div>
                 </div>
             </div>
 
-                <div className="routing-card form-card">
+            <div className="routing-card form-card">
                     <div className="form-header">
                         <div>
                             <div className="card-title">
                                 <FiSend />
-                                <span>Save Policy & Rule</span>
+                                <span>Step 1 · Create policy (POST /api/policies)</span>
                             </div>
                             <p className="info-copy">
-                                Define the rule (helper JSON) and save it to the backend before applying. Then hit Apply below to trigger the redirect helper.
+                                Pick values from the dropdowns (nothing is pre-filled) and hit Create policy. This mirrors your Postman body.
                             </p>
                         </div>
                         <div className="header-actions">
-                            <button type="button" className="ghost-button" onClick={resetPayload} disabled={submitting}>
-                                <FiRefreshCw /> Reset to sample
+                            <button
+                                type="button"
+                                className="ghost-button"
+                                onClick={() => applyPreset(policyPresets[0]?.value || '')}
+                                disabled={creating}
+                            >
+                                <FiRefreshCw /> Use sample preset
                             </button>
-                            <button type="button" className="ghost-button" onClick={handleCreatePolicy} disabled={creating}>
-                                {creating ? 'Saving…' : 'Save rule'}
-                            </button>
-                            <button type="button" className="ghost-button danger" onClick={handleDeletePolicy} disabled={deleting}>
-                                {deleting ? 'Deleting…' : 'Delete policy'}
-                            </button>
-                            <button type="submit" form="routing-form" className="primary-button" disabled={submitting}>
-                                {submitting ? 'Applying...' : 'Apply policy'}
-                            </button>
-                        </div>
+                            <button type="button" className="ghost-button" onClick={resetPayload} disabled={creating}>
+                            Reset fields
+                        </button>
+                        <button type="submit" form="policy-form" className="primary-button" disabled={creating}>
+                            {creating ? 'Creating…' : 'Create policy'}
+                        </button>
+                    </div>
+                </div>
+                <form
+                    id="policy-form"
+                    className="routing-form"
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        handleCreatePolicy();
+                    }}
+                >
+                    <div className="form-grid">
+                        <label className="form-field">
+                            <span className="form-label">Policy Name *</span>
+                            <input
+                                type="text"
+                                value={payload.policy_name || ''}
+                                onChange={(e) => updateField('policy_name', e.target.value)}
+                                placeholder="redirect-service-a-to-c"
+                                required
+                            />
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Namespace *</span>
+                            <input
+                                type="text"
+                                value={payload.namespace || ''}
+                                readOnly
+                                placeholder="test-service"
+                                required
+                            />
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Frontend Service *</span>
+                            <select
+                                value={payload.frontend_service || ''}
+                                onChange={(e) => updateField('frontend_service', e.target.value)}
+                                required
+                            >
+                                <option value="">Pick a service</option>
+                                {serviceOptions.map((svc) => (
+                                    <option key={svc} value={svc}>
+                                        {svc}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Frontend Service Port *</span>
+                            <select
+                                value={payload.frontend_service_port || ''}
+                                onChange={(e) => updateField('frontend_service_port', e.target.value)}
+                                required
+                            >
+                                <option value="">Pick a port</option>
+                                {portOptions.map((port) => (
+                                    <option key={port} value={port}>
+                                        {port}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Monitor pods containing *</span>
+                            <select
+                                value={payload.monitor_pod_contains || ''}
+                                onChange={(e) => updateField('monitor_pod_contains', e.target.value)}
+                                required
+                            >
+                                <option value="">Pick a pod hint</option>
+                                {serviceOptions.map((svc) => (
+                                    <option key={svc} value={svc}>
+                                        {svc}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Action</span>
+                            <select value={payload.action} onChange={(e) => updateField('action', e.target.value)}>
+                                <option value="redirect">redirect</option>
+                                <option value="observe">observe</option>
+                            </select>
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Redirect Backend Label *</span>
+                            <select
+                                value={payload.redirect_backend_label || ''}
+                                onChange={(e) => {
+                                    updateField('redirect_backend_label', e.target.value);
+                                    updateField('backend_candidate_label', e.target.value);
+                                    updateField('final_backend_label', e.target.value);
+                                }}
+                                required
+                            >
+                                <option value="">Pick a backend</option>
+                                {backendLabelOptions.map((label) => (
+                                    <option key={label} value={label}>
+                                        {label}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Redirect Backend Port *</span>
+                            <select
+                                value={payload.redirect_backend_port || ''}
+                                onChange={(e) => {
+                                    updateField('redirect_backend_port', e.target.value);
+                                    updateField('final_backend_port', e.target.value);
+                                }}
+                                required
+                            >
+                                <option value="">Pick a port</option>
+                                {portOptions.map((port) => (
+                                    <option key={port} value={port}>
+                                        {port}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Redirect Backend Protocol</span>
+                            <select
+                                value={payload.redirect_backend_protocol || ''}
+                                onChange={(e) => updateField('redirect_backend_protocol', e.target.value)}
+                            >
+                                <option value="">Pick protocol</option>
+                                <option value="TCP">TCP</option>
+                                <option value="UDP">UDP</option>
+                            </select>
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">TTL Seconds *</span>
+                            <select
+                                value={payload.ttl_seconds || ''}
+                                onChange={(e) => updateField('ttl_seconds', e.target.value)}
+                                required
+                            >
+                                <option value="">Pick TTL</option>
+                                <option value="60">60</option>
+                                <option value="120">120</option>
+                                <option value="300">300</option>
+                                <option value="600">600</option>
+                            </select>
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Backend Candidate Label</span>
+                            <select
+                                value={payload.backend_candidate_label || ''}
+                                onChange={(e) => updateField('backend_candidate_label', e.target.value)}
+                            >
+                                <option value="">Match redirect backend</option>
+                                {backendLabelOptions.map((label) => (
+                                    <option key={label} value={label}>
+                                        {label}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Redirect Winner Label</span>
+                            <input
+                                type="text"
+                                value={payload.redirect_winner_label || ''}
+                                onChange={(e) => updateField('redirect_winner_label', e.target.value)}
+                                placeholder="redirect-winner=yes"
+                            />
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Choose Best Pod</span>
+                            <select
+                                value={payload.choose_best_pod ? 'yes' : 'no'}
+                                onChange={(e) => updateField('choose_best_pod', e.target.value === 'yes')}
+                            >
+                                <option value="no">no</option>
+                                <option value="yes">yes</option>
+                            </select>
+                        </label>
+                        <label className="form-field">
+                            <span className="form-label">Notes</span>
+                            <input
+                                type="text"
+                                value={payload.notes || ''}
+                                onChange={(e) => updateField('notes', e.target.value)}
+                                placeholder="policy"
+                            />
+                        </label>
                     </div>
 
-                    <form id="routing-form" className="routing-form" onSubmit={handleSubmit}>
-                        <div className="form-section">
-                            <div className="form-section-header">
-                                <div className="form-section-title">Policy identity</div>
-                                <div className="form-section-note">Saved to DB; used to look up the rule on apply.</div>
-                            </div>
-                            <div className="form-grid">
-                                <label className="form-field">
-                                    <span className="form-label">Policy Name *</span>
-                                    <input
-                                        type="text"
-                                        value={payload.policy_name}
-                                        onChange={(e) => updateField('policy_name', e.target.value)}
-                                        placeholder="redirect-service-a-to-c"
-                                        required
-                                    />
-                                </label>
-                                <label className="form-field">
-                                    <span className="form-label">Namespace *</span>
-                                    <input
-                                        type="text"
-                                        value={payload.namespace || ''}
-                                        onChange={(e) => updateField('namespace', e.target.value)}
-                                        placeholder="test-services"
-                                        required
-                                    />
-                                </label>
-                                <label className="form-field">
-                                    <span className="form-label">Frontend Service *</span>
-                                    <input
-                                        type="text"
-                                        value={payload.frontend_service || ''}
-                                        onChange={(e) => updateField('frontend_service', e.target.value)}
-                                        placeholder="service-a"
-                                        required
-                                    />
-                                </label>
-                                <label className="form-field">
-                                    <span className="form-label">Frontend Service Port *</span>
-                                    <input
-                                        type="number"
-                                        value={payload.frontend_service_port}
-                                        onChange={(e) => updateField('frontend_service_port', e.target.value)}
-                                        placeholder="5000"
-                                        required
-                                    />
-                                </label>
-                                <label className="form-field">
-                                    <span className="form-label">Monitor pods containing *</span>
-                                    <input
-                                        type="text"
-                                        value={payload.monitor_pod_contains || ''}
-                                        onChange={(e) => updateField('monitor_pod_contains', e.target.value)}
-                                        placeholder="service-a"
-                                        required
-                                    />
-                                </label>
-                            </div>
+                    {policyError && (
+                        <div className="alert error">
+                            <FiAlertTriangle /> {policyError}
                         </div>
-
-                        <div className="form-section">
-                            <div className="form-section-header">
-                                <div className="form-section-title">Rule trigger</div>
-                                <div className="form-section-note">When this metric crosses the threshold, redirect fires.</div>
-                            </div>
-                            <div className="form-grid">
-                                <label className="form-field">
-                                    <span className="form-label">Metric</span>
-                                    <select value={payload.metric} onChange={(e) => updateField('metric', e.target.value)}>
-                                        <option value="dns_us">dns_us (DNS latency)</option>
-                                        <option value="rtt_us">rtt_us (round-trip)</option>
-                                    </select>
-                                </label>
-                                <label className="form-field">
-                                    <span className="form-label">Violation Threshold (µs)</span>
-                                    <input
-                                        type="number"
-                                        value={payload.violation_threshold}
-                                        onChange={(e) => updateField('violation_threshold', e.target.value)}
-                                        placeholder="1000"
-                                    />
-                                </label>
-                                <label className="form-field">
-                                    <span className="form-label">Action</span>
-                                    <select value={payload.action} onChange={(e) => updateField('action', e.target.value)}>
-                                        <option value="redirect">redirect</option>
-                                        <option value="observe">observe</option>
-                                    </select>
-                                </label>
-                            </div>
+                    )}
+                    {policyStatus && (
+                        <div className="alert success">
+                            <FiActivity /> {policyStatus}
                         </div>
-
-                        <div className="form-section">
-                            <div className="form-section-header">
-                                <div className="form-section-title">Redirect target</div>
-                                <div className="form-section-note">Where traffic goes when the rule is violated.</div>
-                            </div>
-                            <div className="form-grid">
-                                <label className="form-field">
-                                    <span className="form-label">Redirect Backend Label *</span>
-                                    <input
-                                        type="text"
-                                        value={payload.redirect_backend_label || ''}
-                                        onChange={(e) => updateField('redirect_backend_label', e.target.value)}
-                                        placeholder="app=service-c"
-                                        required
-                                    />
-                                </label>
-                                <label className="form-field">
-                                    <span className="form-label">Redirect Backend Port *</span>
-                                    <input
-                                        type="number"
-                                        value={payload.redirect_backend_port}
-                                        onChange={(e) => updateField('redirect_backend_port', e.target.value)}
-                                        placeholder="5003"
-                                        required
-                                    />
-                                </label>
-                                <label className="form-field">
-                                    <span className="form-label">Redirect Backend Protocol</span>
-                                    <select
-                                        value={payload.redirect_backend_protocol || 'TCP'}
-                                        onChange={(e) => updateField('redirect_backend_protocol', e.target.value)}
-                                    >
-                                        <option value="TCP">TCP</option>
-                                        <option value="UDP">UDP</option>
-                                    </select>
-                                </label>
-                                <label className="form-field">
-                                    <span className="form-label">TTL Seconds *</span>
-                                    <input
-                                        type="number"
-                                        value={payload.ttl_seconds}
-                                        onChange={(e) => updateField('ttl_seconds', e.target.value)}
-                                        placeholder="300"
-                                        required
-                                    />
-                                </label>
-                                <label className="form-field">
-                                    <span className="form-label">Backend Candidate Label</span>
-                                    <input
-                                        type="text"
-                                        value={payload.backend_candidate_label || ''}
-                                        onChange={(e) => updateField('backend_candidate_label', e.target.value)}
-                                        placeholder="app=service-c"
-                                    />
-                                </label>
-                                <label className="form-field">
-                                    <span className="form-label">Redirect Winner Label</span>
-                                    <input
-                                        type="text"
-                                        value={payload.redirect_winner_label || ''}
-                                        onChange={(e) => updateField('redirect_winner_label', e.target.value)}
-                                        placeholder="redirect-winner=yes"
-                                    />
-                                </label>
-                                <label className="form-field toggle-field">
-                                    <span className="form-label">Choose Best Pod</span>
-                                    <div className="toggle-wrapper">
-                                        <input
-                                            type="checkbox"
-                                            checked={Boolean(payload.choose_best_pod)}
-                                            onChange={(e) => updateField('choose_best_pod', e.target.checked)}
-                                        />
-                                        <span>{payload.choose_best_pod ? 'Enabled' : 'Disabled'}</span>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
-
-                        <div className="form-section">
-                            <div className="form-section-header">
-                                <div className="form-section-title">Notes</div>
-                                <div className="form-section-note">Saved with the rule for operators.</div>
-                            </div>
-                            <label className="form-field">
-                                <textarea
-                                    rows={3}
-                                    value={payload.notes || ''}
-                                    onChange={(e) => updateField('notes', e.target.value)}
-                                    placeholder="Add operator notes or context for this redirect."
-                                />
-                            </label>
-                        </div>
-
-                        {error && (
-                            <div className="alert error">
-                                <FiAlertTriangle /> {error}
-                            </div>
-                        )}
-                        {connectivityError && (
-                            <div className="alert error">
-                                <FiAlertTriangle /> {connectivityError}
-                            </div>
-                        )}
-                        {success && (
-                            <div className="alert success">
-                                <FiActivity /> {success}
-                            </div>
-                        )}
-                        {connectivityWarning && (
-                            <div className="alert warning">
-                                <FiAlertTriangle /> {connectivityWarning}
-                            </div>
-                        )}
-                        {applyOutput && (
-                            <div className="alert success">
-                                <div className="output-title">Helper output</div>
-                                <pre className="payload-preview small">{applyOutput}</pre>
-                            </div>
-                        )}
-                        <div className="probe-row">
-                            <button type="button" className="ghost-button" onClick={probeServiceResponse} disabled={probing}>
-                                {probing ? 'Probing…' : 'Check frontend response'}
-                            </button>
-                            {probeError && (
-                                <span className="probe-error">
-                                    <FiAlertTriangle /> {probeError}
-                                </span>
-                            )}
-                        </div>
-                        {probeOutput && (
-                            <div className="alert success">
-                                <div className="output-title">Service response</div>
-                                <pre className="payload-preview small">{probeOutput}</pre>
-                            </div>
-                        )}
-                    </form>
-                </div>
+                    )}
+                    <div className="curl-block">
+                        POST 'http://localhost:4000/api/policies'<br />
+                        <pre className="payload-preview small">{policyPreview}</pre>
+                    </div>
+                </form>
+            </div>
 
             <div className="routing-card pod-flow-card">
                 <div className="card-title packet-card-title">
@@ -736,28 +757,8 @@ export function Routing() {
                     </div>
                 </div>
                 <p className="info-copy">
-                    Visual cue of the planned path (A → B) and the redirect path (A → C). The planned arrow turns red when a violation is detected; the green arrow lights up to show the new route. Use &quot;Create policy&quot; below to write/update the rule, then &quot;Apply policy&quot; above to execute it.
+                    Step 2: visualize. Planned path (A → B) vs redirect path (A → C). The planned arrow turns red when a violation is detected; the green arrow lights up to show the new route.
                 </p>
-                {deleteError && (
-                    <div className="alert error">
-                        <FiAlertTriangle /> {deleteError}
-                    </div>
-                )}
-                {createError && (
-                    <div className="alert error">
-                        <FiAlertTriangle /> {createError}
-                    </div>
-                )}
-                {deleteStatus && (
-                    <div className="alert success">
-                        <FiActivity /> {deleteStatus}
-                    </div>
-                )}
-                {createStatus && (
-                    <div className="alert success">
-                        <FiActivity /> {createStatus}
-                    </div>
-                )}
                 <div className="packet-node-meta">
                     <span className="meta-label">Current node</span>
                     <span className="meta-value">{nodeName}</span>
@@ -848,12 +849,154 @@ export function Routing() {
             </div>
 
             <div className="routing-grid">
+                <div className="routing-card form-card">
+                    <div className="form-header">
+                        <div>
+                            <div className="card-title">
+                                <FiSend />
+                                <span>Step 3 · Upsert rule (POST /api/policies/&lt;policy&gt;/rule)</span>
+                            </div>
+                            <p className="info-copy">
+                                Save the rule JSON to the selected policy before applying. This is the Postman request that sets metric + threshold.
+                            </p>
+                        </div>
+                        <div className="header-actions">
+                            <button type="button" className="primary-button" onClick={handleUpsertRule}>
+                                Save rule
+                            </button>
+                        </div>
+                    </div>
+                    <form
+                        className="routing-form"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            handleUpsertRule();
+                        }}
+                    >
+                        <div className="form-grid">
+                            <label className="form-field">
+                                <span className="form-label">Metric</span>
+                                <select value={payload.metric} onChange={(e) => updateField('metric', e.target.value)}>
+                                    <option value="dns_us">dns_us (DNS latency)</option>
+                                    <option value="rtt_us">rtt_us (round-trip)</option>
+                                </select>
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Violation Threshold (µs)</span>
+                                <input
+                                    type="number"
+                                    value={payload.violation_threshold}
+                                    onChange={(e) => updateField('violation_threshold', e.target.value)}
+                                    placeholder="1000"
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Notes</span>
+                                <input
+                                    type="text"
+                                    value={payload.notes || ''}
+                                    onChange={(e) => updateField('notes', e.target.value)}
+                                    placeholder="example rule"
+                                />
+                            </label>
+                        </div>
+                        {ruleError && (
+                            <div className="alert error">
+                                <FiAlertTriangle /> {ruleError}
+                            </div>
+                        )}
+                        {ruleStatus && (
+                            <div className="alert success">
+                                <FiActivity /> {ruleStatus}
+                            </div>
+                        )}
+                        <div className="curl-block">
+                            {`POST http://localhost:4000/api/policies/${payload.policy_name || '<policy>'}/rule`}<br />
+                            <pre className="payload-preview small">{rulePreview}</pre>
+                        </div>
+                    </form>
+                </div>
+
+                <div className="routing-card form-card">
+                    <div className="form-header">
+                        <div>
+                            <div className="card-title">
+                                <FiSend />
+                                <span>Step 4 · Apply policy (POST /api/policies/&lt;policy&gt;/apply)</span>
+                            </div>
+                            <p className="info-copy">Execute the helper against the selected policy and show the backend responses.</p>
+                        </div>
+                        <div className="header-actions">
+                            <button type="button" className="primary-button" onClick={handleApplyPolicy} disabled={submitting}>
+                                {submitting ? 'Applying…' : 'Apply policy'}
+                            </button>
+                        </div>
+                    </div>
+                    <div className="routing-form">
+                        {error && (
+                            <div className="alert error">
+                                <FiAlertTriangle /> {error}
+                            </div>
+                        )}
+                        {connectivityError && (
+                            <div className="alert error">
+                                <FiAlertTriangle /> {connectivityError}
+                            </div>
+                        )}
+                        {applyStatus && (
+                            <div className="alert success">
+                                <FiActivity /> {applyStatus}
+                            </div>
+                        )}
+                        {connectivityWarning && (
+                            <div className="alert warning">
+                                <FiAlertTriangle /> {connectivityWarning}
+                            </div>
+                        )}
+                        {applyOutput && (
+                            <div className="alert success">
+                                <div className="output-title">Helper output</div>
+                                <pre className="payload-preview small">{applyOutput}</pre>
+                            </div>
+                        )}
+                        <div className="probe-row">
+                            <button type="button" className="ghost-button" onClick={probeServiceResponse} disabled={probing}>
+                                {probing ? 'Probing…' : 'Check frontend response'}
+                            </button>
+                            {probeError && (
+                                <span className="probe-error">
+                                    <FiAlertTriangle /> {probeError}
+                                </span>
+                            )}
+                        </div>
+                        {probeOutput && (
+                            <div className="alert success">
+                                <div className="output-title">Service response</div>
+                                <pre className="payload-preview small">{probeOutput}</pre>
+                            </div>
+                        )}
+                        <div className="curl-block">
+                            {`POST http://localhost:4000/api/policies/${payload.policy_name || '<policy>'}/apply`}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="routing-grid">
                 <div className="routing-card">
                     <div className="card-title">
                         <FiSend />
-                        <span>Rule Preview</span>
+                        <span>Policy JSON</span>
                     </div>
-                    <p className="info-copy">Exact rule JSON saved to the backend and used by the helper.</p>
+                    <p className="info-copy">Body for POST http://localhost:4000/api/policies.</p>
+                    <pre className="payload-preview">{policyPreview}</pre>
+                </div>
+                <div className="routing-card">
+                    <div className="card-title">
+                        <FiSend />
+                        <span>Rule JSON</span>
+                    </div>
+                    <p className="info-copy">Body for POST http://localhost:4000/api/policies/&lt;policy&gt;/rule.</p>
                     <pre className="payload-preview">{rulePreview}</pre>
                 </div>
 

@@ -285,6 +285,62 @@ export const api = {
         return response.json();
     },
 
+    async createPolicy(policy: any): Promise<any> {
+        const response = await fetch(`${ROUTING_API_BASE}/api/policies`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(policy),
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to create policy: ${response.status} ${response.statusText} - ${text}`);
+        }
+
+        return response.json();
+    },
+
+    async upsertPolicyRule(policyName: string, rule: any): Promise<any> {
+        const response = await fetch(
+            `${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}/rule`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(rule),
+            }
+        );
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to upsert rule: ${response.status} ${response.statusText} - ${text}`);
+        }
+
+        return response.json();
+    },
+
+    async applyPolicy(policyName: string): Promise<ApplyResponse> {
+        const response = await fetch(
+            `${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}/apply`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to apply policy: ${response.status} ${response.statusText} - ${text}`);
+        }
+
+        return response.json();
+    },
+
     async applyRuleByPolicy(policyName: string): Promise<ApplyResponse> {
         const response = await fetch(
             `${ROUTING_API_BASE}/api/rules/by-policy/${encodeURIComponent(policyName)}/apply`,
