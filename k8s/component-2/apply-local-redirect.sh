@@ -38,6 +38,26 @@ ttl_seconds=$(jq -r '.ttl_seconds // empty' "$RULE_FILE")
 choose_best_pod=$(jq -r '.choose_best_pod // false' "$RULE_FILE")
 backend_candidate_label=$(jq -r '.backend_candidate_label // empty' "$RULE_FILE")
 redirect_winner_label=$(jq -r '.redirect_winner_label // "redirect-winner=yes"' "$RULE_FILE")
+strategy=$(jq -r '.strategy // empty' "$RULE_FILE")
+
+# Normalize strategy (new field) with backward compatibility for choose_best_pod (legacy)
+if [[ -z "$strategy" || "$strategy" == "null" ]]; then
+  if [[ "$choose_best_pod" == "true" ]]; then
+    strategy="best_pod"
+  else
+    strategy="all"
+  fi
+fi
+case "$strategy" in
+  all|best_pod) ;;
+  *) echo "strategy must be one of: all, best_pod" >&2; exit 1 ;;
+esac
+# Drive legacy flag from strategy for existing code paths below
+if [[ "$strategy" == "best_pod" ]]; then
+  choose_best_pod="true"
+else
+  choose_best_pod="false"
+fi
 
 # Validate required fields
 if [[ -z "$policy_name" || "$policy_name" == "null" ]]; then

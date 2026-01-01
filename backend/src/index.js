@@ -46,6 +46,7 @@ const REQUIRED_POLICY_FIELDS = [
 
 const POLICY_NUMERIC_FIELDS = ['ttl_seconds', 'redirect_backend_port', 'frontend_service_port'];
 const BOOLEAN_FIELDS = ['choose_best_pod'];
+const STRATEGY_VALUES = ['all', 'best_pod'];
 const execFileAsync = util.promisify(execFile);
 const APPLY_SCRIPT_CANDIDATES = [
   process.env.LRP_HELPER_PATH,
@@ -56,7 +57,21 @@ const APPLY_SCRIPT_CANDIDATES = [
 const APPLY_HELPER_TIMEOUT_MS = Number(process.env.LRP_HELPER_TIMEOUT_MS || 60000);
 
 function normalizePolicy(body, { requireAll } = { requireAll: true }) {
+  // Accept clearer alias names and map them to existing fields
+  const aliasMap = {
+    source_service: 'frontend_service',
+    source_port: 'frontend_service_port',
+    monitor_selector: 'monitor_pod_contains',
+    target_selector: 'redirect_backend_label',
+    target_port: 'redirect_backend_port',
+    target_protocol: 'redirect_backend_protocol',
+  };
   const data = {};
+  for (const [alias, canonical] of Object.entries(aliasMap)) {
+    if (body[alias] !== undefined && body[canonical] === undefined) {
+      data[canonical] = body[alias];
+    }
+  }
   for (const key of REQUIRED_POLICY_FIELDS) {
     if (body[key] !== undefined) data[key] = body[key];
   }
@@ -64,6 +79,7 @@ function normalizePolicy(body, { requireAll } = { requireAll: true }) {
   if (body.redirect_winner_label !== undefined) data.redirect_winner_label = body.redirect_winner_label;
   if (body.notes !== undefined) data.notes = body.notes;
   if (body.choose_best_pod !== undefined) data.choose_best_pod = body.choose_best_pod;
+  if (body.strategy !== undefined) data.strategy = body.strategy;
 
   for (const field of POLICY_NUMERIC_FIELDS) {
     if (data[field] !== undefined) {
@@ -81,8 +97,20 @@ function normalizePolicy(body, { requireAll } = { requireAll: true }) {
     }
   }
 
+  if (data.strategy !== undefined) {
+    data.strategy = String(data.strategy);
+    if (!STRATEGY_VALUES.includes(data.strategy)) {
+      return { error: `strategy must be one of: ${STRATEGY_VALUES.join(', ')}` };
+    }
+  }
+
   if (data.ttl_seconds !== undefined && data.ttl_seconds <= 0) {
     return { error: 'ttl_seconds must be greater than zero' };
+  }
+
+  // Default monitor selector to the frontend service if omitted when requiring all fields
+  if (requireAll && data.monitor_pod_contains === undefined && data.frontend_service !== undefined) {
+    data.monitor_pod_contains = data.frontend_service;
   }
 
   const missing = requireAll ? REQUIRED_POLICY_FIELDS.filter((f) => data[f] === undefined) : [];
@@ -97,7 +125,15 @@ function normalizePolicy(body, { requireAll } = { requireAll: true }) {
       data.backend_candidate_label = data.redirect_backend_label;
     }
     data.redirect_winner_label = data.redirect_winner_label || 'redirect-winner=yes';
-    data.choose_best_pod = data.choose_best_pod ?? false;
+    if (data.strategy === undefined && data.choose_best_pod !== undefined) {
+      data.strategy = data.choose_best_pod ? 'best_pod' : 'all';
+    }
+    data.strategy = data.strategy || 'all';
+    data.choose_best_pod = data.strategy === 'best_pod';
+  } else if (data.strategy === undefined && data.choose_best_pod !== undefined) {
+    data.strategy = data.choose_best_pod ? 'best_pod' : 'all';
+  } else if (!requireAll && data.strategy !== undefined) {
+    data.choose_best_pod = data.strategy === 'best_pod';
   }
 
   return { data };
@@ -317,6 +353,7 @@ async function applyLocalRedirectPolicy(policyDoc, ruleDoc) {
 function toRuleFile(policyDoc, ruleDoc) {
   const policy = policyDoc.toJSON ? policyDoc.toJSON({ virtuals: false }) : policyDoc;
   const rule = ruleDoc.toJSON ? ruleDoc.toJSON({ virtuals: false }) : ruleDoc;
+  const strategy = policy.strategy || (policy.choose_best_pod ? 'best_pod' : 'all');
 
   return {
     policy_name: policy.policy_name,
@@ -331,7 +368,8 @@ function toRuleFile(policyDoc, ruleDoc) {
     redirect_backend_port: String(policy.redirect_backend_port),
     redirect_backend_protocol: policy.redirect_backend_protocol,
     ttl_seconds: policy.ttl_seconds,
-    choose_best_pod: policy.choose_best_pod,
+    strategy,
+    choose_best_pod: strategy === 'best_pod',
     backend_candidate_label: policy.backend_candidate_label,
     redirect_winner_label: policy.redirect_winner_label,
     notes: policy.notes || rule.notes,

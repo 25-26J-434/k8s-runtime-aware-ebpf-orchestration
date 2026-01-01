@@ -99,17 +99,12 @@ npm start              # or npm run dev for watch mode
 {
   "policy_name": "redirect-service-a-to-c",
   "namespace": "test-services",
-  "frontend_service": "service-a",
-  "frontend_service_port": "5000",
-  "monitor_pod_contains": "service-a",
-  "action": "redirect",
-  "redirect_backend_label": "app=service-c",
-  "redirect_backend_port": "5003",
-  "redirect_backend_protocol": "TCP",
+  "source_service": "service-a",
+  "source_port": 5000,
+  "target_selector": "app=service-c",
+  "target_port": 5003,
+  "target_protocol": "TCP",
   "ttl_seconds": 300,
-  "choose_best_pod": true,
-  "backend_candidate_label": "app=service-c",
-  "redirect_winner_label": "redirect-winner=yes",
   "notes": "example policy"
 }
 ```
@@ -139,7 +134,7 @@ If you prefer the single payload used previously, the legacy `/api/rules` endpoi
   "redirect_backend_port": "5003",
   "redirect_backend_protocol": "TCP",
   "ttl_seconds": 300,
-  "choose_best_pod": true,
+  "strategy": "best_pod",
   "backend_candidate_label": "app=service-c",
   "redirect_winner_label": "redirect-winner=yes",
   "notes": "example rule"
@@ -214,5 +209,6 @@ curl -s http://localhost:4000/api/policies/redirect-service-a-to-c/rule-file -o 
 - Policy documents store the redirection intent (frontend/backend wiring, TTL, labels, etc).
 - Rule documents store the evaluation logic (`metric` + `violation_threshold`).
 - `policy_name` is unique and binds a policy to exactly one rule.
-- `ttl_seconds` must be > 0; `choose_best_pod`/`redirect_winner_label`/`backend_candidate_label` support the best-pod routing mode.
+- `ttl_seconds` must be > 0; `strategy` (`all` or `best_pod`) controls backend selection. `choose_best_pod` remains accepted for backward compatibility. `redirect_winner_label`/`backend_candidate_label` support the best-pod routing mode.
+- The API also accepts clearer aliases: `source_service` → `frontend_service`, `source_port` → `frontend_service_port`, `monitor_selector` → `monitor_pod_contains`, `target_selector` → `redirect_backend_label`, `target_port` → `redirect_backend_port`, `target_protocol` → `redirect_backend_protocol`. If `monitor_pod_contains`/`monitor_selector` is omitted, it defaults to the source/frontend service.
 - Legacy `/api/rules` endpoints still return the merged view for compatibility.

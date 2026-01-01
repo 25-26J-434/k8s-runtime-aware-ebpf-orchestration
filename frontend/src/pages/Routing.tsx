@@ -12,19 +12,14 @@ type RoutingFormState = RedirectionEventPayload & RedirectRulePayload;
 const defaultPayload: RoutingFormState = {
     policy_name: '',
     namespace: 'test-service',
-    frontend_service: '',
-    frontend_service_port: '',
-    monitor_pod_contains: '',
+    source_service: '',
+    source_port: '',
     metric: 'dns_us',
     violation_threshold: 1000,
-    action: 'redirect',
-    redirect_backend_label: '',
-    redirect_backend_port: '',
-    redirect_backend_protocol: 'TCP',
+    target_selector: '',
+    target_port: '',
+    target_protocol: 'TCP',
     ttl_seconds: '',
-    choose_best_pod: false,
-    backend_candidate_label: '',
-    redirect_winner_label: 'redirect-winner=yes',
     planned_backend_service: 'service-b',
     planned_backend_label: 'app=service-b',
     planned_backend_port: '5001',
@@ -42,12 +37,10 @@ const policyPresets = [
         label: 'Redirect service-a → service-c (sample)',
         value: 'redirect-service-a-to-c',
         namespace: 'test-service',
-        frontend_service: 'service-a',
-        frontend_service_port: '5000',
-        monitor_pod_contains: 'service-a',
-        redirect_backend_label: 'app=service-c',
-        redirect_backend_port: '5003',
-        backend_candidate_label: 'app=service-c',
+        source_service: 'service-a',
+        source_port: '5000',
+        target_selector: 'app=service-c',
+        target_port: '5003',
         notes: 'policy',
     },
 ];
@@ -83,11 +76,15 @@ export function Routing() {
     const [ruleError, setRuleError] = useState<string | null>(null);
     const [applyStatus, setApplyStatus] = useState<string | null>(null);
 
-    const flowFrontend = payload.frontend_service || 'service-a';
+    const sourceService = payload.source_service || payload.frontend_service || 'service-a';
+    const sourcePort = payload.source_port || payload.frontend_service_port || '';
+    const targetSelector = payload.target_selector || payload.redirect_backend_label || 'app=service-c';
+    const targetPort = payload.target_port || payload.redirect_backend_port || '';
+    const flowFrontend = sourceService;
     const flowPlanned = payload.planned_backend_service || 'service-b';
     const flowFinal = payload.final_backend_service || lastEvent?.accepted_service || 'service-c';
     const plannedPort = payload.planned_backend_port || '5001';
-    const finalPort = payload.final_backend_port || payload.redirect_backend_port || '5003';
+    const finalPort = payload.final_backend_port || targetPort || '5003';
     const violationTriggered = redirectApplied || payload.violation_triggered;
     const redirectActive = showTargetOnly || redirectApplied || showRedirect;
     // Resolve backend identity to show which node/service will receive the event
@@ -144,25 +141,21 @@ export function Routing() {
             ...prev,
             policy_name: preset.value,
             namespace: preset.namespace,
-            frontend_service: preset.frontend_service,
-            frontend_service_port: preset.frontend_service_port,
-            monitor_pod_contains: preset.monitor_pod_contains,
+            source_service: preset.source_service,
+            source_port: preset.source_port,
             action: 'redirect',
-            redirect_backend_label: preset.redirect_backend_label,
-            redirect_backend_port: preset.redirect_backend_port,
-            redirect_backend_protocol: 'TCP',
+            target_selector: preset.target_selector,
+            target_port: preset.target_port,
+            target_protocol: 'TCP',
             ttl_seconds: 300,
             metric: 'dns_us',
             violation_threshold: 1000,
-            choose_best_pod: false,
-            backend_candidate_label: preset.backend_candidate_label,
-            redirect_winner_label: 'redirect-winner=yes',
             planned_backend_service: 'service-b',
             planned_backend_label: 'app=service-b',
             planned_backend_port: '5001',
             final_backend_service: 'service-c',
-            final_backend_label: preset.redirect_backend_label,
-            final_backend_port: preset.redirect_backend_port,
+            final_backend_label: preset.target_selector,
+            final_backend_port: preset.target_port,
             notes: preset.notes,
         }));
     };
@@ -232,17 +225,13 @@ export function Routing() {
                 {
                     policy_name: payload.policy_name || '<pick a policy>',
                     namespace: payload.namespace || '<pick a namespace>',
-                    frontend_service: payload.frontend_service || '<frontend>',
-                    frontend_service_port: safeNumber(payload.frontend_service_port) || '<port>',
-                    monitor_pod_contains: payload.monitor_pod_contains || payload.frontend_service,
-                    action: payload.action || 'redirect',
-                    redirect_backend_label: payload.redirect_backend_label || '<label>',
-                    redirect_backend_port: safeNumber(payload.redirect_backend_port) || '<port>',
-                    redirect_backend_protocol: payload.redirect_backend_protocol || 'TCP',
+                    source_service: sourceService || '<frontend>',
+                    source_port: safeNumber(sourcePort) || '<port>',
+                    action: 'redirect',
+                    target_selector: targetSelector || '<selector>',
+                    target_port: safeNumber(targetPort) || '<port>',
+                    target_protocol: 'TCP',
                     ttl_seconds: safeNumber(payload.ttl_seconds) || '<ttl>',
-                    choose_best_pod: payload.choose_best_pod,
-                    backend_candidate_label: payload.backend_candidate_label || payload.redirect_backend_label,
-                    redirect_winner_label: payload.redirect_winner_label,
                     notes: payload.notes || 'policy',
                 },
                 null,
@@ -251,17 +240,11 @@ export function Routing() {
         [
             payload.policy_name,
             payload.namespace,
-            payload.frontend_service,
-            payload.frontend_service_port,
-            payload.monitor_pod_contains,
-            payload.action,
-            payload.redirect_backend_label,
-            payload.redirect_backend_port,
-            payload.redirect_backend_protocol,
+            sourceService,
+            sourcePort,
+            targetSelector,
+            targetPort,
             payload.ttl_seconds,
-            payload.choose_best_pod,
-            payload.backend_candidate_label,
-            payload.redirect_winner_label,
             payload.notes,
         ]
     );
@@ -300,20 +283,13 @@ export function Routing() {
         return {
             policy_name: parseRequired(payload.policy_name, 'policy_name'),
             namespace: parseRequired(payload.namespace, 'namespace'),
-            frontend_service: parseRequired(payload.frontend_service, 'frontend_service'),
-            frontend_service_port: parsePositiveNumber(payload.frontend_service_port, 'frontend_service_port'),
-            monitor_pod_contains: parseRequired(
-                payload.monitor_pod_contains || payload.frontend_service,
-                'monitor_pod_contains'
-            ),
-            action: payload.action || 'redirect',
-            redirect_backend_label: parseRequired(payload.redirect_backend_label, 'redirect_backend_label'),
-            redirect_backend_port: parsePositiveNumber(payload.redirect_backend_port, 'redirect_backend_port'),
-            redirect_backend_protocol: payload.redirect_backend_protocol || 'TCP',
+            source_service: parseRequired(sourceService, 'source_service'),
+            source_port: parsePositiveNumber(sourcePort, 'source_port'),
+            action: 'redirect',
+            target_selector: parseRequired(targetSelector, 'target_selector'),
+            target_port: parsePositiveNumber(targetPort, 'target_port'),
+            target_protocol: 'TCP',
             ttl_seconds: parsePositiveNumber(payload.ttl_seconds, 'ttl_seconds'),
-            choose_best_pod: Boolean(payload.choose_best_pod),
-            backend_candidate_label: payload.backend_candidate_label || payload.redirect_backend_label,
-            redirect_winner_label: payload.redirect_winner_label || 'redirect-winner=yes',
             notes: payload.notes,
         };
     };
@@ -392,9 +368,9 @@ export function Routing() {
                 accepted_service: payload.final_backend_service,
                 violation_triggered: true,
                 status: 'applied',
-                redirect_backend_label: payload.redirect_backend_label,
-                redirect_backend_port: payload.redirect_backend_port,
-                frontend_service: payload.frontend_service,
+                redirect_backend_label: targetSelector,
+                redirect_backend_port: targetPort,
+                frontend_service: sourceService,
                 notes: payload.notes,
             });
             await probeServiceResponse();
@@ -575,10 +551,10 @@ export function Routing() {
                             />
                         </label>
                         <label className="form-field">
-                            <span className="form-label">Frontend Service *</span>
+                            <span className="form-label">Source Service *</span>
                             <select
-                                value={payload.frontend_service || ''}
-                                onChange={(e) => updateField('frontend_service', e.target.value)}
+                                value={payload.source_service || ''}
+                                onChange={(e) => updateField('source_service', e.target.value)}
                                 required
                             >
                                 <option value="">Pick a service</option>
@@ -590,10 +566,10 @@ export function Routing() {
                             </select>
                         </label>
                         <label className="form-field">
-                            <span className="form-label">Frontend Service Port *</span>
+                            <span className="form-label">Source Port *</span>
                             <select
-                                value={payload.frontend_service_port || ''}
-                                onChange={(e) => updateField('frontend_service_port', e.target.value)}
+                                value={payload.source_port || ''}
+                                onChange={(e) => updateField('source_port', e.target.value)}
                                 required
                             >
                                 <option value="">Pick a port</option>
@@ -605,34 +581,11 @@ export function Routing() {
                             </select>
                         </label>
                         <label className="form-field">
-                            <span className="form-label">Monitor pods containing *</span>
+                            <span className="form-label">Target Selector *</span>
                             <select
-                                value={payload.monitor_pod_contains || ''}
-                                onChange={(e) => updateField('monitor_pod_contains', e.target.value)}
-                                required
-                            >
-                                <option value="">Pick a pod hint</option>
-                                {serviceOptions.map((svc) => (
-                                    <option key={svc} value={svc}>
-                                        {svc}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <label className="form-field">
-                            <span className="form-label">Action</span>
-                            <select value={payload.action} onChange={(e) => updateField('action', e.target.value)}>
-                                <option value="redirect">redirect</option>
-                                <option value="observe">observe</option>
-                            </select>
-                        </label>
-                        <label className="form-field">
-                            <span className="form-label">Redirect Backend Label *</span>
-                            <select
-                                value={payload.redirect_backend_label || ''}
+                                value={payload.target_selector || ''}
                                 onChange={(e) => {
-                                    updateField('redirect_backend_label', e.target.value);
-                                    updateField('backend_candidate_label', e.target.value);
+                                    updateField('target_selector', e.target.value);
                                     updateField('final_backend_label', e.target.value);
                                 }}
                                 required
@@ -646,11 +599,11 @@ export function Routing() {
                             </select>
                         </label>
                         <label className="form-field">
-                            <span className="form-label">Redirect Backend Port *</span>
+                            <span className="form-label">Target Port *</span>
                             <select
-                                value={payload.redirect_backend_port || ''}
+                                value={payload.target_port || ''}
                                 onChange={(e) => {
-                                    updateField('redirect_backend_port', e.target.value);
+                                    updateField('target_port', e.target.value);
                                     updateField('final_backend_port', e.target.value);
                                 }}
                                 required
@@ -664,15 +617,8 @@ export function Routing() {
                             </select>
                         </label>
                         <label className="form-field">
-                            <span className="form-label">Redirect Backend Protocol</span>
-                            <select
-                                value={payload.redirect_backend_protocol || ''}
-                                onChange={(e) => updateField('redirect_backend_protocol', e.target.value)}
-                            >
-                                <option value="">Pick protocol</option>
-                                <option value="TCP">TCP</option>
-                                <option value="UDP">UDP</option>
-                            </select>
+                            <span className="form-label">Target Protocol</span>
+                            <input type="text" value="TCP (default)" readOnly />
                         </label>
                         <label className="form-field">
                             <span className="form-label">TTL Seconds *</span>
@@ -686,39 +632,6 @@ export function Routing() {
                                 <option value="120">120</option>
                                 <option value="300">300</option>
                                 <option value="600">600</option>
-                            </select>
-                        </label>
-                        <label className="form-field">
-                            <span className="form-label">Backend Candidate Label</span>
-                            <select
-                                value={payload.backend_candidate_label || ''}
-                                onChange={(e) => updateField('backend_candidate_label', e.target.value)}
-                            >
-                                <option value="">Match redirect backend</option>
-                                {backendLabelOptions.map((label) => (
-                                    <option key={label} value={label}>
-                                        {label}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <label className="form-field">
-                            <span className="form-label">Redirect Winner Label</span>
-                            <input
-                                type="text"
-                                value={payload.redirect_winner_label || ''}
-                                onChange={(e) => updateField('redirect_winner_label', e.target.value)}
-                                placeholder="redirect-winner=yes"
-                            />
-                        </label>
-                        <label className="form-field">
-                            <span className="form-label">Choose Best Pod</span>
-                            <select
-                                value={payload.choose_best_pod ? 'yes' : 'no'}
-                                onChange={(e) => updateField('choose_best_pod', e.target.value === 'yes')}
-                            >
-                                <option value="no">no</option>
-                                <option value="yes">yes</option>
                             </select>
                         </label>
                         <label className="form-field">

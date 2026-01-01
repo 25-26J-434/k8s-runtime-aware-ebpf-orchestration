@@ -12,6 +12,7 @@ const PolicySchema = new Schema(
     redirect_backend_port: { type: String, required: true },
     redirect_backend_protocol: { type: String, default: 'TCP' },
     ttl_seconds: { type: Number, required: true },
+    strategy: { type: String, default: 'all' },
     choose_best_pod: { type: Boolean, default: false },
     backend_candidate_label: { type: String },
     redirect_winner_label: { type: String, default: 'redirect-winner=yes' },

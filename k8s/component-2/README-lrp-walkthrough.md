@@ -64,7 +64,7 @@ We use the sample at `k8s/component-2/redirect-rule.example.json` (already set t
   "redirect_backend_port": "5003",
   "redirect_backend_protocol": "TCP",
   "ttl_seconds": 300,
-  "choose_best_pod": true,
+  "strategy": "best_pod",
   "backend_candidate_label": "app=service-c",
   "redirect_winner_label": "redirect-winner=yes"
 }
@@ -74,7 +74,7 @@ Notes:
 - Lower `violation_threshold` if you want to force a redirect (example uses 1000µs).
 - To target service-b instead, set `redirect_backend_label: "app=service-b"` and `redirect_backend_port: "5001"`.
 - `ttl_seconds` is required; after this many seconds, the helper deletes the LRP (and clears the winner label if used) so traffic returns to normal unless a new violation triggers a reapply.
-- `choose_best_pod`: when true, the helper reads telemetry for pods matching `backend_candidate_label` (defaults to `redirect_backend_label`), picks the lowest-latency pod, labels it with `redirect_winner_label`, removes that label from the other candidates, and points the LRP at that winner label so only the chosen pod receives redirected traffic.
+- `strategy: best_pod`: the helper reads telemetry for pods matching `backend_candidate_label` (defaults to `redirect_backend_label`), picks the lowest-latency pod, labels it with `redirect_winner_label`, removes that label from the other candidates, and points the LRP at that winner label so only the chosen pod receives redirected traffic. Use `strategy: all` to keep the default multi-backend behavior.
 
 ## 5) Apply telemetry-driven redirect
 ```bash
@@ -85,7 +85,7 @@ The helper:
 - Pulls telemetry from `API_URL`.
 - Computes avg metric for pods containing `monitor_pod_contains` in the rule namespace.
 - If metric >= threshold and action=redirect, it creates a `CiliumLocalRedirectPolicy` (LRP) named from `policy_name`.
-- If `choose_best_pod` is true, it selects the best pod (lowest metric) among the candidate backends, labels it, and targets that label in the LRP.
+- If `strategy` is `best_pod`, it selects the best pod (lowest metric) among the candidate backends, labels it, and targets that label in the LRP.
 - A background timer deletes the LRP after `ttl_seconds`, so the redirect is temporary unless the next run sees a fresh violation.
 
 ## 6) Validate
