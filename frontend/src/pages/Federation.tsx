@@ -3,6 +3,7 @@ import './Page.css';
 import './Federation.css';
 import { api } from '../services/api';
 import type { CommLogEntry, CommStats } from '../types/api';
+import { FederationTopology } from './FederationTopology';
 
 type OutboundCommMode = 'BROADCAST' | 'UNICAST' | 'MULTICAST';
 
@@ -60,6 +61,9 @@ const formatTime = (value: string) => {
 };
 
 export function Federation() {
+        // Log search and filter state
+        const [logSearch, setLogSearch] = useState("");
+        const [logEventFilter, setLogEventFilter] = useState("");
     const [nodes, setNodes] = useState<ClusterNode[]>([]);
     const [loadingNodes, setLoadingNodes] = useState(true);
     const [topologyError, setTopologyError] = useState<string | null>(null);
@@ -83,7 +87,21 @@ export function Federation() {
         return map;
     }, [nodes]);
 
-    const summary = useMemo(() => {
+    type Summary = {
+        totalNodes: number;
+        readyNodes: number;
+        totalPods: number;
+        runningPods: number;
+        messageCount: number;
+        broadcastCount: number;
+        unicastCount: number;
+        multicastCount: number;
+        peerCount: number;
+        lastUpdate: string | null;
+        [key: string]: number | string | null | undefined;
+    };
+
+    const summary: Summary = useMemo(() => {
         const totalNodes = nodes.length;
         const readyNodes = nodes.filter((node) => node.status === 'Ready').length;
         const totalPods = nodes.reduce((acc, node) => acc + node.podCount, 0);
@@ -236,11 +254,24 @@ export function Federation() {
     }, [logNodeFilter, logNodeOptions]);
 
     const filteredLogEntries = useMemo(() => {
-        if (logNodeFilter === ALL_NODES_OPTION) {
-            return logEntries;
+        let entries = logEntries;
+        if (logNodeFilter !== ALL_NODES_OPTION) {
+            entries = entries.filter((entry) => entry.node === logNodeFilter || entry.node_ip === logNodeFilter);
         }
-        return logEntries.filter((entry) => entry.node === logNodeFilter || entry.node_ip === logNodeFilter);
-    }, [logEntries, logNodeFilter]);
+        if (logEventFilter) {
+            entries = entries.filter((entry) => entry.event === logEventFilter);
+        }
+        if (logSearch.trim()) {
+            const search = logSearch.trim().toLowerCase();
+            entries = entries.filter((entry) =>
+                (entry.event && entry.event.toLowerCase().includes(search)) ||
+                (entry.node && entry.node.toLowerCase().includes(search)) ||
+                (entry.node_ip && entry.node_ip.toLowerCase().includes(search)) ||
+                (entry.payload && JSON.stringify(entry.payload).toLowerCase().includes(search))
+            );
+        }
+        return entries;
+    }, [logEntries, logNodeFilter, logEventFilter, logSearch]);
 
     const selectedNodeLabel = useMemo(() => {
         if (logNodeFilter === ALL_NODES_OPTION) {
@@ -387,6 +418,78 @@ export function Federation() {
                 </nav>
 
                 <main className="dashboard-main federation-main">
+                    {/* Topology Visualization */}
+                    <section id="topology" className="feature-card">
+                        <h2>Federation Topology</h2>
+                        <FederationTopology nodes={nodes} links={[]} />
+                    </section>
+
+                    {/* Analytics Charts */}
+                    <section id="analytics" className="feature-card">
+                        <h2>Analytics</h2>
+                        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                            {/* Message Rate Chart */}
+                            <div style={{ flex: 1, minWidth: 260, background: '#181e2a', borderRadius: 12, padding: 24, color: '#94a3b8', textAlign: 'center' }}>
+                                <h3 style={{ color: '#38bdf8', marginBottom: 12 }}>Message Rate</h3>
+                                <svg width="220" height="80" style={{ background: '#0f172a', borderRadius: 8 }}>
+                                    {/* Simple bar chart for message counts */}
+                                    {['broadcastCount', 'unicastCount', 'multicastCount'].map((key, i) => {
+                                        type SummaryKey = keyof typeof summary;
+                                        const safeKey = key as SummaryKey;
+                                        const value = summary[safeKey] as number || 0;
+                                        const max = Math.max(summary.broadcastCount, summary.unicastCount, summary.multicastCount, 1);
+                                        const barHeight = (value / max) * 50;
+                                        const colors = ['#38bdf8', '#f59e0b', '#10b981'];
+                                        return (
+                                            <g key={key}>
+                                                <rect x={30 + i * 60} y={70 - barHeight} width={32} height={barHeight} fill={colors[i]} />
+                                                <text x={46 + i * 60} y={75} textAnchor="middle" fontSize={12} fill="#94a3b8">
+                                                    {key.replace('Count', '')}
+                                                </text>
+                                                <text x={46 + i * 60} y={65 - barHeight} textAnchor="middle" fontSize={13} fill="#fff" fontWeight="bold">
+                                                    {value}
+                                                </text>
+                                            </g>
+                                        );
+                                    })}
+                                </svg>
+                            </div>
+                            {/* Node Health Trend Chart */}
+                            <div style={{ flex: 1, minWidth: 260, background: '#181e2a', borderRadius: 12, padding: 24, color: '#94a3b8', textAlign: 'center' }}>
+                                <h3 style={{ color: '#10b981', marginBottom: 12 }}>Node Health</h3>
+                                <svg width="220" height="80" style={{ background: '#0f172a', borderRadius: 8 }}>
+                                    {/* Pie chart for ready vs not ready nodes */}
+                                    {(() => {
+                                        const ready = summary.readyNodes || 0;
+                                        const total = summary.totalNodes || 1;
+                                        // const notReady = total - ready; // removed unused
+                                        const readyAngle = (ready / total) * 2 * Math.PI;
+                                        const x1 = 110 + 35 * Math.cos(-Math.PI / 2);
+                                        const y1 = 40 + 35 * Math.sin(-Math.PI / 2);
+                                        const x2 = 110 + 35 * Math.cos(readyAngle - Math.PI / 2);
+                                        const y2 = 40 + 35 * Math.sin(readyAngle - Math.PI / 2);
+                                        const largeArc = ready > total / 2 ? 1 : 0;
+                                        return (
+                                            <g>
+                                                {/* Ready arc */}
+                                                <path d={`M110,40 L${x1},${y1} A35,35 0 ${largeArc} 1 ${x2},${y2} Z`} fill="#10b981" opacity={0.85} />
+                                                {/* Not ready arc */}
+                                                <path d={`M110,40 L${x2},${y2} A35,35 0 ${largeArc ? 0 : 1} 1 ${x1},${y1} Z`} fill="#f59e0b" opacity={0.7} />
+                                                {/* Center circle */}
+                                                <circle cx={110} cy={40} r={18} fill="#181e2a" />
+                                                <text x={110} y={45} textAnchor="middle" fontSize={15} fill="#fff" fontWeight="bold">
+                                                    {ready}/{total}
+                                                </text>
+                                            </g>
+                                        );
+                                    })()}
+                                </svg>
+                                <div style={{ marginTop: 8, color: '#94a3b8', fontSize: 13 }}>
+                                    Ready / Total Nodes
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                     
 
                     {/* Cluster Snapshot Section */}
@@ -463,6 +566,8 @@ export function Federation() {
                                                     </div>
                                                 </div>
                                                 <span className={`node-card__status ${statusClass}`}>{node.status}</span>
+                                                {/* Health badge */}
+                                                <span className={`node-health-badge ${node.status === 'Ready' ? 'healthy' : 'warning'}`}>{node.status === 'Ready' ? 'Online' : 'Check'}</span>
                                             </div>
                                             <div className="node-card__kv">
                                                 <div className="node-card__kv-row">
@@ -472,6 +577,19 @@ export function Federation() {
                                                 <div className="node-card__kv-row">
                                                     <span className="node-card__kv-label">Pods</span>
                                                     <span className="node-card__kv-value">{node.runningPods}/{node.podCount} running</span>
+                                                </div>
+                                                {/* Advanced node details placeholder */}
+                                                <div className="node-card__kv-row">
+                                                    <span className="node-card__kv-label">Last Seen</span>
+                                                    <span className="node-card__kv-value">-</span>
+                                                </div>
+                                                <div className="node-card__kv-row">
+                                                    <span className="node-card__kv-label">Role</span>
+                                                    <span className="node-card__kv-value">{node.role || '-'}</span>
+                                                </div>
+                                                <div className="node-card__kv-row">
+                                                    <span className="node-card__kv-label">Version</span>
+                                                    <span className="node-card__kv-value">-</span>
                                                 </div>
                                                 {node.kernelVersion && (
                                                     <div className="node-card__kv-row">
@@ -486,6 +604,11 @@ export function Federation() {
                                                     </div>
                                                 )}
                                             </div>
+                                            {/* Federation controls placeholder */}
+                                            <div className="node-controls">
+                                                <button className="action-button" style={{ marginRight: 8 }} disabled>Peer Discovery</button>
+                                                <button className="action-button" disabled>Resync</button>
+                                            </div>
                                         </button>
                                     );
                                 })}
@@ -495,6 +618,10 @@ export function Federation() {
 
                     {/* Messaging Console Section */}
                     <section id="console" ref={el => (sectionRefs.current['console'] = el as HTMLDivElement | null)} className="feature-card">
+                        {/* Federation configuration/settings placeholder */}
+                        <div className="federation-config" style={{ marginBottom: 16, color: '#94a3b8' }}>
+                            <span>Config: Heartbeat Interval: 5s | Mode: Full Mesh | Allowed Peers: All</span>
+                        </div>
                         <div className="section-header">
                             <h2>Communication Console</h2>
                             <div className="section-actions">
@@ -553,11 +680,27 @@ export function Federation() {
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
                             <button
                                 type="button"
-                                className="send-btn"
+                                className="action-button"
                                 onClick={handleSendMessage}
                                 disabled={!canSend || sending}
+                                title={`Send ${messageType} message`}
+                                style={{ minWidth: 160, fontSize: '1rem', fontWeight: 700 }}
                             >
-                                {sending ? 'Sending…' : `Send ${messageType}`}
+                                {sending ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                        <span className="loader" style={{ width: 18, height: 18, marginRight: 6 }} />
+                                        Sending…
+                                    </span>
+                                ) : (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                        <span style={{ fontSize: 18 }}>
+                                            {messageType === 'BROADCAST' && '📡'}
+                                            {messageType === 'UNICAST' && '🎯'}
+                                            {messageType === 'MULTICAST' && '🔀'}
+                                        </span>
+                                        {`Send ${messageType}`}
+                                    </span>
+                                )}
                             </button>
                         </div>
                         {consoleError && (
@@ -591,6 +734,29 @@ export function Federation() {
 
                     {/* Logs Section */}
                     <section id="logs" ref={el => (sectionRefs.current['logs'] = el as HTMLDivElement | null)} className="feature-card">
+                        {/* Logs search/filter/export */}
+                        <div className="logs-controls" style={{ marginBottom: 16, display: 'flex', gap: 12 }}>
+                            <input
+                                type="text"
+                                placeholder="Search logs..."
+                                className="log-search"
+                                style={{ flex: 2, padding: 8, borderRadius: 6, border: '1px solid #334155' }}
+                                value={logSearch}
+                                onChange={e => setLogSearch(e.target.value)}
+                            />
+                            <select
+                                className="log-filter-select"
+                                style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #334155' }}
+                                value={logEventFilter}
+                                onChange={e => setLogEventFilter(e.target.value)}
+                            >
+                                <option value="">All Events</option>
+                                {Array.from(new Set(logEntries.map(e => e.event))).map(ev => (
+                                    <option key={ev} value={ev}>{ev}</option>
+                                ))}
+                            </select>
+                            <button className="action-button" disabled>Export CSV</button>
+                        </div>
                         <div className="section-header">
                             <h2>Realtime Communication Logs</h2>
                             <div className="section-actions log-controls">
@@ -690,6 +856,12 @@ export function Federation() {
             <footer className="dashboard-footer federation-footer">
                 <span>Powered by eBPF - Federation & Control</span>
                 <span>Auto-refresh: 5s</span>
+                {/* Notifications/alerts placeholder */}
+                <div className="federation-alerts" style={{ marginTop: 8, color: '#f59e0b' }}>[ No active alerts ]</div>
+                {/* Help/documentation placeholder */}
+                <div className="federation-help" style={{ marginTop: 8 }}>
+                    <a href="/COMPONENT4_QUICK_GUIDE.md" target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>Federation Quick Guide</a>
+                </div>
             </footer>
         </div>
     );
