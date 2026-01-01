@@ -116,6 +116,12 @@ func StartServer() {
 	http.HandleFunc("/api/sched/metrics", corsMiddleware(handleSchedLatencyMetrics))
 	http.HandleFunc("/api/sched/pods", corsMiddleware(handleSchedLatencyPods))
 	http.HandleFunc("/api/sched/containers", corsMiddleware(handleSchedLatencyContainers))
+
+	// Disk I/O metrics endpoints
+	http.HandleFunc("/api/disk/metrics", corsMiddleware(handleDiskIOMetrics))
+	http.HandleFunc("/api/disk/pods", corsMiddleware(handleDiskIOPods))
+	http.HandleFunc("/api/disk/containers", corsMiddleware(handleDiskIOContainers))
+	http.HandleFunc("/api/disk/all", corsMiddleware(handleDiskIOAll))
 	http.HandleFunc("/api/sched/records", corsMiddleware(handleSchedLatencyRecords))
 
 	// WebSocket endpoints

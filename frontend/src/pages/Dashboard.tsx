@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useMetrics } from '../hooks/useMetrics';
 import { useClusterInfo } from '../hooks/useClusterInfo';
 import { usePodDetails } from '../hooks/usePodDetails';
@@ -11,6 +11,7 @@ import { SystemHealth } from '../components/SystemHealth';
 import { TopPerformers } from '../components/TopPerformers';
 import { NetworkStats } from '../components/NetworkStats';
 import { CPUSchedulingMetrics } from '../components/CPUSchedulingMetrics';
+import DiskIOMetrics from '../components/DiskIOMetrics';
 import { api } from '../services/api';
 import { 
     FiBarChart2, 
@@ -30,14 +31,17 @@ import '../App.css';
 import '../styles/clean-pods.css';
 
 export function Dashboard() {
-    const { metrics, loading, error } = useMetrics(3000);
-    const clusterInfo = useClusterInfo(5000);
-    const { data: podDetails, loading: podDetailsLoading } = usePodDetails(5000);
+    const { metrics, loading, error } = useMetrics(5000); // Increased from 3000ms to 5000ms
+    const clusterInfo = useClusterInfo(10000); // Increased from 5000ms to 10000ms
+    const { data: podDetails, loading: podDetailsLoading } = usePodDetails(10000); // Increased from 5000ms to 10000ms
     const [activeSection, setActiveSection] = useState<string>('overview');
     const sectionRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
     const [schedMetrics, setSchedMetrics] = useState<any>(null);
     const [containerSchedMetrics, setContainerSchedMetrics] = useState<any>({});
     const [selectedPod, setSelectedPod] = useState<string>('all');
+    const [diskIOMetrics, setDiskIOMetrics] = useState<any>(null);
+    const [diskIOPodMetrics, setDiskIOPodMetrics] = useState<any>({});
+    const [diskIOContainerMetrics, setDiskIOContainerMetrics] = useState<any>({});
 
     // Scroll to section
     const scrollToSection = (sectionId: string) => {
@@ -65,36 +69,79 @@ export function Dashboard() {
 
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
-    }, [metrics]);
-
-    // Fetch scheduling metrics
-    useEffect(() => {
-        const fetchSchedMetrics = async () => {
-            try {
-                const data = await api.getSchedLatencyMetrics(10);
-                setSchedMetrics(data);
-            } catch (err) {
-                // Silently fail if scheduling metrics not available
-            }
-        };
-        
-        const fetchContainerSchedMetrics = async () => {
-            try {
-                const data = await api.getSchedLatencyContainers();
-                setContainerSchedMetrics(data || {});
-            } catch (err) {
-                // Silently fail if container scheduling metrics not available
-            }
-        };
-        
-        fetchSchedMetrics();
-        fetchContainerSchedMetrics();
-        const interval = setInterval(() => {
-            fetchSchedMetrics();
-            fetchContainerSchedMetrics();
-        }, 3000); // Update every 3 seconds for real-time
-        return () => clearInterval(interval);
     }, []);
+
+    // Extract supplementary metrics from WebSocket metrics updates
+    useEffect(() => {
+        if (!metrics) return;
+        
+        // Extract scheduling latency from metrics
+        const schedData = (metrics as any).sched_latency;
+        if (schedData) {
+            console.log('[Dashboard] Found sched_latency data:', schedData);
+            setSchedMetrics(schedData);
+        } else {
+            console.log('[Dashboard] No sched_latency data found in metrics');
+        }
+        
+        // Extract disk I/O from metrics
+        console.log('[Dashboard] Checking for disk_io:', {
+            has_node_system: !!metrics.node_system,
+            node_system_keys: metrics.node_system ? Object.keys(metrics.node_system) : [],
+            has_disk_io: !!metrics.node_system?.disk_io,
+        });
+        if (metrics.node_system?.disk_io) {
+            console.log('[Dashboard] Found disk_io data:', metrics.node_system.disk_io);
+            setDiskIOMetrics(metrics.node_system.disk_io);
+        } else {
+            console.log('[Dashboard] No disk_io data found in node_system');
+        }
+        
+        // Extract pod-level scheduling and disk I/O
+        if (metrics.pods) {
+            const schedByPod: any = {};
+            const diskIOByPod: any = {};
+            
+            Object.entries(metrics.pods).forEach(([podKey, podData]: [string, any]) => {
+                if (podData.sched_latency) {
+                    schedByPod[podKey] = podData.sched_latency;
+                }
+                if (podData.disk_io) {
+                    diskIOByPod[podKey] = podData.disk_io;
+                }
+            });
+            
+            if (Object.keys(schedByPod).length > 0) {
+                setContainerSchedMetrics(schedByPod);
+            }
+            if (Object.keys(diskIOByPod).length > 0) {
+                setDiskIOPodMetrics(diskIOByPod);
+            }
+        }
+        
+        // Extract container-level metrics
+        if (metrics.containers) {
+            const diskIOByContainer: any = {};
+            
+            Object.entries(metrics.containers).forEach(([containerKey, containerData]: [string, any]) => {
+                if (containerData.disk_io) {
+                    diskIOByContainer[containerKey] = containerData.disk_io;
+                }
+            });
+            
+            // Debug: Only log if there's a mismatch
+            if (Object.keys(diskIOByContainer).length > 0) {
+                console.log('[Dashboard] Found disk I/O for containers:', Object.keys(diskIOByContainer).length);
+            }
+            
+            if (Object.keys(diskIOByContainer).length > 0) {
+                setDiskIOContainerMetrics(diskIOByContainer);
+            } else {
+                // Clear if no data
+                setDiskIOContainerMetrics({});
+            }
+        }
+    }, [metrics]);
 
     if (loading && !metrics) {
         return (
@@ -121,6 +168,7 @@ export function Dashboard() {
         { id: 'health', label: 'System Health', icon: FiActivity },
         { id: 'performance', label: 'Performance', icon: FiZap },
         { id: 'cpu-scheduling', label: 'CPU Scheduling', icon: FiClock },
+        { id: 'disk-io', label: 'Disk I/O', icon: FiDownload },
         { id: 'node-metrics', label: 'Node Metrics', icon: FiServer },
         { id: 'system', label: 'System Resources', icon: FiCpu },
         { id: 'network', label: 'Network Stats', icon: FiGlobe },
@@ -128,7 +176,6 @@ export function Dashboard() {
         { id: 'pod-metrics', label: 'Pod Metrics', icon: FiPackage },
         { id: 'packets', label: 'Packet Distribution', icon: FiDownload },
         { id: 'services', label: 'Service Health', icon: FiSettings },
-        { id: 'nat', label: 'NAT Metadata', icon: FiRefreshCw },
     ];
 
     return (
@@ -245,6 +292,24 @@ export function Dashboard() {
                     </div>
                     <CPUSchedulingMetrics />
                 </section>
+
+                {/* Disk I/O Metrics */}
+                {diskIOMetrics && (
+                    <section 
+                        id="disk-io" 
+                        ref={(el) => (sectionRefs.current['disk-io'] = el)}
+                        className="section"
+                    >
+                        <div className="section-header">
+                            <h2>DISK I/O METRICS</h2>
+                            <span className="section-badge">Storage Performance</span>
+                        </div>
+                        <DiskIOMetrics 
+                            data={diskIOMetrics}
+                            title="Node Disk I/O Metrics"
+                        />
+                    </section>
+                )}
 
                 {/* Network Statistics */}
                 <section 
@@ -391,6 +456,7 @@ export function Dashboard() {
                             </>
                         )}
                     </div>
+                    
                 </section>
 
                 {/* TCP Events Timeline - Enhanced */}
@@ -587,11 +653,387 @@ export function Dashboard() {
                             </div>
                         </div>
 
+                        {/* Available Metrics Summary - Professional Design */}
+                        <div style={{
+                            background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%)',
+                            border: '1px solid rgba(71, 85, 105, 0.4)',
+                            borderRadius: '12px',
+                            padding: '2rem',
+                            marginBottom: '2rem',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2)'
+                        }}>
+                            {/* Header Section */}
+                            <div style={{ 
+                                marginBottom: '2rem',
+                                paddingBottom: '1.5rem',
+                                borderBottom: '1px solid rgba(71, 85, 105, 0.3)'
+                            }}>
+                                <div style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '0.75rem',
+                                    marginBottom: '0.5rem'
+                                }}>
+                                    <FiBarChart2 style={{ 
+                                        fontSize: '1.25rem', 
+                                        color: '#60a5fa',
+                                        filter: 'drop-shadow(0 0 4px rgba(96, 165, 250, 0.3))'
+                                    }} />
+                                    <h3 style={{ 
+                                        fontSize: '1.125rem', 
+                                        color: '#e2e8f0', 
+                                        fontWeight: 600,
+                                        margin: 0,
+                                        letterSpacing: '0.025em'
+                                    }}>
+                                        Available Pod Metrics
+                                    </h3>
+                                </div>
+                                <p style={{ 
+                                    fontSize: '0.875rem', 
+                                    color: '#94a3b8',
+                                    margin: 0,
+                                    lineHeight: '1.6',
+                                    marginLeft: '2rem'
+                                }}>
+                                    Real-time eBPF metrics collected from all pods in the cluster
+                                </p>
+                            </div>
+
+                            {/* Metrics Grid */}
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                                gap: '1.25rem'
+                            }}>
+                                {/* DNS Performance Card */}
+                                <div style={{
+                                    background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                                    borderRadius: '10px',
+                                    padding: '1.5rem',
+                                    transition: 'all 0.3s ease',
+                                    position: 'relative',
+                                    overflow: 'hidden'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = '0 8px 16px -4px rgba(59, 130, 246, 0.2)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.2)';
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = 'none';
+                                }}
+                                >
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '0.75rem',
+                                        marginBottom: '1rem'
+                                    }}>
+                                        <div style={{
+                                            width: '40px',
+                                            height: '40px',
+                                            borderRadius: '8px',
+                                            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.15) 100%)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            border: '1px solid rgba(59, 130, 246, 0.3)'
+                                        }}>
+                                            <FiGlobe style={{ fontSize: '1.25rem', color: '#60a5fa' }} />
+                                        </div>
+                                        <div>
+                                            <div style={{ 
+                                                fontSize: '0.9375rem', 
+                                                color: '#e2e8f0', 
+                                                fontWeight: 600,
+                                                letterSpacing: '0.025em'
+                                            }}>
+                                                DNS Performance
+                                            </div>
+                                            <div style={{ 
+                                                fontSize: '0.75rem', 
+                                                color: '#64748b',
+                                                marginTop: '0.125rem'
+                                            }}>
+                                                Network Resolution
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ 
+                                        fontSize: '0.8125rem', 
+                                        color: '#cbd5e1', 
+                                        lineHeight: '1.75',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '0.5rem'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#60a5fa', fontSize: '0.625rem' }}>▸</span>
+                                            <span>Query latency (avg, min, max)</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#60a5fa', fontSize: '0.625rem' }}>▸</span>
+                                            <span>Total DNS queries</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#60a5fa', fontSize: '0.625rem' }}>▸</span>
+                                            <span>Response time distribution</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* TCP Network Card */}
+                                <div style={{
+                                    background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                                    border: '1px solid rgba(34, 197, 94, 0.2)',
+                                    borderRadius: '10px',
+                                    padding: '1.5rem',
+                                    transition: 'all 0.3s ease',
+                                    position: 'relative',
+                                    overflow: 'hidden'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = '0 8px 16px -4px rgba(34, 197, 94, 0.2)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.2)';
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = 'none';
+                                }}
+                                >
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '0.75rem',
+                                        marginBottom: '1rem'
+                                    }}>
+                                        <div style={{
+                                            width: '40px',
+                                            height: '40px',
+                                            borderRadius: '8px',
+                                            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(22, 163, 74, 0.15) 100%)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            border: '1px solid rgba(34, 197, 94, 0.3)'
+                                        }}>
+                                            <FiRadio style={{ fontSize: '1.25rem', color: '#4ade80' }} />
+                                        </div>
+                                        <div>
+                                            <div style={{ 
+                                                fontSize: '0.9375rem', 
+                                                color: '#e2e8f0', 
+                                                fontWeight: 600,
+                                                letterSpacing: '0.025em'
+                                            }}>
+                                                TCP Network
+                                            </div>
+                                            <div style={{ 
+                                                fontSize: '0.75rem', 
+                                                color: '#64748b',
+                                                marginTop: '0.125rem'
+                                            }}>
+                                                Connection Metrics
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ 
+                                        fontSize: '0.8125rem', 
+                                        color: '#cbd5e1', 
+                                        lineHeight: '1.75',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '0.5rem'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#4ade80', fontSize: '0.625rem' }}>▸</span>
+                                            <span>Round-trip time (RTT)</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#4ade80', fontSize: '0.625rem' }}>▸</span>
+                                            <span>Retransmissions & packet loss</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#4ade80', fontSize: '0.625rem' }}>▸</span>
+                                            <span>Connection events</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* CPU Scheduling Card */}
+                                <div style={{
+                                    background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                                    border: '1px solid rgba(251, 191, 36, 0.2)',
+                                    borderRadius: '10px',
+                                    padding: '1.5rem',
+                                    transition: 'all 0.3s ease',
+                                    position: 'relative',
+                                    overflow: 'hidden'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.borderColor = 'rgba(251, 191, 36, 0.4)';
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = '0 8px 16px -4px rgba(251, 191, 36, 0.2)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.borderColor = 'rgba(251, 191, 36, 0.2)';
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = 'none';
+                                }}
+                                >
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '0.75rem',
+                                        marginBottom: '1rem'
+                                    }}>
+                                        <div style={{
+                                            width: '40px',
+                                            height: '40px',
+                                            borderRadius: '8px',
+                                            background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.15) 100%)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            border: '1px solid rgba(251, 191, 36, 0.3)'
+                                        }}>
+                                            <FiCpu style={{ fontSize: '1.25rem', color: '#fbbf24' }} />
+                                        </div>
+                                        <div>
+                                            <div style={{ 
+                                                fontSize: '0.9375rem', 
+                                                color: '#e2e8f0', 
+                                                fontWeight: 600,
+                                                letterSpacing: '0.025em'
+                                            }}>
+                                                CPU Scheduling
+                                            </div>
+                                            <div style={{ 
+                                                fontSize: '0.75rem', 
+                                                color: '#64748b',
+                                                marginTop: '0.125rem'
+                                            }}>
+                                                Scheduler Metrics
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ 
+                                        fontSize: '0.8125rem', 
+                                        color: '#cbd5e1', 
+                                        lineHeight: '1.75',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '0.5rem'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#fbbf24', fontSize: '0.625rem' }}>▸</span>
+                                            <span>Run queue latency</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#fbbf24', fontSize: '0.625rem' }}>▸</span>
+                                            <span>CPU starvation events</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#fbbf24', fontSize: '0.625rem' }}>▸</span>
+                                            <span>Scheduling delays & context switches</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Disk I/O Card */}
+                                <div style={{
+                                    background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                                    border: '1px solid rgba(168, 85, 247, 0.2)',
+                                    borderRadius: '10px',
+                                    padding: '1.5rem',
+                                    transition: 'all 0.3s ease',
+                                    position: 'relative',
+                                    overflow: 'hidden'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.4)';
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = '0 8px 16px -4px rgba(168, 85, 247, 0.2)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.2)';
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = 'none';
+                                }}
+                                >
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '0.75rem',
+                                        marginBottom: '1rem'
+                                    }}>
+                                        <div style={{
+                                            width: '40px',
+                                            height: '40px',
+                                            borderRadius: '8px',
+                                            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(147, 51, 234, 0.15) 100%)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            border: '1px solid rgba(168, 85, 247, 0.3)'
+                                        }}>
+                                            <FiDownload style={{ fontSize: '1.25rem', color: '#a78bfa' }} />
+                                        </div>
+                                        <div>
+                                            <div style={{ 
+                                                fontSize: '0.9375rem', 
+                                                color: '#e2e8f0', 
+                                                fontWeight: 600,
+                                                letterSpacing: '0.025em'
+                                            }}>
+                                                Disk I/O
+                                            </div>
+                                            <div style={{ 
+                                                fontSize: '0.75rem', 
+                                                color: '#64748b',
+                                                marginTop: '0.125rem'
+                                            }}>
+                                                Storage Performance
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ 
+                                        fontSize: '0.8125rem', 
+                                        color: '#cbd5e1', 
+                                        lineHeight: '1.75',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '0.5rem'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#a78bfa', fontSize: '0.625rem' }}>▸</span>
+                                            <span>Read/write latency</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#a78bfa', fontSize: '0.625rem' }}>▸</span>
+                                            <span>I/O operations count</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ color: '#a78bfa', fontSize: '0.625rem' }}>▸</span>
+                                            <span>Data transfer rates & queue depth</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         {selectedPod === 'all' ? (
                             <div className="pods-grid">
                                 {Object.entries(metrics.pods).map(([podKey, podData]) => {
                                 const dnsStats = podData.dns_latency;
                                 const tcpStats = podData.tcp_metrics;
+                                const podDiskIO = diskIOPodMetrics[podKey];
                                 const [namespace, podName] = podKey.split('/');
                                 
                                 // Calculate microsecond values from nanoseconds
@@ -724,23 +1166,82 @@ export function Dashboard() {
                                                     </div>
                                                 )}
                                             </div>
+
+                                            {/* Disk I/O Metrics for Pod */}
+                                            {podDiskIO && (
+                                                <div className="metric-block-clean">
+                                                    <div className="metric-block-title">Disk I/O Performance</div>
+                                                    <div className="metric-grid-clean">
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Total Operations</div>
+                                                            <div className="metric-value-clean">{(podDiskIO.total_io_operations || 0).toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Avg Latency</div>
+                                                            <div className="metric-value-clean">
+                                                                {podDiskIO.avg_io_latency_ns 
+                                                                    ? (podDiskIO.avg_io_latency_ns < 1000000 
+                                                                        ? `${(podDiskIO.avg_io_latency_ns / 1000).toFixed(1)} μs` 
+                                                                        : `${(podDiskIO.avg_io_latency_ns / 1000000).toFixed(2)} ms`)
+                                                                    : '0 μs'}
+                                                            </div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Reads</div>
+                                                            <div className="metric-value-clean">{(podDiskIO.total_reads || 0).toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Writes</div>
+                                                            <div className="metric-value-clean">{(podDiskIO.total_writes || 0).toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Data Transferred</div>
+                                                            <div className="metric-value-clean" style={{fontSize: '0.95rem'}}>
+                                                                {podDiskIO.total_io_bytes 
+                                                                    ? (podDiskIO.total_io_bytes < 1024 
+                                                                        ? `${podDiskIO.total_io_bytes} B`
+                                                                        : podDiskIO.total_io_bytes < 1048576
+                                                                        ? `${(podDiskIO.total_io_bytes / 1024).toFixed(1)} KB`
+                                                                        : `${(podDiskIO.total_io_bytes / 1048576).toFixed(1)} MB`)
+                                                                    : '0 B'}
+                                                            </div>
+                                                        </div>
+                                                        <div className="metric-cell-clean">
+                                                            <div className="metric-label-clean">Queue Depth</div>
+                                                            <div className="metric-value-clean">{(podDiskIO.current_queue_depth || 0)}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
 
-                                        {/* Container-Level eBPF Metrics & Details */}
-                                        {podDetails?.pods[podKey] && podDetails.pods[podKey].containers?.length > 0 && (
-                                            <div className="container-section-clean">
-                                                <div className="section-title-clean">
-                                                    <span>Container Metrics</span>
-                                                    <span className="count-badge-clean">{podDetails.pods[podKey].containers.length}</span>
-                                                </div>
-                                                <div className="container-grid-clean">
+                            {/* Container-Level eBPF Metrics & Details */}
+                            {podDetails?.pods[podKey] && podDetails.pods[podKey].containers?.length > 0 && (
+                                <div className="container-section-clean">
+                                    <div className="section-title-clean">
+                                        <span>Container Metrics</span>
+                                        <span className="count-badge-clean">{podDetails.pods[podKey].containers.length}</span>
+                                    </div>
+                                    <div className="container-grid-clean">
                                                     {podDetails.pods[podKey].containers.map((container: any) => {
                                                         const containerName = container.name;
-                                                        const containerData = containerMetrics[containerName] || {};
-                                                        const containerDns = containerData.dns_latency;
-                                                        const containerTcp = containerData.tcp_metrics;
                                                         const containerKey = `${podKey}/${containerName}`;
+                                                        
+                                                        // Get container data from both sources
+                                                        const containerData = containerMetrics[containerName] || {};
+                                                        // Also try direct lookup from metrics.containers using full key
+                                                        const containerDataDirect = metrics.containers?.[containerKey] || {};
+                                                        
+                                                        // Merge both sources (direct lookup takes precedence)
+                                                        const mergedContainerData = { ...containerData, ...containerDataDirect };
+                                                        
+                                                        const containerDns = mergedContainerData.dns_latency;
+                                                        const containerTcp = mergedContainerData.tcp_metrics;
+                                                        const containerDiskIO = mergedContainerData.disk_io || diskIOContainerMetrics[containerKey];
                                                         const containerSched = containerSchedMetrics[containerKey];
+                                                        
+                                                        // Only show containers that have at least one metric type
+                                                        // This reduces noise from containers that haven't generated eBPF events yet
 
                                                         return (
                                                             <div key={containerName} className="container-card-clean">
@@ -759,55 +1260,133 @@ export function Dashboard() {
                                                                     </div>
                                                                 </div>
                                                                 
-                                                                {/* eBPF Metrics - All Metrics */}
-                                                                <div className="ebpf-metrics-compact">
-                                                                    {containerDns && containerDns.total_events > 0 ? (
-                                                                        <div className="metric-row-compact">
-                                                                            <span className="metric-type">DNS</span>
-                                                                            <span className="metric-val">{containerDns.total_events} queries</span>
-                                                                            <span className="metric-val">{containerDns.avg_latency_us.toFixed(1)}μs avg</span>
-                                                                            <span className="metric-val">{(containerDns.max_latency_ns / 1000).toFixed(1)}μs max</span>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="metric-row-compact">
-                                                                            <span className="metric-type">DNS</span>
-                                                                            <span className="metric-val" style={{color: '#64748b', fontStyle: 'italic'}}>No data</span>
-                                                                        </div>
-                                                                    )}
-                                                                    {containerTcp && containerTcp.total_events > 0 ? (
-                                                                        <div className="metric-row-compact">
-                                                                            <span className="metric-type">TCP</span>
-                                                                            <span className="metric-val">{containerTcp.total_events} events</span>
-                                                                            <span className="metric-val">{containerTcp.retransmissions || 0} retrans</span>
-                                                                            <span className="metric-val">{((containerTcp.last_srtt_us || 0) / 1000).toFixed(1)}ms rtt</span>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="metric-row-compact">
-                                                                            <span className="metric-type">TCP</span>
-                                                                            <span className="metric-val" style={{color: '#64748b', fontStyle: 'italic'}}>No data</span>
+                                                                {/* eBPF Metrics - Organized by Type - Only show sections with data */}
+                                                                <div className="container-metrics-organized">
+                                                                    {/* DNS Metrics Section - Only show if has data */}
+                                                                    {containerDns && (containerDns.total_events > 0 || containerDns.avg_latency_ns !== undefined) && (
+                                                                        <div className="container-metric-section">
+                                                                            <div className="container-metric-section-title">DNS Performance</div>
+                                                                            <div className="container-metric-details">
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Queries:</span>
+                                                                                    <span className="metric-item-value">{containerDns.total_events.toLocaleString()}</span>
+                                                                                </div>
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Avg Latency:</span>
+                                                                                    <span className="metric-item-value">{containerDns.avg_latency_us.toFixed(1)} μs</span>
+                                                                                </div>
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Max Latency:</span>
+                                                                                    <span className="metric-item-value">{(containerDns.max_latency_ns / 1000).toFixed(1)} μs</span>
+                                                                                </div>
+                                                                            </div>
                                                                         </div>
                                                                     )}
-                                                                    {/* CPU Scheduling for container */}
-                                                                    {containerSched ? (
-                                                                        <div className="metric-row-compact">
-                                                                            <span className="metric-type">CPU Sched</span>
-                                                                            <span className="metric-val" style={{
-                                                                                color: (containerSched.avg_runqueue_latency_us || 0) > 10000 ? '#ef4444' : 
-                                                                                       (containerSched.avg_runqueue_latency_us || 0) > 5000 ? '#f59e0b' : '#10b981'
-                                                                            }}>
-                                                                                {(containerSched.avg_runqueue_latency_us || 0).toFixed(0)}μs avg
-                                                                            </span>
-                                                                            <span className="metric-val">{(containerSched.event_count || 0).toLocaleString()} events</span>
-                                                                            {(containerSched.cpu_starvation_count || 0) > 0 && (
-                                                                                <span className="metric-val" style={{color: '#ef4444'}}>
-                                                                                    {(containerSched.cpu_starvation_count || 0)} starv
-                                                                                </span>
-                                                                            )}
+
+                                                                    {/* TCP Metrics Section - Only show if has data */}
+                                                                    {containerTcp && (containerTcp.total_events > 0 || containerTcp.avg_rtt_us !== undefined || containerTcp.last_srtt_us !== undefined) && (
+                                                                        <div className="container-metric-section">
+                                                                            <div className="container-metric-section-title">TCP Network</div>
+                                                                            <div className="container-metric-details">
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Events:</span>
+                                                                                    <span className="metric-item-value">{containerTcp.total_events.toLocaleString()}</span>
+                                                                                </div>
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Retransmissions:</span>
+                                                                                    <span className="metric-item-value" style={{color: (containerTcp.retransmissions || 0) > 0 ? '#ef4444' : '#10b981'}}>
+                                                                                        {(containerTcp.retransmissions || 0).toLocaleString()}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Avg RTT:</span>
+                                                                                    <span className="metric-item-value">{((containerTcp.last_srtt_us || 0) / 1000).toFixed(1)} ms</span>
+                                                                                </div>
+                                                                            </div>
                                                                         </div>
-                                                                    ) : (
-                                                                        <div className="metric-row-compact">
-                                                                            <span className="metric-type">CPU Sched</span>
-                                                                            <span className="metric-val" style={{color: '#64748b', fontStyle: 'italic'}}>No data</span>
+                                                                    )}
+
+                                                                    {/* CPU Scheduling Section - Only show if has data */}
+                                                                    {containerSched && (
+                                                                        <div className="container-metric-section">
+                                                                            <div className="container-metric-section-title">CPU Scheduling</div>
+                                                                            <div className="container-metric-details">
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Avg Latency:</span>
+                                                                                    <span className="metric-item-value" style={{
+                                                                                        color: (containerSched.avg_runqueue_latency_us || 0) > 10000 ? '#ef4444' : 
+                                                                                               (containerSched.avg_runqueue_latency_us || 0) > 5000 ? '#f59e0b' : '#10b981'
+                                                                                    }}>
+                                                                                        {(containerSched.avg_runqueue_latency_us || 0).toFixed(0)} μs
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Events:</span>
+                                                                                    <span className="metric-item-value">{(containerSched.event_count || 0).toLocaleString()}</span>
+                                                                                </div>
+                                                                                {(containerSched.cpu_starvation_count || 0) > 0 && (
+                                                                                    <div className="container-metric-item">
+                                                                                        <span className="metric-item-label">Starvation:</span>
+                                                                                        <span className="metric-item-value" style={{color: '#ef4444', fontWeight: 700}}>
+                                                                                            {(containerSched.cpu_starvation_count || 0)}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Disk I/O Section - Only show if has data */}
+                                                                    {containerDiskIO && (containerDiskIO.total_io_operations > 0 || containerDiskIO.total_reads !== undefined || containerDiskIO.total_writes !== undefined) && (
+                                                                        <div className="container-metric-section">
+                                                                            <div className="container-metric-section-title">Disk I/O</div>
+                                                                            <div className="container-metric-details">
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Operations:</span>
+                                                                                    <span className="metric-item-value">{(containerDiskIO.total_io_operations || 0).toLocaleString()}</span>
+                                                                                </div>
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Avg Latency:</span>
+                                                                                    <span className="metric-item-value">
+                                                                                        {containerDiskIO.avg_io_latency_ns 
+                                                                                            ? (containerDiskIO.avg_io_latency_ns < 1000000 
+                                                                                                ? `${(containerDiskIO.avg_io_latency_ns / 1000).toFixed(1)} μs` 
+                                                                                                : `${(containerDiskIO.avg_io_latency_ns / 1000000).toFixed(2)} ms`)
+                                                                                            : '0 μs'}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Reads:</span>
+                                                                                    <span className="metric-item-value">{(containerDiskIO.total_reads || 0).toLocaleString()}</span>
+                                                                                </div>
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Writes:</span>
+                                                                                    <span className="metric-item-value">{(containerDiskIO.total_writes || 0).toLocaleString()}</span>
+                                                                                </div>
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Data:</span>
+                                                                                    <span className="metric-item-value">
+                                                                                        {containerDiskIO.total_io_bytes 
+                                                                                            ? (containerDiskIO.total_io_bytes < 1024 
+                                                                                                ? `${containerDiskIO.total_io_bytes} B`
+                                                                                                : containerDiskIO.total_io_bytes < 1048576
+                                                                                                ? `${(containerDiskIO.total_io_bytes / 1024).toFixed(1)} KB`
+                                                                                                : `${(containerDiskIO.total_io_bytes / 1048576).toFixed(1)} MB`)
+                                                                                            : '0 B'}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="container-metric-item">
+                                                                                    <span className="metric-item-label">Queue Depth:</span>
+                                                                                    <span className="metric-item-value">{(containerDiskIO.current_queue_depth || 0)}</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Show message only if container has NO metrics at all */}
+                                                                    {!containerDns && !containerTcp && !containerSched && !containerDiskIO && (
+                                                                        <div className="container-metric-empty" style={{padding: '1rem', textAlign: 'center'}}>
+                                                                            No eBPF metrics available yet. Metrics will appear as the container generates activity.
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -847,15 +1426,18 @@ export function Dashboard() {
                                     if (metrics.containers) {
                                         Object.entries(metrics.containers).forEach(([containerKey, containerData]) => {
                                             const parts = containerKey.split('/');
-                                            const containerPodKey = `${parts[0]}/${parts[1]}`;
-                                            if (containerPodKey === podKey) {
-                                                const containerName = parts[2];
-                                                containerMetrics[containerName] = containerData;
+                                            if (parts.length >= 3) {
+                                                const containerPodKey = `${parts[0]}/${parts[1]}`;
+                                                if (containerPodKey === podKey) {
+                                                    const containerName = parts[2];
+                                                    containerMetrics[containerName] = containerData;
+                                                }
                                             }
                                         });
                                     }
                                     
                                     const podSchedMetrics = schedMetrics?.pod_metrics?.[podKey];
+                                    const podDiskIO = diskIOPodMetrics[podKey];
                                     
                                     return (
                                         <div className="enhanced-pod-card">
@@ -924,6 +1506,38 @@ export function Dashboard() {
                                                             }}>
                                                                 Starvation: {podSchedMetrics.cpu_starvation_count || 0}
                                                             </span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
+                                                {podDiskIO && (
+                                                    <div className="enhanced-metric-card">
+                                                        <div className="enhanced-metric-header">Disk I/O</div>
+                                                        <div className="enhanced-metric-value" style={{fontSize: '1.1rem'}}>
+                                                            {podDiskIO.total_io_operations 
+                                                                ? (podDiskIO.total_io_operations < 1000 
+                                                                    ? podDiskIO.total_io_operations.toLocaleString()
+                                                                    : `${(podDiskIO.total_io_operations / 1000).toFixed(1)}K`)
+                                                                : '0'} ops
+                                                        </div>
+                                                        <div className="enhanced-metric-details">
+                                                            <span>
+                                                                Latency: {podDiskIO.avg_io_latency_ns 
+                                                                    ? (podDiskIO.avg_io_latency_ns < 1000000 
+                                                                        ? `${(podDiskIO.avg_io_latency_ns / 1000).toFixed(1)} μs` 
+                                                                        : `${(podDiskIO.avg_io_latency_ns / 1000000).toFixed(2)} ms`)
+                                                                    : '0 μs'}
+                                                            </span>
+                                                            <span>
+                                                                Data: {podDiskIO.total_io_bytes 
+                                                                    ? (podDiskIO.total_io_bytes < 1024 
+                                                                        ? `${podDiskIO.total_io_bytes} B`
+                                                                        : podDiskIO.total_io_bytes < 1048576
+                                                                        ? `${(podDiskIO.total_io_bytes / 1024).toFixed(1)} KB`
+                                                                        : `${(podDiskIO.total_io_bytes / 1048576).toFixed(1)} MB`)
+                                                                    : '0 B'}
+                                                            </span>
+                                                            <span>Queue: {podDiskIO.current_queue_depth || 0}</span>
                                                         </div>
                                                     </div>
                                                 )}
@@ -1027,13 +1641,23 @@ export function Dashboard() {
                                                     <div className="enhanced-containers-grid">
                                                         {podDetails.pods[podKey].containers.map((container: any) => {
                                                             const containerName = container.name;
-                                                            const containerData = containerMetrics[containerName] || {};
-                                                            const containerDns = containerData.dns_latency;
-                                                            const containerTcp = containerData.tcp_metrics;
                                                             const containerKey = `${podKey}/${containerName}`;
+                                                            
+                                                            // Get container data from both sources
+                                                            const containerData = containerMetrics[containerName] || {};
+                                                            // Also try direct lookup from metrics.containers using full key
+                                                            const containerDataDirect = metrics.containers?.[containerKey] || {};
+                                                            
+                                                            // Merge both sources (direct lookup takes precedence)
+                                                            const mergedContainerData = { ...containerData, ...containerDataDirect };
+                                                            
+                                                            const containerDns = mergedContainerData.dns_latency;
+                                                            const containerTcp = mergedContainerData.tcp_metrics;
+                                                            const containerDiskIO = mergedContainerData.disk_io || diskIOContainerMetrics[containerKey];
                                                             const containerSched = containerSchedMetrics[containerKey];
                                                             const hasMetrics = (containerDns && containerDns.total_events > 0) || 
-                                                                              (containerTcp && containerTcp.total_events > 0);
+                                                                              (containerTcp && containerTcp.total_events > 0) ||
+                                                                              (containerDiskIO && containerDiskIO.total_io_operations > 0);
 
                                                             return (
                                                                 <div key={containerName} className="enhanced-container-card">
@@ -1046,99 +1670,138 @@ export function Dashboard() {
                                                                     <div className="enhanced-container-image">{container.image}</div>
                                                                     
                                                                     <div className="enhanced-container-metrics-section">
-                                                                        {/* DNS Metrics - Always show */}
-                                                                        <div className="enhanced-container-metric-block">
-                                                                            <div className="enhanced-container-metric-title">DNS Metrics</div>
-                                                                            {containerDns && containerDns.total_events > 0 ? (
-                                                                                <>
-                                                                                    <div className="enhanced-container-metric-row">
-                                                                                        <span className="metric-label">Avg Latency:</span>
-                                                                                        <span className="metric-value">{((containerDns.avg_latency_ns || 0) / 1000).toFixed(2)} μs</span>
-                                                                                    </div>
-                                                                                    <div className="enhanced-container-metric-row">
-                                                                                        <span className="metric-label">Events:</span>
-                                                                                        <span className="metric-value">{(containerDns.total_events || 0).toLocaleString()}</span>
-                                                                                    </div>
-                                                                                    <div className="enhanced-container-metric-row">
-                                                                                        <span className="metric-label">Max Latency:</span>
-                                                                                        <span className="metric-value">{((containerDns.max_latency_ns || 0) / 1000).toFixed(2)} μs</span>
-                                                                                    </div>
-                                                                                </>
-                                                                            ) : (
+                                                                        {/* DNS Metrics - Only show if has data */}
+                                                                        {containerDns && containerDns.total_events > 0 && (
+                                                                            <div className="enhanced-container-metric-block">
+                                                                                <div className="enhanced-container-metric-title">DNS Metrics</div>
                                                                                 <div className="enhanced-container-metric-row">
-                                                                                    <span className="metric-value" style={{color: '#64748b', fontStyle: 'italic', width: '100%'}}>No DNS data</span>
+                                                                                    <span className="metric-label">Avg Latency:</span>
+                                                                                    <span className="metric-value">{((containerDns.avg_latency_ns || 0) / 1000).toFixed(2)} μs</span>
                                                                                 </div>
-                                                                            )}
-                                                                        </div>
-
-                                                                        {/* TCP Metrics - Always show */}
-                                                                        <div className="enhanced-container-metric-block">
-                                                                            <div className="enhanced-container-metric-title">TCP Metrics</div>
-                                                                            {containerTcp && containerTcp.total_events > 0 ? (
-                                                                                <>
-                                                                                    <div className="enhanced-container-metric-row">
-                                                                                        <span className="metric-label">Events:</span>
-                                                                                        <span className="metric-value">{(containerTcp.total_events || 0).toLocaleString()}</span>
-                                                                                    </div>
-                                                                                    <div className="enhanced-container-metric-row">
-                                                                                        <span className="metric-label">Retransmissions:</span>
-                                                                                        <span className="metric-value">{(containerTcp.total_retransmissions || 0).toLocaleString()}</span>
-                                                                                    </div>
-                                                                                    <div className="enhanced-container-metric-row">
-                                                                                        <span className="metric-label">Avg RTT:</span>
-                                                                                        <span className="metric-value">{((containerTcp.avg_rtt_us || 0) / 1000).toFixed(2)} ms</span>
-                                                                                    </div>
-                                                                                </>
-                                                                            ) : (
                                                                                 <div className="enhanced-container-metric-row">
-                                                                                    <span className="metric-value" style={{color: '#64748b', fontStyle: 'italic', width: '100%'}}>No TCP data</span>
+                                                                                    <span className="metric-label">Events:</span>
+                                                                                    <span className="metric-value">{(containerDns.total_events || 0).toLocaleString()}</span>
                                                                                 </div>
-                                                                            )}
-                                                                        </div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Max Latency:</span>
+                                                                                    <span className="metric-value">{((containerDns.max_latency_ns || 0) / 1000).toFixed(2)} μs</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
 
-                                                                        {/* CPU Scheduling - Per-container */}
-                                                                        <div className="enhanced-container-metric-block">
-                                                                            <div className="enhanced-container-metric-title">CPU Scheduling</div>
-                                                                            {containerSched ? (
-                                                                                <>
-                                                                                    <div className="enhanced-container-metric-row">
-                                                                                        <span className="metric-label">Avg Latency:</span>
-                                                                                        <span className="metric-value" style={{
-                                                                                            color: (containerSched.avg_runqueue_latency_us || 0) > 10000 ? '#ef4444' : 
-                                                                                                   (containerSched.avg_runqueue_latency_us || 0) > 5000 ? '#f59e0b' : '#10b981'
-                                                                                        }}>
-                                                                                            {(containerSched.avg_runqueue_latency_us || 0).toFixed(0)} μs
-                                                                                        </span>
-                                                                                    </div>
-                                                                                    <div className="enhanced-container-metric-row">
-                                                                                        <span className="metric-label">Events:</span>
-                                                                                        <span className="metric-value">{(containerSched.event_count || 0).toLocaleString()}</span>
-                                                                                    </div>
-                                                                                    <div className="enhanced-container-metric-row">
-                                                                                        <span className="metric-label">Max Latency:</span>
-                                                                                        <span className="metric-value" style={{
-                                                                                            color: (containerSched.max_runqueue_latency_us || 0) > 10000 ? '#ef4444' : '#10b981'
-                                                                                        }}>
-                                                                                            {(containerSched.max_runqueue_latency_us || 0).toFixed(0)} μs
-                                                                                        </span>
-                                                                                    </div>
+                                                                        {/* TCP Metrics - Only show if has data */}
+                                                                        {containerTcp && containerTcp.total_events > 0 && (
+                                                                            <div className="enhanced-container-metric-block">
+                                                                                <div className="enhanced-container-metric-title">TCP Metrics</div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Events:</span>
+                                                                                    <span className="metric-value">{(containerTcp.total_events || 0).toLocaleString()}</span>
+                                                                                </div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Retransmissions:</span>
+                                                                                    <span className="metric-value">{(containerTcp.total_retransmissions || 0).toLocaleString()}</span>
+                                                                                </div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Avg RTT:</span>
+                                                                                    <span className="metric-value">{((containerTcp.avg_rtt_us || 0) / 1000).toFixed(2)} ms</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* CPU Scheduling - Only show if has data */}
+                                                                        {containerSched && (
+                                                                            <div className="enhanced-container-metric-block">
+                                                                                <div className="enhanced-container-metric-title">CPU Scheduling</div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Avg Latency:</span>
+                                                                                    <span className="metric-value" style={{
+                                                                                        color: (containerSched.avg_runqueue_latency_us || 0) > 10000 ? '#ef4444' : 
+                                                                                               (containerSched.avg_runqueue_latency_us || 0) > 5000 ? '#f59e0b' : '#10b981'
+                                                                                    }}>
+                                                                                        {(containerSched.avg_runqueue_latency_us || 0).toFixed(0)} μs
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Events:</span>
+                                                                                    <span className="metric-value">{(containerSched.event_count || 0).toLocaleString()}</span>
+                                                                                </div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Max Latency:</span>
+                                                                                    <span className="metric-value" style={{
+                                                                                        color: (containerSched.max_runqueue_latency_us || 0) > 10000 ? '#ef4444' : '#10b981'
+                                                                                    }}>
+                                                                                        {(containerSched.max_runqueue_latency_us || 0).toFixed(0)} μs
+                                                                                    </span>
+                                                                                </div>
+                                                                                {(containerSched.cpu_starvation_count || 0) > 0 && (
                                                                                     <div className="enhanced-container-metric-row">
                                                                                         <span className="metric-label">Starvation:</span>
                                                                                         <span className="metric-value" style={{
-                                                                                            color: (containerSched.cpu_starvation_count || 0) > 0 ? '#ef4444' : '#10b981'
+                                                                                            color: '#ef4444'
                                                                                         }}>
                                                                                             {containerSched.cpu_starvation_count || 0}
                                                                                         </span>
                                                                                     </div>
-                                                                                </>
-                                                                            ) : (
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Disk I/O - Only show if has data */}
+                                                                        {containerDiskIO && (containerDiskIO.total_io_operations > 0 || containerDiskIO.total_reads !== undefined || containerDiskIO.total_writes !== undefined) && (
+                                                                            <div className="enhanced-container-metric-block">
+                                                                                <div className="enhanced-container-metric-title">Disk I/O</div>
                                                                                 <div className="enhanced-container-metric-row">
-                                                                                    <span className="metric-value" style={{color: '#64748b', fontStyle: 'italic', width: '100%'}}>
-                                                                                        No scheduling data yet
+                                                                                    <span className="metric-label">Total Operations:</span>
+                                                                                    <span className="metric-value">{(containerDiskIO.total_io_operations || 0).toLocaleString()}</span>
+                                                                                </div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Avg Latency:</span>
+                                                                                    <span className="metric-value">
+                                                                                        {containerDiskIO.avg_io_latency_ns 
+                                                                                            ? (containerDiskIO.avg_io_latency_ns < 1000000 
+                                                                                                ? `${(containerDiskIO.avg_io_latency_ns / 1000).toFixed(2)} μs` 
+                                                                                                : `${(containerDiskIO.avg_io_latency_ns / 1000000).toFixed(2)} ms`)
+                                                                                            : '0 μs'}
                                                                                     </span>
                                                                                 </div>
-                                                                            )}
-                                                                        </div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Reads:</span>
+                                                                                    <span className="metric-value">{(containerDiskIO.total_reads || 0).toLocaleString()}</span>
+                                                                                </div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Writes:</span>
+                                                                                    <span className="metric-value">{(containerDiskIO.total_writes || 0).toLocaleString()}</span>
+                                                                                </div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Data Transferred:</span>
+                                                                                    <span className="metric-value">
+                                                                                        {containerDiskIO.total_io_bytes 
+                                                                                            ? (containerDiskIO.total_io_bytes < 1024 
+                                                                                                ? `${containerDiskIO.total_io_bytes} B`
+                                                                                                : containerDiskIO.total_io_bytes < 1048576
+                                                                                                ? `${(containerDiskIO.total_io_bytes / 1024).toFixed(1)} KB`
+                                                                                                : `${(containerDiskIO.total_io_bytes / 1048576).toFixed(1)} MB`)
+                                                                                            : '0 B'}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-label">Queue Depth:</span>
+                                                                                    <span className="metric-value">{(containerDiskIO.current_queue_depth || 0)}</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Show message only if container has NO metrics at all */}
+                                                                        {!containerDns && !containerTcp && !containerSched && !containerDiskIO && (
+                                                                            <div className="enhanced-container-metric-block">
+                                                                                <div className="enhanced-container-metric-title">eBPF Metrics</div>
+                                                                                <div className="enhanced-container-metric-row">
+                                                                                    <span className="metric-value" style={{color: '#64748b', fontStyle: 'italic', width: '100%', textAlign: 'center', padding: '1rem 0'}}>
+                                                                                        No eBPF metrics available yet. Metrics will appear as the container generates activity.
+                                                                                    </span>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                     
                                                                     <div className="enhanced-container-resources">
@@ -1287,19 +1950,26 @@ export function Dashboard() {
                         className="section"
                     >
                         <div className="section-header">
-                            <h2>SERVICE HEALTH</h2>
+                            <div>
+                                <h2>SERVICE HEALTH</h2>
+                                <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.5rem' }}>
+                                    Real-time monitoring of Kubernetes services and their endpoint health status
+                                </p>
+                            </div>
                             <span className="section-badge">
                                 {metrics.service_health.healthy_services} Healthy / {metrics.service_health.total_services} Total
                             </span>
                         </div>
-                        <div className="metrics-grid">
+
+                        {/* Summary Cards */}
+                        <div className="metrics-grid" style={{ marginBottom: '2rem' }}>
                             <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)', borderColor: 'rgba(16, 185, 129, 0.3)'}}>
                                 <div className="stat-header">
                                     <h3>Healthy Services</h3>
                                 </div>
                                 <div className="stat-value" style={{color: '#10b981'}}>{metrics.service_health.healthy_services}</div>
                                 <div className="stat-details">
-                                    <span className="stat-label">Fully Operational</span>
+                                    <span className="stat-label">All endpoints ready</span>
                                 </div>
                             </div>
 
@@ -1309,57 +1979,255 @@ export function Dashboard() {
                                 </div>
                                 <div className="stat-value" style={{color: '#ef4444'}}>{metrics.service_health.unhealthy_services}</div>
                                 <div className="stat-details">
-                                    <span className="stat-label">Needs Attention</span>
+                                    <span className="stat-label">Needs attention</span>
+                                </div>
+                            </div>
+
+                            <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%)', borderColor: 'rgba(245, 158, 11, 0.3)'}}>
+                                <div className="stat-header">
+                                    <h3>Total Services</h3>
+                                </div>
+                                <div className="stat-value" style={{color: '#f59e0b'}}>{metrics.service_health.total_services}</div>
+                                <div className="stat-details">
+                                    <span className="stat-label">Monitored</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Service Details Table */}
+                        {metrics.service_health.service_details && Object.keys(metrics.service_health.service_details).length > 0 && (
+                            <div style={{ marginTop: '2rem' }}>
+                                <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', color: '#e2e8f0' }}>Service Details</h3>
+                                <div style={{ 
+                                    background: 'rgba(15, 23, 42, 0.6)', 
+                                    borderRadius: '8px', 
+                                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                                    overflow: 'hidden'
+                                }}>
+                                    <div style={{ 
+                                        display: 'grid', 
+                                        gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr 1fr',
+                                        gap: '1rem',
+                                        padding: '1rem',
+                                        borderBottom: '1px solid rgba(59, 130, 246, 0.1)',
+                                        fontWeight: 600,
+                                        fontSize: '0.85rem',
+                                        color: '#94a3b8',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px'
+                                    }}>
+                                        <div>Service Name</div>
+                                        <div>Namespace</div>
+                                        <div>Type</div>
+                                        <div>Status</div>
+                                        <div>Endpoints</div>
+                                        <div>Last Check</div>
+                                    </div>
+                                    {Object.entries(metrics.service_health.service_details).map(([serviceKey, service]: [string, any]) => {
+                                        const statusColor = service.status === 'healthy' ? '#10b981' : 
+                                                          service.status === 'degraded' ? '#f59e0b' : '#ef4444';
+                                        const statusLabel = service.status === 'healthy' ? 'Healthy' : 
+                                                           service.status === 'degraded' ? 'Degraded' : 'Unhealthy';
+                                        const endpointRatio = `${service.ready_endpoints || 0} / ${service.total_endpoints || 0}`;
+                                        
+                                        return (
+                                            <div 
+                                                key={serviceKey}
+                                                style={{ 
+                                                    display: 'grid', 
+                                                    gridTemplateColumns: '2fr 1fr 1fr 1fr 1.5fr 1fr',
+                                                    gap: '1rem',
+                                                    padding: '1rem',
+                                                    borderBottom: '1px solid rgba(59, 130, 246, 0.05)',
+                                                    alignItems: 'center',
+                                                    transition: 'background 0.2s'
+                                                }}
+                                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'}
+                                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                            >
+                                                <div>
+                                                    <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{service.name}</div>
+                                                    {service.cluster_ip && (
+                                                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                                                            IP: {service.cluster_ip}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>{service.namespace}</div>
+                                                <div style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>{service.type || 'ClusterIP'}</div>
+                                                <div>
+                                                    <span style={{ 
+                                                        padding: '0.25rem 0.75rem',
+                                                        borderRadius: '4px',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: 600,
+                                                        backgroundColor: statusColor + '20',
+                                                        color: statusColor,
+                                                        border: `1px solid ${statusColor}40`
+                                                    }}>
+                                                        {statusLabel}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <div style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>
+                                                        {endpointRatio} ready
+                                                    </div>
+                                                    {service.total_endpoints > 0 && (
+                                                        <div style={{ 
+                                                            width: '100%', 
+                                                            height: '4px', 
+                                                            background: 'rgba(59, 130, 246, 0.2)', 
+                                                            borderRadius: '2px',
+                                                            marginTop: '0.5rem',
+                                                            overflow: 'hidden'
+                                                        }}>
+                                                            <div style={{ 
+                                                                width: `${(service.ready_endpoints / service.total_endpoints) * 100}%`,
+                                                                height: '100%',
+                                                                background: statusColor,
+                                                                transition: 'width 0.3s'
+                                                            }} />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                                                    {service.last_check ? new Date(service.last_check).toLocaleTimeString() : 'N/A'}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Endpoint Details */}
+                        {metrics.service_health.service_details && Object.entries(metrics.service_health.service_details).some(([_, service]: [string, any]) => 
+                            service.endpoint_health && Object.keys(service.endpoint_health).length > 0
+                        ) && (
+                            <div style={{ marginTop: '2rem' }}>
+                                <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', color: '#e2e8f0' }}>Endpoint Health</h3>
+                                <div style={{ 
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+                                    gap: '1rem'
+                                }}>
+                                    {Object.entries(metrics.service_health.service_details).map(([serviceKey, service]: [string, any]) => {
+                                        if (!service.endpoint_health || Object.keys(service.endpoint_health).length === 0) return null;
+                                        
+                                        return (
+                                            <div 
+                                                key={serviceKey}
+                                                style={{ 
+                                                    background: 'rgba(15, 23, 42, 0.6)', 
+                                                    borderRadius: '8px', 
+                                                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                                                    padding: '1rem'
+                                                }}
+                                            >
+                                                <div style={{ 
+                                                    fontSize: '0.9rem', 
+                                                    fontWeight: 600, 
+                                                    color: '#e2e8f0',
+                                                    marginBottom: '0.75rem',
+                                                    paddingBottom: '0.75rem',
+                                                    borderBottom: '1px solid rgba(59, 130, 246, 0.1)'
+                                                }}>
+                                                    {service.name} ({service.namespace})
+                                                </div>
+                                                {Object.entries(service.endpoint_health).map(([endpointKey, endpoint]: [string, any]) => {
+                                                    const endpointStatusColor = endpoint.status === 'ready' ? '#10b981' : '#ef4444';
+                                                    const httpCheckColor = endpoint.http_check ? '#10b981' : '#ef4444';
+                                                    
+                                                    return (
+                                                        <div 
+                                                            key={endpointKey}
+                                                            style={{ 
+                                                                padding: '0.75rem',
+                                                                marginBottom: '0.5rem',
+                                                                background: 'rgba(59, 130, 246, 0.05)',
+                                                                borderRadius: '6px',
+                                                                border: `1px solid ${endpointStatusColor}30`
+                                                            }}
+                                                        >
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                                                <div>
+                                                                    <div style={{ fontWeight: 600, color: '#e2e8f0', fontSize: '0.9rem' }}>
+                                                                        {endpoint.pod_name || 'Unknown Pod'}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
+                                                                        {endpoint.pod_ip}
+                                                                    </div>
+                                                                </div>
+                                                                <span style={{ 
+                                                                    padding: '0.25rem 0.5rem',
+                                                                    borderRadius: '4px',
+                                                                    fontSize: '0.7rem',
+                                                                    fontWeight: 600,
+                                                                    backgroundColor: endpointStatusColor + '20',
+                                                                    color: endpointStatusColor,
+                                                                    border: `1px solid ${endpointStatusColor}40`
+                                                                }}>
+                                                                    {endpoint.status === 'ready' ? 'Ready' : 'Not Ready'}
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem', color: '#94a3b8' }}>
+                                                                <div>
+                                                                    <span style={{ color: '#64748b' }}>HTTP Check: </span>
+                                                                    <span style={{ color: httpCheckColor, fontWeight: 600 }}>
+                                                                        {endpoint.http_check ? '✓ Pass' : '✗ Fail'}
+                                                                    </span>
+                                                                </div>
+                                                                {endpoint.latency_ms > 0 && (
+                                                                    <div>
+                                                                        <span style={{ color: '#64748b' }}>Latency: </span>
+                                                                        <span style={{ color: '#cbd5e1', fontWeight: 600 }}>
+                                                                            {endpoint.latency_ms.toFixed(2)} ms
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Info Box */}
+                        <div style={{ 
+                            marginTop: '2rem',
+                            padding: '1rem',
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(59, 130, 246, 0.2)'
+                        }}>
+                            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                                <div style={{ fontSize: '1.2rem' }}>ℹ️</div>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem' }}>How Service Health Works</div>
+                                    <div style={{ fontSize: '0.85rem', color: '#94a3b8', lineHeight: '1.6' }}>
+                                        <div style={{ marginBottom: '0.5rem' }}>
+                                            <strong style={{ color: '#cbd5e1' }}>Healthy:</strong> All endpoints are ready and responding
+                                        </div>
+                                        <div style={{ marginBottom: '0.5rem' }}>
+                                            <strong style={{ color: '#cbd5e1' }}>Degraded:</strong> Some endpoints are ready, but not all
+                                        </div>
+                                        <div>
+                                            <strong style={{ color: '#cbd5e1' }}>Unhealthy:</strong> No endpoints are ready or service has no endpoints
+                                        </div>
+                                        <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#64748b' }}>
+                                            Health checks are performed every 10 seconds. HTTP checks are attempted when service ports are available.
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </section>
                 )}
 
-                {/* NAT Metadata */}
-                {metrics?.nat_metadata && (
-                    <section 
-                        id="nat" 
-                        ref={(el) => (sectionRefs.current['nat'] = el)}
-                        className="section"
-                    >
-                        <div className="section-header">
-                            <h2>NAT TRANSLATION METADATA</h2>
-                            <span className="section-badge">Connection Tracking</span>
-                        </div>
-                        <div className="metrics-grid">
-                            <div className="stat-card">
-                                <div className="stat-header">
-                                    <h3>Active Connections</h3>
-                                </div>
-                                <div className="stat-value">{metrics.nat_metadata.active_connections.toLocaleString()}</div>
-                                <div className="stat-details">
-                                    <span className="stat-label">Currently Tracked</span>
-                                </div>
-                            </div>
-
-                            <div className="stat-card">
-                                <div className="stat-header">
-                                    <h3>SNAT Translations</h3>
-                                </div>
-                                <div className="stat-value">{metrics.nat_metadata.snat_translations.toLocaleString()}</div>
-                                <div className="stat-details">
-                                    <span className="stat-label">Source NAT</span>
-                                </div>
-                            </div>
-
-                            <div className="stat-card">
-                                <div className="stat-header">
-                                    <h3>DNAT Translations</h3>
-                                </div>
-                                <div className="stat-value">{metrics.nat_metadata.dnat_translations.toLocaleString()}</div>
-                                <div className="stat-details">
-                                    <span className="stat-label">Destination NAT</span>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-                )}
             </main>
             </div>
 

@@ -63,12 +63,47 @@ export function NetworkTopology() {
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
     const [isPaused, setIsPaused] = useState(false);
     const [showMigrationAdvisor, setShowMigrationAdvisor] = useState(false);
+    const [showThresholdPanel, setShowThresholdPanel] = useState(false);
     const [migrationSuggestions, setMigrationSuggestions] = useState<MigrationSuggestion[]>([]);
     const [podLogs, setPodLogs] = useState<{pod: string, logs: string} | null>(null);
     const [actionResult, setActionResult] = useState<{type: 'success' | 'error', message: string} | null>(null);
     const [selectedPodMetrics, setSelectedPodMetrics] = useState<any>(null);
     const [loadingLogs, setLoadingLogs] = useState<{[key: string]: boolean}>({});
     const animationRef = useRef<number>();
+    
+    // Threshold configuration state
+    interface ThresholdConfig {
+        dns_latency_critical: number;
+        dns_latency_high: number;
+        dns_latency_medium: number;
+        tcp_retrans_critical: number;
+        tcp_retrans_high: number;
+        tcp_retrans_medium: number;
+        packet_loss_critical: number;
+        packet_loss_high: number;
+        packet_loss_medium: number;
+        cpu_latency_critical: number;
+        cpu_latency_high: number;
+    }
+    
+    const [thresholds, setThresholds] = useState<ThresholdConfig>(() => {
+        const saved = localStorage.getItem('migrationThresholds');
+        return saved ? JSON.parse(saved) : {
+            dns_latency_critical: 10000,
+            dns_latency_high: 5000,
+            dns_latency_medium: 2000,
+            tcp_retrans_critical: 10,
+            tcp_retrans_high: 3,
+            tcp_retrans_medium: 1,
+            packet_loss_critical: 5,
+            packet_loss_high: 2,
+            packet_loss_medium: 0,
+            cpu_latency_critical: 20000,
+            cpu_latency_high: 10000,
+        };
+    });
+    
+    const [editThresholds, setEditThresholds] = useState<ThresholdConfig>(thresholds);
     
     // Fetch connections
     useEffect(() => {
@@ -210,64 +245,64 @@ export function NetworkTopology() {
 
             console.log(`[Migration Advisor] Pod ${podKey}: DNS=${dnsLatency}, TCP=${tcpRetrans}, Loss=${packetLoss}, CPU=${cpuLatency}`);
 
-            // AI-powered analysis - Lower thresholds to show more suggestions
-            if (dnsLatency > 10000) { // Lowered from 20000
+            // AI-powered analysis using user-defined thresholds
+            if (dnsLatency > thresholds.dns_latency_critical) {
                 issues.push('Critical DNS latency');
                 severity = 'high';
                 action = 'Restart Pod';
                 aiSuggestion = 'DNS resolver is severely degraded. Recommend immediate pod restart to re-establish DNS connections.';
-            } else if (dnsLatency > 5000) { // Lowered from 15000
+            } else if (dnsLatency > thresholds.dns_latency_high) {
                 issues.push('High DNS latency');
                 severity = 'high';
                 action = 'Investigate DNS';
                 aiSuggestion = 'DNS queries are slow. Check DNS server health or consider using a local DNS cache.';
-            } else if (dnsLatency > 2000) { // New medium threshold
+            } else if (dnsLatency > thresholds.dns_latency_medium) {
                 issues.push('Elevated DNS latency');
                 severity = 'medium';
                 action = 'Monitor DNS';
                 aiSuggestion = 'DNS latency is higher than optimal. Monitor DNS performance and consider optimization.';
             }
 
-            if (tcpRetrans > 10) { // Lowered from 20
+            if (tcpRetrans > thresholds.tcp_retrans_critical) {
                 issues.push('Excessive TCP retransmissions');
                 severity = 'high';
                 action = 'Migrate Pod';
                 aiSuggestion = 'Network path is unreliable. Recommend migrating pod to a different node with better network connectivity.';
-            } else if (tcpRetrans > 3) { // Lowered from 10
+            } else if (tcpRetrans > thresholds.tcp_retrans_high) {
                 issues.push('TCP retransmissions detected');
                 severity = severity === 'high' ? 'high' : 'medium';
                 action = 'Monitor Network';
                 aiSuggestion = 'TCP retransmissions indicate network congestion. Monitor node network metrics and consider QoS policies.';
-            } else if (tcpRetrans > 0) { // Show even 1 retransmission
+            } else if (tcpRetrans > thresholds.tcp_retrans_medium) {
                 issues.push('Minor TCP retransmissions');
                 severity = severity === 'high' ? 'high' : severity === 'medium' ? 'medium' : 'low';
                 action = 'Monitor';
                 aiSuggestion = 'Some TCP retransmissions detected. This is normal but worth monitoring if it increases.';
             }
 
-            if (packetLoss > 5) { // Lowered from 10
+            if (packetLoss > thresholds.packet_loss_critical) {
                 issues.push('Critical packet loss');
                 severity = 'high';
                 action = 'Urgent: Migrate Pod';
                 aiSuggestion = 'Severe packet loss detected. Network interface may be failing. Immediate pod migration recommended.';
-            } else if (packetLoss > 2) { // Lowered from 5
+            } else if (packetLoss > thresholds.packet_loss_high) {
                 issues.push('Packet loss detected');
                 severity = 'high';
                 action = 'Check Network';
                 aiSuggestion = 'Packet loss is affecting performance. Verify network interface health and check for network saturation.';
-            } else if (packetLoss > 0) { // Show any packet loss
+            } else if (packetLoss > thresholds.packet_loss_medium) {
                 issues.push('Minor packet loss');
                 severity = severity === 'high' ? 'high' : 'medium';
                 action = 'Monitor Network';
                 aiSuggestion = 'Packet loss detected. Monitor network health to ensure it doesn\'t worsen.';
             }
 
-            if (cpuLatency > 20000) { // Lowered from 50000
+            if (cpuLatency > thresholds.cpu_latency_critical) {
                 issues.push('High CPU scheduling latency');
                 severity = severity === 'high' ? 'high' : 'medium';
                 action = 'Reduce CPU Load';
                 aiSuggestion = 'Pod is experiencing CPU starvation. Consider increasing CPU limits or moving to a less loaded node.';
-            } else if (cpuLatency > 10000) { // New medium threshold
+            } else if (cpuLatency > thresholds.cpu_latency_high) {
                 issues.push('Moderate CPU scheduling latency');
                 severity = severity === 'high' ? 'high' : 'medium';
                 action = 'Monitor CPU';
@@ -298,7 +333,7 @@ export function NetworkTopology() {
             return severityOrder[b.severity] - severityOrder[a.severity];
         }));
 
-    }, [metrics]);
+    }, [metrics, thresholds]);
 
     // Physics simulation for force-directed layout
     useEffect(() => {
@@ -826,7 +861,7 @@ export function NetworkTopology() {
 
                         {selectedPodMetrics?.tcp_metrics && (
                             <div className="metrics-section">
-                                <h4>🔌 TCP Metrics</h4>
+                                <h4>TCP Metrics</h4>
                                 <div className="panel-metric">
                                     <span>Avg SRTT:</span>
                                     <span>{(selectedPodMetrics.tcp_metrics.avg_srtt_us / 1000).toFixed(2)} ms</span>
@@ -856,7 +891,7 @@ export function NetworkTopology() {
 
                         {selectedPodMetrics?.sched_latency && (
                             <div className="metrics-section">
-                                <h4>⚡ CPU Scheduling</h4>
+                                <h4>CPU Scheduling</h4>
                                 <div className="panel-metric">
                                     <span>Avg Run Queue:</span>
                                     <span>{(selectedPodMetrics.sched_latency.avg_runqueue_latency_us / 1000).toFixed(2)} ms</span>
@@ -907,7 +942,7 @@ export function NetworkTopology() {
                 <div className="logs-modal">
                     <div className="logs-container">
                         <div className="logs-header">
-                            <h3>📋 Pod Logs: {podLogs.pod}</h3>
+                            <h3>Pod Logs: {podLogs.pod}</h3>
                             <button onClick={() => setPodLogs(null)}><FiX /></button>
                         </div>
                         <pre className="logs-content">{podLogs.logs}</pre>
@@ -920,16 +955,244 @@ export function NetworkTopology() {
                 <div className="migration-advisor-panel">
                     <div className="advisor-header">
                         <div>
-                            <h3><FiZap /> Intelligent Pod Migration Advisor</h3>
+                            <h3>Intelligent Pod Migration Advisor</h3>
                             <span className="advisor-subtitle">Real-time eBPF-based recommendations</span>
                         </div>
-                        <button onClick={() => setShowMigrationAdvisor(false)}><FiX /></button>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button 
+                                onClick={() => setShowThresholdPanel(!showThresholdPanel)}
+                                style={{
+                                    padding: '0.5rem 1rem',
+                                    background: showThresholdPanel ? 'rgba(59, 130, 246, 0.2)' : 'rgba(71, 85, 105, 0.3)',
+                                    border: '1px solid rgba(71, 85, 105, 0.5)',
+                                    borderRadius: '6px',
+                                    color: '#e2e8f0',
+                                    cursor: 'pointer',
+                                    fontSize: '0.875rem'
+                                }}
+                            >
+                                Configure Thresholds
+                            </button>
+                            <button onClick={() => setShowMigrationAdvisor(false)}><FiX /></button>
+                        </div>
                     </div>
+                    
+                    {/* Threshold Configuration Panel */}
+                    {showThresholdPanel && (
+                        <div style={{
+                            padding: '1.5rem',
+                            background: 'rgba(15, 23, 42, 0.8)',
+                            borderBottom: '1px solid rgba(71, 85, 105, 0.3)',
+                            borderTop: '1px solid rgba(71, 85, 105, 0.3)'
+                        }}>
+                            <h4 style={{ margin: '0 0 1rem 0', color: '#e2e8f0', fontSize: '1rem' }}>Metric Thresholds</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                                        DNS Latency - Critical (μs)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editThresholds.dns_latency_critical}
+                                        onChange={(e) => setEditThresholds({...editThresholds, dns_latency_critical: Number(e.target.value)})}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.5rem',
+                                            background: 'rgba(30, 41, 59, 0.8)',
+                                            border: '1px solid rgba(71, 85, 105, 0.5)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0'
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                                        DNS Latency - High (μs)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editThresholds.dns_latency_high}
+                                        onChange={(e) => setEditThresholds({...editThresholds, dns_latency_high: Number(e.target.value)})}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.5rem',
+                                            background: 'rgba(30, 41, 59, 0.8)',
+                                            border: '1px solid rgba(71, 85, 105, 0.5)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0'
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                                        DNS Latency - Medium (μs)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editThresholds.dns_latency_medium}
+                                        onChange={(e) => setEditThresholds({...editThresholds, dns_latency_medium: Number(e.target.value)})}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.5rem',
+                                            background: 'rgba(30, 41, 59, 0.8)',
+                                            border: '1px solid rgba(71, 85, 105, 0.5)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0'
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                                        TCP Retransmissions - Critical
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editThresholds.tcp_retrans_critical}
+                                        onChange={(e) => setEditThresholds({...editThresholds, tcp_retrans_critical: Number(e.target.value)})}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.5rem',
+                                            background: 'rgba(30, 41, 59, 0.8)',
+                                            border: '1px solid rgba(71, 85, 105, 0.5)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0'
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                                        TCP Retransmissions - High
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editThresholds.tcp_retrans_high}
+                                        onChange={(e) => setEditThresholds({...editThresholds, tcp_retrans_high: Number(e.target.value)})}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.5rem',
+                                            background: 'rgba(30, 41, 59, 0.8)',
+                                            border: '1px solid rgba(71, 85, 105, 0.5)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0'
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                                        Packet Loss - Critical
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editThresholds.packet_loss_critical}
+                                        onChange={(e) => setEditThresholds({...editThresholds, packet_loss_critical: Number(e.target.value)})}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.5rem',
+                                            background: 'rgba(30, 41, 59, 0.8)',
+                                            border: '1px solid rgba(71, 85, 105, 0.5)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0'
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                                        Packet Loss - High
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editThresholds.packet_loss_high}
+                                        onChange={(e) => setEditThresholds({...editThresholds, packet_loss_high: Number(e.target.value)})}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.5rem',
+                                            background: 'rgba(30, 41, 59, 0.8)',
+                                            border: '1px solid rgba(71, 85, 105, 0.5)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0'
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                                        CPU Latency - Critical (μs)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editThresholds.cpu_latency_critical}
+                                        onChange={(e) => setEditThresholds({...editThresholds, cpu_latency_critical: Number(e.target.value)})}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.5rem',
+                                            background: 'rgba(30, 41, 59, 0.8)',
+                                            border: '1px solid rgba(71, 85, 105, 0.5)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0'
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#94a3b8', fontSize: '0.875rem' }}>
+                                        CPU Latency - High (μs)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={editThresholds.cpu_latency_high}
+                                        onChange={(e) => setEditThresholds({...editThresholds, cpu_latency_high: Number(e.target.value)})}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.5rem',
+                                            background: 'rgba(30, 41, 59, 0.8)',
+                                            border: '1px solid rgba(71, 85, 105, 0.5)',
+                                            borderRadius: '6px',
+                                            color: '#e2e8f0'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                <button
+                                    onClick={() => {
+                                        setThresholds(editThresholds);
+                                        localStorage.setItem('migrationThresholds', JSON.stringify(editThresholds));
+                                        setShowThresholdPanel(false);
+                                    }}
+                                    style={{
+                                        padding: '0.5rem 1rem',
+                                        background: 'rgba(34, 197, 94, 0.2)',
+                                        border: '1px solid rgba(34, 197, 94, 0.4)',
+                                        borderRadius: '6px',
+                                        color: '#4ade80',
+                                        cursor: 'pointer',
+                                        fontSize: '0.875rem'
+                                    }}
+                                >
+                                    Save
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setEditThresholds(thresholds);
+                                        setShowThresholdPanel(false);
+                                    }}
+                                    style={{
+                                        padding: '0.5rem 1rem',
+                                        background: 'rgba(71, 85, 105, 0.3)',
+                                        border: '1px solid rgba(71, 85, 105, 0.5)',
+                                        borderRadius: '6px',
+                                        color: '#94a3b8',
+                                        cursor: 'pointer',
+                                        fontSize: '0.875rem'
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     
                     <div className="advisor-content">
                         {migrationSuggestions.length === 0 ? (
                             <div className="advisor-empty">
-                                <FiCheckCircle size={48} />
                                 <h4>All Pods Performing Optimally</h4>
                                 <p>No migration recommendations at this time</p>
                             </div>
@@ -948,16 +1211,22 @@ export function NetworkTopology() {
                                         </div>
                                         
                                         <div className="suggestion-reason">
-                                            <FiAlertCircle />
                                             <span>{suggestion.reason}</span>
                                         </div>
                                         
-                                        <div className="ai-suggestion">
-                                            <div className="ai-header">
-                                                <FiZap />
-                                                <span>AI Analysis:</span>
+                                        <div className="suggestion-content">
+                                            <div className="notification-section">
+                                                <div className="notification-header">
+                                                    <span className="notification-badge">Notification</span>
+                                                </div>
+                                                <p className="notification-text">{suggestion.aiSuggestion}</p>
                                             </div>
-                                            <p>{suggestion.aiSuggestion}</p>
+                                            <div className="suggestion-section">
+                                                <div className="suggestion-header-label">
+                                                    <span>Suggestion</span>
+                                                </div>
+                                                <p className="suggestion-text">{suggestion.action}</p>
+                                            </div>
                                         </div>
                                         
                                         <div className="suggestion-metrics">
@@ -979,14 +1248,13 @@ export function NetworkTopology() {
                                         
                                         <div className="suggestion-action">
                                             <span className="migration-hint">
-                                                <FiArrowRight />
                                                 Recommended Action: {suggestion.action}
                                             </span>
                                         </div>
 
                                         {suggestion.logs && (
                                             <details className="suggestion-logs">
-                                                <summary>📋 Recent Pod Logs</summary>
+                                                <summary>Recent Pod Logs</summary>
                                                 <pre className="logs-preview">{suggestion.logs}</pre>
                                             </details>
                                         )}

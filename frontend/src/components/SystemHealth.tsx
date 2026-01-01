@@ -35,21 +35,14 @@ export function SystemHealth() {
     });
     const [editThresholds, setEditThresholds] = useState<HealthThresholds>(thresholds);
 
-    // Fetch CPU scheduling metrics
+    // Extract CPU scheduling metrics from WebSocket
     useEffect(() => {
-        const fetchSchedMetrics = async () => {
-            try {
-                const data = await api.getSchedLatencyMetrics();
-                setSchedMetrics(data);
-            } catch (err) {
-                // Silently fail if scheduling metrics not available
-            }
-        };
-        
-        fetchSchedMetrics();
-        const interval = setInterval(fetchSchedMetrics, 3000);
-        return () => clearInterval(interval);
-    }, []);
+        if (metrics && (metrics as any).sched_latency) {
+            setSchedMetrics((metrics as any).sched_latency);
+        } else if (metrics && metrics.node_system && (metrics.node_system as any).sched_latency) {
+            setSchedMetrics((metrics.node_system as any).sched_latency);
+        }
+    }, [metrics]);
 
     const handleSaveThresholds = () => {
         setThresholds(editThresholds);
