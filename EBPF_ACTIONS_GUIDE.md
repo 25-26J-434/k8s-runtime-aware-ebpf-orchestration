@@ -214,7 +214,7 @@ curl -X POST http://localhost:8080/api/pod/ebpf-action \
 ## 🖥️ How to Use in Topology UI
 
 ### 1. Navigate to Topology
-Go to http://localhost:5000/topology
+Go to http://localhost:3000/topology
 
 ### 2. Click Any Pod
 Click on any pod in the visualization
@@ -377,5 +377,4 @@ You can now:
 - Prove the value of eBPF + Kubernetes
 
 Your dashboard + topology now provides **full observability AND control** - the perfect foundation for runtime-aware orchestration research!
-
 

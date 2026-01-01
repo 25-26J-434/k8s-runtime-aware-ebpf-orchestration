@@ -127,3 +127,5 @@ curl -s http://localhost:4000/api/rules/by-policy/redirect-service-a-to-c/rule-f
 
       curl -s http://localhost:4000/api/rules/by-policy/redirect-service-a-to-c/rule-file -o /tmp/rule.json
       ./k8s/component-2/apply-local-redirect.sh /tmp/rule.json
+
+kubectl -n test-services port-forward svc/service-a 5000:5000

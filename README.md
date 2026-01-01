@@ -362,7 +362,7 @@ npm install
 npm run dev
 ```
 
-**Dashboard will be available at:** `http://localhost:5000`
+**Dashboard will be available at:** `http://localhost:3000`
 
 ### Step 7: Verify Everything is Working
 
@@ -404,7 +404,7 @@ You should now have:
 **eBPF Daemon**: Collecting DNS latency from kernel  
 **Sample Services**: 3 pods generating DNS traffic  
 **REST API**: Available at `http://localhost:8080`  
-**React Dashboard**: Available at `http://localhost:5000`
+**React Dashboard**: Available at `http://localhost:3000`
 
 **Dashboard Features:**
 - Real-time DNS latency graphs per node
@@ -506,7 +506,7 @@ lsof -i :8080
 
 ```bash
 # Check frontend is running
-lsof -i :5000
+lsof -i :3000
 
 # Check API is accessible
 curl http://localhost:8080/health

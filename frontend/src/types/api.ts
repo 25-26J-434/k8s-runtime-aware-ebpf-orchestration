@@ -258,6 +258,25 @@ export interface Service {
     ports: string[];
 }
 
+export interface RedirectRulePayload {
+    policy_name: string;
+    namespace: string;
+    frontend_service: string;
+    frontend_service_port: string | number;
+    monitor_pod_contains: string;
+    metric: string;
+    violation_threshold: number | string;
+    action: string;
+    redirect_backend_label: string;
+    redirect_backend_port: string | number;
+    redirect_backend_protocol: string;
+    ttl_seconds: number | string;
+    choose_best_pod?: boolean;
+    backend_candidate_label?: string;
+    redirect_winner_label?: string;
+    notes?: string;
+}
+
 export type RedirectionStatus = 'applied' | 'expired' | 'deleted' | 'skipped' | 'observed';
 
 export interface RedirectionEventPayload {

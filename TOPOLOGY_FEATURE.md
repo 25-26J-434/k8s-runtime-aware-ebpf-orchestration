@@ -87,7 +87,7 @@ Performs actions on pods.
 
 ### 1. Access the Topology Page
 ```
-http://localhost:5000/topology
+http://localhost:3000/topology
 ```
 
 ### 2. Navigate to Topology
@@ -174,7 +174,7 @@ These should already be configured in your `k8s/daemonset.yaml`.
    ```
 
 2. **Navigate to Topology**
-   - Open http://localhost:5000/topology
+   - Open http://localhost:3000/topology
 
 3. **Explore the graph**
    - See all your pods visualized
@@ -262,5 +262,4 @@ Next steps for your research:
 4. Build intelligent routing decisions based on topology + metrics
 
 Enjoy exploring your cluster! 🚀
-
 

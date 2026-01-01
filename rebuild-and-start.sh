@@ -62,14 +62,13 @@ echo "   BACKEND READY"
 echo "═══════════════════════════════════════════════════════"
 echo ""
 echo "Backend API: http://localhost:8080/api/metrics"
-echo "Frontend will start on: http://localhost:5000"
+echo "Frontend will start on: http://localhost:3000"
 echo ""
 echo "Starting frontend dev server..."
 echo ""
 
 cd frontend
 npm run dev
-
 
 
 
