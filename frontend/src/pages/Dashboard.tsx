@@ -305,7 +305,7 @@ export function Dashboard() {
                         <h2>SYSTEM HEALTH</h2>
                         <span className="section-badge">Real-time Status</span>
                     </div>
-                    <SystemHealth />
+                    <SystemHealth metrics={metrics} />
                 </section>
 
                 {/* Top Performers */}
@@ -319,7 +319,7 @@ export function Dashboard() {
                             <h2>PERFORMANCE RANKINGS</h2>
                             <span className="section-badge">Top & Bottom Pods</span>
                         </div>
-                        <TopPerformers />
+                        <TopPerformers metrics={metrics} />
                     </section>
                 )}
 
@@ -333,7 +333,7 @@ export function Dashboard() {
                         <h2>CPU SCHEDULING LATENCY</h2>
                         <span className="section-badge">Run Queue Performance</span>
                     </div>
-                    <CPUSchedulingMetrics />
+                    <CPUSchedulingMetrics metrics={metrics} />
                 </section>
 
                 {/* Disk I/O Metrics */}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useMetrics } from '../hooks/useMetrics';
+import type { MetricsResponse } from '../types/api';
 import './CPUSchedulingMetrics.css';
 
 interface SchedMetrics {
@@ -18,8 +18,11 @@ interface PodSchedMetrics {
     cpu_starvation_count: number;
 }
 
-export function CPUSchedulingMetrics() {
-    const { metrics } = useMetrics(5000);
+interface CPUSchedulingMetricsProps {
+    metrics?: MetricsResponse | null;
+}
+
+export function CPUSchedulingMetrics({ metrics }: CPUSchedulingMetricsProps = {}) {
     const [nodeMetrics, setNodeMetrics] = useState<SchedMetrics | null>(null);
     const [topPods, setTopPods] = useState<PodSchedMetrics[]>([]);
     const [loading, setLoading] = useState(true);
