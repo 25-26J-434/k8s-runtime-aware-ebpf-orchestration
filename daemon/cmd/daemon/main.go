@@ -10,7 +10,6 @@ import (
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/loader"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/plugins/routing"
-	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scaling"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 )
 
@@ -101,17 +100,9 @@ func main() {
 	log.Println("[Main] Initializing Service Health collector...")
 	telemetry.InitServiceHealthCollector(nodeName, k8sClient)
 
-	log.Println("[Main] Starting Intelligent Scheduler...")
-
-	log.Println("[Main] Initializing Scaling store (MongoDB)...")
-	if err := scaling.InitMongo(); err != nil {
-		log.Fatalf("[Scaling] Mongo init failed: %v", err)
-	}
-
-	// init scheduler store using same mongo client
-
-	log.Println("[Main] Starting Scaling Controller...")
-	go scaling.StartScalingController(k8sClient)
+	// MongoDB-dependent features (scaling, scheduler) disabled
+	// log.Println("[Main] Starting Intelligent Scheduler...")
+	// log.Println("[Main] Starting Scaling Controller...")
 	log.Println("[Main] Initializing NAT Metadata collector...")
 	telemetry.InitNATMetadataCollector(nodeName)
 

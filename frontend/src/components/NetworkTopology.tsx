@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMetrics } from '../hooks/useMetrics';
+import { usePodDetails } from '../hooks/usePodDetails';
 import { api } from '../services/api';
 import { topologyWebSocket } from '../services/websocket';
 import { 
     FiRefreshCw, FiTrash2, FiX, FiCheckCircle, 
     FiAlertCircle, FiTerminal, FiRotateCw, FiZap,
-    FiArrowRight, FiCpu, FiServer
+    FiServer
 } from 'react-icons/fi';
 import './NetworkTopology.css';
 
@@ -69,7 +70,7 @@ export function NetworkTopology() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [pods, setPods] = useState<PodNode[]>([]);
     const [connections, setConnections] = useState<Connection[]>([]);
-    const [realConnections, setRealConnections] = useState<any[]>([]);
+    const [realConnections] = useState<any[]>([]);
     const [selectedPod, setSelectedPod] = useState<PodNode | null>(null);
     const [draggedPod, setDraggedPod] = useState<PodNode | null>(null);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -669,7 +670,7 @@ export function NetworkTopology() {
         if (!window.confirm(`Delete pod ${selectedPod.name}?`)) return;
         
         try {
-            const response = await fetch('http://localhost:8080/api/pod/action', {
+            const response = await fetch('/api/pod/action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -698,7 +699,7 @@ export function NetworkTopology() {
         if (!window.confirm(`Restart pod ${selectedPod.name}?`)) return;
         
         try {
-            const response = await fetch('http://localhost:8080/api/pod/action', {
+            const response = await fetch('/api/pod/action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -725,7 +726,7 @@ export function NetworkTopology() {
         if (!selectedPod) return;
         
         try {
-            const response = await fetch(`http://localhost:8080/api/pod/logs?namespace=${selectedPod.namespace}&pod=${selectedPod.name}&lines=100`);
+            const response = await fetch(`/api/pod/logs?namespace=${selectedPod.namespace}&pod=${selectedPod.name}&lines=100`);
             const result = await response.json();
             if (result.success) {
                 setPodLogs({ pod: selectedPod.name, logs: result.logs || 'No logs available' });
@@ -737,25 +738,7 @@ export function NetworkTopology() {
         }
     };
 
-    // Fetch logs for pod recommendations
-    const fetchLogsForPod = async (namespace: string, podName: string) => {
-        const key = `${namespace}/${podName}`;
-        if (loadingLogs[key]) return null;
-        
-        setLoadingLogs(prev => ({ ...prev, [key]: true }));
-        
-        try {
-            const response = await fetch(`http://localhost:8080/api/pod/logs?namespace=${namespace}&pod=${podName}&lines=20`);
-            const result = await response.json();
-            setLoadingLogs(prev => ({ ...prev, [key]: false }));
-            return result.success ? result.logs : 'Logs unavailable';
-        } catch (error) {
-            setLoadingLogs(prev => ({ ...prev, [key]: false }));
-            return 'Error fetching logs';
-        }
-    };
-
-    // Note: Removed automatic log fetching for migration suggestions to reduce console noise
+    // Note: fetchLogsForPod removed - automatic log fetching for migration suggestions was disabled
     // Logs can still be fetched manually when viewing suggestion details
 
     // Extract unique node names from cluster topology (has all nodes) or fallback to podDetails
@@ -781,36 +764,7 @@ export function NetworkTopology() {
           }, {})
         : podDetails?.cluster_metrics?.pods_per_node || {};
 
-    // Get pods for selected node from cluster topology (has all nodes and their pods)
-    const nodePods = selectedNode && clusterTopology?.nodes
-        ? (() => {
-            const selectedNodeData = clusterTopology.nodes.find((node: any) => node.name === selectedNode);
-            if (!selectedNodeData || !selectedNodeData.pods) return [];
-            
-            // Convert cluster topology pod format to match podDetails format for display
-            // Merge with podDetails data if available for more complete information
-            return selectedNodeData.pods.map((topologyPod: any) => {
-                const podKey = `${topologyPod.namespace}/${topologyPod.name}`;
-                const podDetail = podDetails?.pods?.[podKey];
-                
-                return {
-                    key: podKey,
-                    pod: {
-                        name: topologyPod.name,
-                        namespace: topologyPod.namespace,
-                        node_name: selectedNode,
-                        pod_ip: topologyPod.ip || podDetail?.pod_ip || 'N/A',
-                        status: topologyPod.status || podDetail?.status || 'Unknown',
-                        created_at: podDetail?.created_at || '',
-                        containers: podDetail?.containers || [],
-                        total_cpu_requested: podDetail?.total_cpu_requested,
-                        total_memory_requested: podDetail?.total_memory_requested,
-                        labels: topologyPod.labels || podDetail?.labels || {}
-                    }
-                };
-            });
-          })()
-        : [];
+    // Note: nodePods removed - was computed but never used
     
     // Get pod count for selected node from cluster topology
     const selectedNodePodCount = selectedNode && clusterTopology?.nodes
@@ -851,7 +805,7 @@ export function NetworkTopology() {
                             }}
                         >
                             <option value="">All Nodes</option>
-                            {nodeListForSelector.map((node) => (
+                            {nodeListForSelector.map((node: string) => (
                                 <option key={node} value={node}>
                                     {node} ({nodePodCounts[node] || 0} pods)
                                 </option>
@@ -946,15 +900,15 @@ export function NetworkTopology() {
                                 <h4>DNS Metrics</h4>
                                 <div className="panel-metric">
                                     <span>Avg Latency:</span>
-                                    <span>{(selectedPodMetrics.dns_latency.avg_latency_us / 1000).toFixed(2)} ms</span>
+                                    <span>{((selectedPodMetrics.dns_latency?.avg_latency_us || 0) / 1000).toFixed(2)} ms</span>
                                 </div>
                                 <div className="panel-metric">
                                     <span>Max Latency:</span>
-                                    <span>{(selectedPodMetrics.dns_latency.max_latency_us / 1000).toFixed(2)} ms</span>
+                                    <span>{((selectedPodMetrics.dns_latency?.max_latency_us || 0) / 1000).toFixed(2)} ms</span>
                                 </div>
                                 <div className="panel-metric">
                                     <span>Total Queries:</span>
-                                    <span>{selectedPodMetrics.dns_latency.total_events || 0}</span>
+                                    <span>{selectedPodMetrics.dns_latency?.total_events || 0}</span>
                                 </div>
                             </div>
                         )}
@@ -964,27 +918,27 @@ export function NetworkTopology() {
                                 <h4>TCP Metrics</h4>
                                 <div className="panel-metric">
                                     <span>Avg SRTT:</span>
-                                    <span>{(selectedPodMetrics.tcp_metrics.avg_srtt_us / 1000).toFixed(2)} ms</span>
+                                    <span>{((selectedPodMetrics.tcp_metrics?.avg_srtt_us || 0) / 1000).toFixed(2)} ms</span>
                                 </div>
                                 <div className="panel-metric">
                                     <span>Retransmissions:</span>
-                                    <span className={selectedPodMetrics.tcp_metrics.retransmissions > 5 ? 'metric-warning' : ''}>
-                                        {selectedPodMetrics.tcp_metrics.retransmissions || 0}
+                                    <span className={(selectedPodMetrics.tcp_metrics?.retransmissions || 0) > 5 ? 'metric-warning' : ''}>
+                                        {selectedPodMetrics.tcp_metrics?.retransmissions || 0}
                                     </span>
                                 </div>
                                 <div className="panel-metric">
                                     <span>Packet Loss:</span>
-                                    <span className={selectedPodMetrics.tcp_metrics.packet_loss > 3 ? 'metric-critical' : ''}>
-                                        {selectedPodMetrics.tcp_metrics.packet_loss || 0}
+                                    <span className={(selectedPodMetrics.tcp_metrics?.packet_loss || 0) > 3 ? 'metric-critical' : ''}>
+                                        {selectedPodMetrics.tcp_metrics?.packet_loss || 0}
                                     </span>
                                 </div>
                                 <div className="panel-metric">
                                     <span>Bad Handshakes:</span>
-                                    <span>{selectedPodMetrics.tcp_metrics.bad_handshakes || 0}</span>
+                                    <span>{selectedPodMetrics.tcp_metrics?.bad_handshakes || 0}</span>
                                 </div>
                                 <div className="panel-metric">
                                     <span>Total Events:</span>
-                                    <span>{selectedPodMetrics.tcp_metrics.total_events || 0}</span>
+                                    <span>{selectedPodMetrics.tcp_metrics?.total_events || 0}</span>
                                 </div>
                             </div>
                         )}
@@ -994,21 +948,21 @@ export function NetworkTopology() {
                                 <h4>CPU Scheduling</h4>
                                 <div className="panel-metric">
                                     <span>Avg Run Queue:</span>
-                                    <span>{(selectedPodMetrics.sched_latency.avg_runqueue_latency_us / 1000).toFixed(2)} ms</span>
+                                    <span>{((selectedPodMetrics.sched_latency?.avg_runqueue_latency_us || 0) / 1000).toFixed(2)} ms</span>
                                 </div>
                                 <div className="panel-metric">
                                     <span>Max Latency:</span>
-                                    <span>{(selectedPodMetrics.sched_latency.max_runqueue_latency_us / 1000).toFixed(2)} ms</span>
+                                    <span>{((selectedPodMetrics.sched_latency?.max_runqueue_latency_us || 0) / 1000).toFixed(2)} ms</span>
                                 </div>
                                 <div className="panel-metric">
                                     <span>CPU Starvation:</span>
-                                    <span className={selectedPodMetrics.sched_latency.cpu_starvation_count > 10 ? 'metric-warning' : ''}>
-                                        {selectedPodMetrics.sched_latency.cpu_starvation_count || 0}
+                                    <span className={(selectedPodMetrics.sched_latency?.cpu_starvation_count || 0) > 10 ? 'metric-warning' : ''}>
+                                        {selectedPodMetrics.sched_latency?.cpu_starvation_count || 0}
                                     </span>
                                 </div>
                                 <div className="panel-metric">
                                     <span>Total Events:</span>
-                                    <span>{selectedPodMetrics.sched_latency.total_events || 0}</span>
+                                    <span>{selectedPodMetrics.sched_latency?.total_events || 0}</span>
                                 </div>
                             </div>
                         )}

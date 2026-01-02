@@ -19,6 +19,12 @@ export default defineConfig({
                 secure: false,
                 ws: true,
             },
+            '/ws': {
+                target: 'http://localhost:8080',
+                ws: true,
+                changeOrigin: true,
+                secure: false,
+            },
             '/metrics': {
                 target: 'http://localhost:8080',
                 changeOrigin: true,
