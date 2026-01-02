@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useMetrics } from '../hooks/useMetrics';
 import { usePodDetails } from '../hooks/usePodDetails';
 import { api } from '../services/api';
+import { topologyWebSocket } from '../services/websocket';
 import { 
     FiRefreshCw, FiTrash2, FiX, FiCheckCircle, 
     FiAlertCircle, FiTerminal, FiRotateCw, FiZap,
-    FiArrowRight, FiCpu
+    FiArrowRight, FiCpu, FiServer
 } from 'react-icons/fi';
 import './NetworkTopology.css';
 
@@ -52,8 +53,20 @@ interface MigrationSuggestion {
 }
 
 export function NetworkTopology() {
-    const { metrics } = useMetrics(3000);
+    const [selectedNode, setSelectedNode] = useState<string | null>(null);
     const { data: podDetails } = usePodDetails(5000);
+    
+    // Find node key from selected node name using useMetrics to get availableNodes
+    // We need to call useMetrics to get availableNodes, but we'll use a separate call for metrics
+    const { availableNodes } = useMetrics(3000, null);
+    
+    // Find node key from selected node name
+    const selectedNodeKey = selectedNode 
+        ? availableNodes.find(node => node.name === selectedNode)?.key || null
+        : null;
+    
+    // Get metrics for selected node (or first node if none selected)
+    const { metrics: displayMetrics } = useMetrics(3000, selectedNodeKey);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [pods, setPods] = useState<PodNode[]>([]);
     const [connections, setConnections] = useState<Connection[]>([]);
@@ -69,6 +82,7 @@ export function NetworkTopology() {
     const [actionResult, setActionResult] = useState<{type: 'success' | 'error', message: string} | null>(null);
     const [selectedPodMetrics, setSelectedPodMetrics] = useState<any>(null);
     const [loadingLogs, setLoadingLogs] = useState<{[key: string]: boolean}>({});
+    const [clusterTopology, setClusterTopology] = useState<any>(null);
     const animationRef = useRef<number>();
     
     // Threshold configuration state
@@ -105,34 +119,54 @@ export function NetworkTopology() {
     
     const [editThresholds, setEditThresholds] = useState<ThresholdConfig>(thresholds);
     
-    // Fetch connections
+    // Fetch cluster topology via websocket (includes all nodes)
     useEffect(() => {
         let mounted = true;
-        const fetchConnections = async () => {
-            try {
-                const data = await api.getConnectionTopology('all'); // Changed from 'established' to 'all'
-                if (mounted && data.connections) {
-                    console.log('[Topology] Fetched connections:', data.connections.length);
-                    setRealConnections(data.connections);
-                }
-            } catch (err) {
-                console.error('[Topology] Failed to fetch connections:', err);
+
+        const handleTopologyUpdate = (topologyData: any) => {
+            if (mounted && topologyData) {
+                setClusterTopology(topologyData);
             }
         };
-        fetchConnections();
-        const interval = setInterval(fetchConnections, 3000);
+
+        // Connect to topology websocket
+        topologyWebSocket.connect();
+        topologyWebSocket.subscribe('topology', handleTopologyUpdate);
+
+        // Fallback to REST API if websocket fails
+        const fetchTopologyFallback = async () => {
+            if (!topologyWebSocket.isConnected() && mounted) {
+                try {
+                    const topology = await api.getClusterTopology();
+                    if (mounted) {
+                        setClusterTopology(topology);
+                    }
+                } catch (err) {
+                    console.error('[Topology] Failed to fetch topology:', err);
+                }
+            }
+        };
+
+        // Initial fallback after delay
+        setTimeout(fetchTopologyFallback, 2000);
+
         return () => {
             mounted = false;
-            clearInterval(interval);
+            topologyWebSocket.unsubscribe('topology', handleTopologyUpdate);
         };
     }, []);
 
+    // Note: Connection topology websocket support is not yet available in the backend
+    // Connections would need to be added to the websocket broadcaster in the backend
+    // For now, realConnections will remain empty until backend adds websocket support
+    // TODO: Add connections to websocket broadcaster in backend (daemon/pkg/api/websocket.go)
+
     // Build pod nodes
     useEffect(() => {
-        if (!metrics?.pods) return;
+        if (!displayMetrics?.pods) return;
 
         const newPods: PodNode[] = [];
-        const podEntries = Object.entries(metrics.pods);
+        const podEntries = Object.entries(displayMetrics.pods);
 
         podEntries.forEach(([podKey, podData]: [string, any], index) => {
             const [namespace, name] = podKey.split('/');
@@ -179,9 +213,6 @@ export function NetworkTopology() {
         const connectionSet = new Set<string>(); // Track unique connections
         newPods.forEach(pod => podMap.set(pod.id, pod));
         
-        console.log('[Topology] Processing connections, total realConnections:', realConnections.length);
-        console.log('[Topology] Available pods:', Array.from(podMap.keys()));
-        
         realConnections.forEach((conn: any) => {
             // Skip self-connections
             if (!conn.source_pod || !conn.dest_pod || conn.source_pod === conn.dest_pod) {
@@ -209,25 +240,21 @@ export function NetworkTopology() {
                 }
             }
         });
-        
-        console.log('[Topology] Final connections to draw:', newConnections.length);
 
         setPods(newPods);
         setConnections(newConnections);
 
-    }, [metrics, realConnections]);
+    }, [displayMetrics, realConnections]);
 
-    // Analyze metrics for migration advisor with AI suggestions
+    // Analyze metrics for pod recommendations
     useEffect(() => {
-        if (!metrics?.pods) {
-            console.log('[Migration Advisor] No metrics available');
+        if (!displayMetrics?.pods) {
             return;
         }
 
-        console.log('[Migration Advisor] Analyzing metrics for', Object.keys(metrics.pods).length, 'pods');
         const suggestions: MigrationSuggestion[] = [];
         
-        Object.entries(metrics.pods).forEach(([podKey, podData]: [string, any]) => {
+        Object.entries(displayMetrics.pods).forEach(([podKey, podData]: [string, any]) => {
             const [namespace, name] = podKey.split('/');
             const dnsMetrics = podData.dns_latency;
             const tcpMetrics = podData.tcp_metrics;
@@ -242,8 +269,6 @@ export function NetworkTopology() {
             const tcpRetrans = tcpMetrics?.retransmissions || 0;
             const packetLoss = tcpMetrics?.packet_loss || 0;
             const cpuLatency = schedMetrics?.avg_runqueue_latency_us || 0;
-
-            console.log(`[Migration Advisor] Pod ${podKey}: DNS=${dnsLatency}, TCP=${tcpRetrans}, Loss=${packetLoss}, CPU=${cpuLatency}`);
 
             // AI-powered analysis using user-defined thresholds
             if (dnsLatency > thresholds.dns_latency_critical) {
@@ -310,7 +335,6 @@ export function NetworkTopology() {
             }
 
             if (issues.length > 0) {
-                console.log(`[Migration Advisor] Pod ${podKey} has ${issues.length} issues:`, issues);
                 suggestions.push({
                     pod: name,
                     namespace,
@@ -333,7 +357,7 @@ export function NetworkTopology() {
             return severityOrder[b.severity] - severityOrder[a.severity];
         }));
 
-    }, [metrics, thresholds]);
+    }, [displayMetrics, thresholds]);
 
     // Physics simulation for force-directed layout
     useEffect(() => {
@@ -416,14 +440,10 @@ export function NetworkTopology() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Draw connections with animated flow
-            if (connections.length > 0) {
-                console.log('[Topology] Drawing', connections.length, 'connections');
-            }
             connections.forEach(conn => {
                 const source = pods.find(p => p.id === conn.source);
                 const target = pods.find(p => p.id === conn.target);
                 if (!source || !target) {
-                    console.log('[Topology] Skipping connection - pods not found:', conn.source, '->', conn.target);
                     return;
                 }
 
@@ -616,8 +636,8 @@ export function NetworkTopology() {
             setSelectedPod(clickedPod);
             
             // Fetch full metrics for selected pod
-            if (metrics?.pods && metrics.pods[clickedPod.id]) {
-                setSelectedPodMetrics(metrics.pods[clickedPod.id]);
+            if (displayMetrics?.pods && displayMetrics.pods[clickedPod.id]) {
+                setSelectedPodMetrics(displayMetrics.pods[clickedPod.id]);
             }
         } else {
             setSelectedPod(null);
@@ -720,7 +740,7 @@ export function NetworkTopology() {
         }
     };
 
-    // Fetch logs for migration advisor
+    // Fetch logs for pod recommendations
     const fetchLogsForPod = async (namespace: string, podName: string) => {
         const key = `${namespace}/${podName}`;
         if (loadingLogs[key]) return null;
@@ -738,46 +758,128 @@ export function NetworkTopology() {
         }
     };
 
-    // Load logs for migration suggestions
-    useEffect(() => {
-        migrationSuggestions.forEach(async (suggestion) => {
-            if (!suggestion.logs) {
-                const logs = await fetchLogsForPod(suggestion.namespace, suggestion.pod);
-                if (logs) {
-                    setMigrationSuggestions(prev => 
-                        prev.map(s => 
-                            s.pod === suggestion.pod && s.namespace === suggestion.namespace 
-                                ? { ...s, logs } 
-                                : s
-                        )
-                    );
-                }
-            }
-        });
-    }, [migrationSuggestions.length]);
+    // Note: Removed automatic log fetching for migration suggestions to reduce console noise
+    // Logs can still be fetched manually when viewing suggestion details
+
+    // Extract unique node names from cluster topology (has all nodes) or fallback to podDetails
+    // Use availableNodes from useMetrics hook if available, otherwise fallback to clusterTopology or podDetails
+    const topologyAvailableNodes = clusterTopology?.nodes
+        ? clusterTopology.nodes.map((node: any) => node.name)
+        : podDetails?.cluster_metrics?.pods_per_node 
+            ? Object.keys(podDetails.cluster_metrics.pods_per_node)
+            : podDetails?.pods 
+                ? Array.from(new Set(Object.values(podDetails.pods).map((pod: any) => pod.node_name).filter(Boolean)))
+                : [];
+    
+    // Use availableNodes from useMetrics if available (preferred), otherwise use topology nodes
+    const nodeListForSelector = availableNodes.length > 0 
+        ? availableNodes.map(node => node.name)
+        : topologyAvailableNodes;
+    
+    // Create a map of node name to pod count from topology or podDetails
+    const nodePodCounts = clusterTopology?.nodes
+        ? clusterTopology.nodes.reduce((acc: Record<string, number>, node: any) => {
+            acc[node.name] = node.pods?.length || 0;
+            return acc;
+          }, {})
+        : podDetails?.cluster_metrics?.pods_per_node || {};
+
+    // Get pods for selected node from cluster topology (has all nodes and their pods)
+    const nodePods = selectedNode && clusterTopology?.nodes
+        ? (() => {
+            const selectedNodeData = clusterTopology.nodes.find((node: any) => node.name === selectedNode);
+            if (!selectedNodeData || !selectedNodeData.pods) return [];
+            
+            // Convert cluster topology pod format to match podDetails format for display
+            // Merge with podDetails data if available for more complete information
+            return selectedNodeData.pods.map((topologyPod: any) => {
+                const podKey = `${topologyPod.namespace}/${topologyPod.name}`;
+                const podDetail = podDetails?.pods?.[podKey];
+                
+                return {
+                    key: podKey,
+                    pod: {
+                        name: topologyPod.name,
+                        namespace: topologyPod.namespace,
+                        node_name: selectedNode,
+                        pod_ip: topologyPod.ip || podDetail?.pod_ip || 'N/A',
+                        status: topologyPod.status || podDetail?.status || 'Unknown',
+                        created_at: podDetail?.created_at || '',
+                        containers: podDetail?.containers || [],
+                        total_cpu_requested: podDetail?.total_cpu_requested,
+                        total_memory_requested: podDetail?.total_memory_requested,
+                        labels: topologyPod.labels || podDetail?.labels || {}
+                    }
+                };
+            });
+          })()
+        : [];
+    
+    // Get pod count for selected node from cluster topology
+    const selectedNodePodCount = selectedNode && clusterTopology?.nodes
+        ? (() => {
+            const selectedNodeData = clusterTopology.nodes.find((node: any) => node.name === selectedNode);
+            return selectedNodeData?.pods?.length || 0;
+          })()
+        : 0;
 
     return (
         <div className="network-topology-pro">
             {/* Header */}
             <div className="topology-header-pro">
                 <div>
-                    <h2>🌐 Pod Network Topology</h2>
-                    <span className="topology-stats">{pods.length} Pods • {connections.length} Connections</span>
+                    <h2>Pod Network Topology</h2>
+                    <span className="topology-stats">
+                        {selectedNode ? `${selectedNodePodCount} Pods on ${selectedNode}` : `${pods.length} Pods`} • {connections.length} Connections
+                    </span>
                 </div>
                 <div className="topology-controls-pro">
+                    <div className="node-selector-container">
+                        <FiServer style={{ color: '#60a5fa', fontSize: '1.25rem' }} />
+                        <label style={{ color: '#e2e8f0', fontSize: '0.95rem', fontWeight: 500 }}>
+                            Select Node:
+                        </label>
+                        <select
+                            value={selectedNode || ''}
+                            onChange={(e) => setSelectedNode(e.target.value || null)}
+                            style={{
+                                padding: '0.5rem 1rem',
+                                background: 'rgba(30, 41, 59, 0.8)',
+                                border: '1px solid rgba(71, 85, 105, 0.5)',
+                                borderRadius: '6px',
+                                color: '#e2e8f0',
+                                fontSize: '0.95rem',
+                                cursor: 'pointer',
+                                minWidth: '250px',
+                            }}
+                        >
+                            <option value="">All Nodes</option>
+                            {nodeListForSelector.map((node) => (
+                                <option key={node} value={node}>
+                                    {node} ({nodePodCounts[node] || 0} pods)
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                     <button 
                         className={`control-btn-pro ${isPaused ? '' : 'active'}`}
                         onClick={() => setIsPaused(!isPaused)}
                     >
-                        {isPaused ? <FiRefreshCw /> : '⏸'}
+                        {isPaused ? <FiRefreshCw /> : ''}
                         {isPaused ? 'Resume' : 'Pause'}
                     </button>
                     <button 
                         className={`control-btn-pro ${showMigrationAdvisor ? 'active' : ''}`}
-                        onClick={() => setShowMigrationAdvisor(!showMigrationAdvisor)}
+                        onClick={() => {
+                            setShowMigrationAdvisor(!showMigrationAdvisor);
+                            // Close node panel when opening recommendations
+                            if (!showMigrationAdvisor) {
+                                setSelectedNode(null);
+                            }
+                        }}
                     >
                         <FiZap />
-                        Migration Advisor
+                        Pod Recommendations
                         {migrationSuggestions.length > 0 && (
                             <span className="badge">{migrationSuggestions.length}</span>
                         )}
@@ -815,6 +917,7 @@ export function NetworkTopology() {
                 )}
             </div>
 
+
             {/* Selected pod panel with full eBPF metrics */}
             {selectedPod && (
                 <div className="selected-pod-panel-expanded">
@@ -828,7 +931,7 @@ export function NetworkTopology() {
                     
                     <div className="panel-metrics-expanded">
                         <div className="metrics-section">
-                            <h4>🏥 Health Status</h4>
+                            <h4>Health Status</h4>
                             <div className="panel-metric">
                                 <span>Overall Health:</span>
                                 <span className={`health-badge ${selectedPod.health}`}>
@@ -843,7 +946,7 @@ export function NetworkTopology() {
 
                         {selectedPodMetrics?.dns_latency && (
                             <div className="metrics-section">
-                                <h4>🌐 DNS Metrics</h4>
+                                <h4>DNS Metrics</h4>
                                 <div className="panel-metric">
                                     <span>Avg Latency:</span>
                                     <span>{(selectedPodMetrics.dns_latency.avg_latency_us / 1000).toFixed(2)} ms</span>
@@ -950,12 +1053,12 @@ export function NetworkTopology() {
                 </div>
             )}
 
-            {/* Migration Advisor Panel */}
+            {/* Pod Recommendations Panel */}
             {showMigrationAdvisor && (
                 <div className="migration-advisor-panel">
                     <div className="advisor-header">
                         <div>
-                            <h3>Intelligent Pod Migration Advisor</h3>
+                            <h3>Pod Recommendations</h3>
                             <span className="advisor-subtitle">Real-time eBPF-based recommendations</span>
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>

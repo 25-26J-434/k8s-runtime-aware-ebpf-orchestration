@@ -1,7 +1,7 @@
-import { useMetrics } from '../hooks/useMetrics';
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { FiSettings, FiInfo } from 'react-icons/fi';
+import type { MetricsResponse } from '../types/api';
 import './SystemHealth.css';
 
 interface HealthThresholds {
@@ -24,8 +24,11 @@ const DEFAULT_THRESHOLDS: HealthThresholds = {
     cpu_starvation: { excellent: 0, good: 5, warning: 20, critical: 20 }
 };
 
-export function SystemHealth() {
-    const { metrics } = useMetrics(3000);
+interface SystemHealthProps {
+    metrics?: MetricsResponse | null;
+}
+
+export function SystemHealth({ metrics }: SystemHealthProps = {}) {
     const [schedMetrics, setSchedMetrics] = useState<any>(null);
     const [showThresholds, setShowThresholds] = useState(false);
     const [isEditing, setIsEditing] = useState(false);

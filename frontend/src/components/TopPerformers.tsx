@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMetrics } from '../hooks/useMetrics';
+import type { MetricsResponse } from '../types/api';
 import './TopPerformers.css';
 
 interface PodPerformance {
@@ -16,8 +16,11 @@ interface PodPerformance {
 
 type FilterType = 'all' | 'dns' | 'tcp';
 
-export function TopPerformers() {
-    const { metrics } = useMetrics(3000);
+interface TopPerformersProps {
+    metrics?: MetricsResponse | null;
+}
+
+export function TopPerformers({ metrics }: TopPerformersProps = {}) {
     const [filter, setFilter] = useState<FilterType>('all');
 
     if (!metrics || !metrics.dns.pods) return null;

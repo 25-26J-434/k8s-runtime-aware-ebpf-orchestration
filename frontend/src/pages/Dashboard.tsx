@@ -31,7 +31,8 @@ import '../App.css';
 import '../styles/clean-pods.css';
 
 export function Dashboard() {
-    const { metrics, loading, error } = useMetrics(5000); // Increased from 3000ms to 5000ms
+    const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(null);
+    const { metrics, loading, error, availableNodes, totalPodsAcrossAllNodes } = useMetrics(5000, selectedNodeKey);
     const clusterInfo = useClusterInfo(10000); // Increased from 5000ms to 10000ms
     const { data: podDetails, loading: podDetailsLoading } = usePodDetails(10000); // Increased from 5000ms to 10000ms
     const [activeSection, setActiveSection] = useState<string>('overview');
@@ -42,6 +43,13 @@ export function Dashboard() {
     const [diskIOMetrics, setDiskIOMetrics] = useState<any>(null);
     const [diskIOPodMetrics, setDiskIOPodMetrics] = useState<any>({});
     const [diskIOContainerMetrics, setDiskIOContainerMetrics] = useState<any>({});
+
+    // Auto-select first node when nodes become available
+    useEffect(() => {
+        if (availableNodes.length > 0 && !selectedNodeKey) {
+            setSelectedNodeKey(availableNodes[0].key);
+        }
+    }, [availableNodes, selectedNodeKey]);
 
     // Scroll to section
     const scrollToSection = (sectionId: string) => {
@@ -78,23 +86,12 @@ export function Dashboard() {
         // Extract scheduling latency from metrics
         const schedData = (metrics as any).sched_latency;
         if (schedData) {
-            console.log('[Dashboard] Found sched_latency data:', schedData);
             setSchedMetrics(schedData);
-        } else {
-            console.log('[Dashboard] No sched_latency data found in metrics');
         }
         
         // Extract disk I/O from metrics
-        console.log('[Dashboard] Checking for disk_io:', {
-            has_node_system: !!metrics.node_system,
-            node_system_keys: metrics.node_system ? Object.keys(metrics.node_system) : [],
-            has_disk_io: !!metrics.node_system?.disk_io,
-        });
         if (metrics.node_system?.disk_io) {
-            console.log('[Dashboard] Found disk_io data:', metrics.node_system.disk_io);
             setDiskIOMetrics(metrics.node_system.disk_io);
-        } else {
-            console.log('[Dashboard] No disk_io data found in node_system');
         }
         
         // Extract pod-level scheduling and disk I/O
@@ -128,11 +125,6 @@ export function Dashboard() {
                     diskIOByContainer[containerKey] = containerData.disk_io;
                 }
             });
-            
-            // Debug: Only log if there's a mismatch
-            if (Object.keys(diskIOByContainer).length > 0) {
-                console.log('[Dashboard] Found disk I/O for containers:', Object.keys(diskIOByContainer).length);
-            }
             
             if (Object.keys(diskIOByContainer).length > 0) {
                 setDiskIOContainerMetrics(diskIOByContainer);
@@ -180,6 +172,55 @@ export function Dashboard() {
 
     return (
         <div className="dashboard-content">
+            {/* Node Selector - Top of Dashboard */}
+            {availableNodes.length > 1 && (
+                <div style={{
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 100,
+                    background: 'rgba(15, 23, 42, 0.95)',
+                    backdropFilter: 'blur(10px)',
+                    borderBottom: '1px solid rgba(71, 85, 105, 0.3)',
+                    padding: '1rem 2rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '1rem'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <FiServer style={{ color: '#60a5fa', fontSize: '1.25rem' }} />
+                        <label style={{ color: '#e2e8f0', fontSize: '0.95rem', fontWeight: 500 }}>
+                            Select Node:
+                        </label>
+                        <select
+                            value={selectedNodeKey || ''}
+                            onChange={(e) => setSelectedNodeKey(e.target.value || null)}
+                            style={{
+                                padding: '0.5rem 1rem',
+                                background: 'rgba(30, 41, 59, 0.8)',
+                                border: '1px solid rgba(71, 85, 105, 0.5)',
+                                borderRadius: '6px',
+                                color: '#e2e8f0',
+                                fontSize: '0.95rem',
+                                cursor: 'pointer',
+                                minWidth: '250px',
+                                outline: 'none'
+                            }}
+                        >
+                            {availableNodes.map((node) => (
+                                <option key={node.key} value={node.key}>
+                                    {node.name} {node.ip ? `(${node.ip})` : ''}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
+                        {metrics?.node_name && (
+                            <span>Current: {metrics.node_name} {metrics.node_ip ? `(${metrics.node_ip})` : ''}</span>
+                        )}
+                    </div>
+                </div>
+            )}
             <div className="dashboard-main-wrapper">
                 {/* Sticky Navigation Sidebar */}
                 <nav className="dashboard-nav">
@@ -224,7 +265,9 @@ export function Dashboard() {
                         </div>
                         <div className="overview-card">
                             <div className="overview-label">Total Pods</div>
-                            <div className="overview-value">{podDetails?.cluster_metrics.total_pods || clusterInfo.activePods}</div>
+                            <div className="overview-value">
+                                {totalPodsAcrossAllNodes > 0 ? totalPodsAcrossAllNodes : (podDetails?.cluster_metrics.total_pods || clusterInfo.activePods)}
+                            </div>
                         </div>
                         <div className="overview-card">
                             <div className="overview-label">Total Nodes</div>
@@ -262,7 +305,7 @@ export function Dashboard() {
                         <h2>SYSTEM HEALTH</h2>
                         <span className="section-badge">Real-time Status</span>
                     </div>
-                    <SystemHealth />
+                    <SystemHealth metrics={metrics} />
                 </section>
 
                 {/* Top Performers */}
@@ -276,7 +319,7 @@ export function Dashboard() {
                             <h2>PERFORMANCE RANKINGS</h2>
                             <span className="section-badge">Top & Bottom Pods</span>
                         </div>
-                        <TopPerformers />
+                        <TopPerformers metrics={metrics} />
                     </section>
                 )}
 
@@ -290,7 +333,7 @@ export function Dashboard() {
                         <h2>CPU SCHEDULING LATENCY</h2>
                         <span className="section-badge">Run Queue Performance</span>
                     </div>
-                    <CPUSchedulingMetrics />
+                    <CPUSchedulingMetrics metrics={metrics} />
                 </section>
 
                 {/* Disk I/O Metrics */}
