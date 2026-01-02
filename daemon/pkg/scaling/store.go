@@ -27,7 +27,8 @@ func InitMongo() error {
 	initOnce.Do(func() {
 		uri := os.Getenv("MONGO_URI")
 		if uri == "" {
-			uri = "mongodb://mongo.rules-db.svc.cluster.local:27017"
+			initErr = fmt.Errorf("MONGO_URI is required")
+			return
 		}
 
 		dbName := os.Getenv("MONGO_DB")

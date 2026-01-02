@@ -23,7 +23,6 @@ var tcpMetricsObj []byte
 
 var schedLatencyObj []byte
 
-//go:embed bpf/disk_io.o
 var diskIOObj []byte
 
 var DNSSpec *ebpf.CollectionSpec
