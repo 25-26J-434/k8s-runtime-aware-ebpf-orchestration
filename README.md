@@ -229,97 +229,110 @@ ls /sys/kernel/btf/vmlinux
 
 ## Quick Start Guide
 
-### Complete Setup (Recommended for Testing)
+### Prerequisites
 
-This guide will set up a complete environment with Kind cluster, eBPF daemon, sample services, and React dashboard.
-
-### Step 1: Install Prerequisites
+Install required tools:
 
 ```bash
-# Install Docker (if not already installed)
+# Ubuntu/Debian
 sudo apt update
-sudo apt install -y docker.io
-sudo usermod -aG docker $USER  # Add yourself to docker group
-newgrp docker  # Activate group
+sudo apt install -y \
+    clang \
+    llvm \
+    libbpf-dev \
+    linux-tools-$(uname -r) \
+    linux-headers-$(uname -r) \
+    golang-go \
+    make \
+    docker.io \
+    kubectl \
+    kind \
+    nodejs \
+    npm
 
-# Install Kind
+# Install Kind (if not available via package manager)
 curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
 chmod +x ./kind
 sudo mv ./kind /usr/local/bin/kind
 
-# Install kubectl
-curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-chmod +x kubectl
-sudo mv kubectl /usr/local/bin/
-
-# Install Node.js and npm (for React dashboard)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-
-# Verify installations
-kind version
-kubectl version --client
-docker --version
-node --version
-npm --version
+# Verify kernel BTF support (required for eBPF)
+ls /sys/kernel/btf/vmlinux
 ```
 
-### Step 2: Create Kind Cluster
+### Complete Setup (One Command)
+
+**For first-time setup or complete rebuild:**
 
 ```bash
+# Clone the repository
+git clone <repository-url>
 cd k8s-runtime-aware-ebpf-orchestration
 
-# Create Kind cluster with eBPF support
-kind create cluster --name ebpf-cluster --config k8s/kind-config.yaml
+# Make script executable
+chmod +x rebuild-cluster-and-daemon.sh
 
-# Verify cluster is ready
-kubectl get nodes
-kubectl cluster-info
+# Run complete setup (creates cluster, builds eBPF, builds daemon, deploys)
+./rebuild-cluster-and-daemon.sh
 ```
 
-**What this creates:**
-- Single-node Kubernetes cluster (control-plane + worker)
-- Cluster name: `ebpf-cluster`
-- Node with eBPF capabilities
-- Port mappings for services
-- Optimized for stable, reliable setup
+This script will:
+1. Delete existing cluster (if any)
+2. Create new Kind cluster with eBPF support
+3. Build all eBPF programs (DNS, RTT, TCP, Scheduling, Disk I/O)
+4. Build Go daemon binary
+5. Build Docker image
+6. Load image into Kind cluster
+7. Deploy daemon to Kubernetes
+8. Wait for daemon to be ready
 
-### Step 3: Build and Deploy eBPF Daemon
+**Expected output:**
+```
+═══════════════════════════════════════════════════════
+   REBUILD KIND CLUSTER & DAEMON
+═══════════════════════════════════════════════════════
+
+[1/6] Checking for existing cluster...
+[2/6] Creating new Kind cluster...
+[3/6] Waiting for cluster to be ready...
+[4/6] Rebuilding eBPF programs...
+[5/6] Rebuilding Go daemon...
+[6/6] Building Docker image...
+[7/6] Loading image into kind cluster...
+[8/6] Deploying daemon...
+   Daemon deployed and ready
+```
+
+### Start Frontend Dashboard
+
+After the daemon is deployed:
 
 ```bash
-# Build eBPF programs
-cd ebpf/component-1-daemon
-clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -c dns_latency.c -o dns_latency.o
-cd ../..
+# Terminal 1: Port forward (run in background)
+kubectl -n ebpf-telemetry port-forward svc/ebpf-daemon 8080:8080 &
 
-# Build Go daemon
-cd daemon
-go build -o ebpf-daemon ./cmd/daemon
-cd ..
-
-# Build Docker image
-docker build -t ebpf-daemon:latest daemon/
-
-# Load image into Kind cluster
-kind load docker-image ebpf-daemon:latest --name ebpf-cluster
-
-# Deploy to Kubernetes
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/daemonset.yaml
-
-# Wait for daemon to be ready
-kubectl -n ebpf-telemetry wait --for=condition=ready pod -l app=ebpf-daemon --timeout=60s
-
-# Check daemon status
-kubectl get pods -n ebpf-telemetry
-kubectl logs -n ebpf-telemetry -l app=ebpf-daemon --tail=20
+# Terminal 2: Start frontend
+cd frontend
+npm install  # First time only
+npm run dev
 ```
 
-**Expected Output:**
+The dashboard will be available at `http://localhost:5000` (or the port shown in terminal).
+
+### Quick Rebuild (Without Recreating Cluster)
+
+If you only need to rebuild the daemon after code changes:
+
+```bash
+chmod +x rebuild-daemon.sh
+./rebuild-daemon.sh
 ```
-NAME                READY   STATUS    RESTARTS   AGE
-ebpf-daemon-xxxxx   1/1     Running   0          30s
-```
+
+This will:
+1. Rebuild eBPF programs
+2. Rebuild Go daemon
+3. Build Docker image
+4. Load into cluster
+5. Restart daemon pod
 
 ### Step 4: Deploy Sample Services (DNS Traffic Generators)
 
@@ -354,16 +367,7 @@ pod-b   1/1     Running   0          30s
 pod-c   1/1     Running   0          30s
 ```
 
-### Step 5: Set Up Port Forwarding
-
-```bash
-# Terminal 1: Port forward the eBPF daemon API
-kubectl port-forward -n ebpf-telemetry svc/ebpf-daemon 8080:8080
-```
-
-Keep this terminal open. The API is now accessible at `http://localhost:8080`.
-
-### Step 6: Start React Dashboard
+### Step 4: Set Up Port Forwarding and Start Dashboard
 
 ```bash
 # Terminal 2: Start the React dashboard
@@ -534,22 +538,16 @@ You should now have:
 If you prefer using Make:
 
 ```bash
-# Complete automated setup
-make kind-setup              # Create cluster
-make build-images            # Build all Docker images
-make kind-load-images        # Load images into Kind
-make deploy-all              # Deploy daemon + services
+# Complete automated setup (recommended)
+./rebuild-cluster-and-daemon.sh  # Complete setup: cluster + build + deploy
 
-# Individual commands
+# Or use Makefile commands
 make build-ebpf              # Build eBPF programs only
-make build-daemon            # Build Go daemon only
-make logs-daemon             # View daemon logs
-make metrics                 # Get metrics via API
-make port-forward            # Start port forwarding
-
-# Cleanup
-make undeploy                # Remove deployments
-kind delete cluster --name ebpf-cluster  # Delete cluster
+make build-daemon           # Build Go daemon only
+make build-images           # Build all Docker images
+make deploy-daemon          # Deploy daemon to cluster
+make logs-daemon            # View daemon logs
+make port-forward           # Start port forwarding
 ```
 
 ## Testing Different Services

@@ -6,8 +6,9 @@ echo "   REBUILD KIND CLUSTER & DAEMON"
 echo "═══════════════════════════════════════════════════════"
 echo ""
 
-PROJECT_ROOT="/home/irushig/Research/k8s-runtime-aware-ebpf-orchestration"
-cd "$PROJECT_ROOT"
+# Get the project root directory (same pattern as setup.sh and rebuild-daemon.sh)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # Step 1: Delete existing cluster if it exists
 echo "[1/6] Checking for existing cluster..."
