@@ -51,6 +51,8 @@ curl -i http://localhost:4000/health
 curl -i http://localhost:4000/whoami
 ```
 
+kubectl -n test-services exec curl-test -- sh -c 'for i in $(seq 1 5); do curl -s service-a:5000/whoami; sleep 1; done'
+
 ## Local Setup
 ```bash
 cd backend
