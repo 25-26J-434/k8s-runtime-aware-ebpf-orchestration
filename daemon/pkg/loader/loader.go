@@ -23,6 +23,9 @@ var tcpMetricsObj []byte
 
 var schedLatencyObj []byte
 
+//go:embed bpf/disk_io.o
+var diskIOObj []byte
+
 var DNSSpec *ebpf.CollectionSpec
 var DNSObjs *ebpf.Collection
 var RTTSpec *ebpf.CollectionSpec
@@ -330,4 +333,20 @@ func Close() {
 // SaveVerifierLog writes verifier output to a file for debugging
 func SaveVerifierLog(filename string, log string) error {
 	return os.WriteFile(filename, []byte(log), 0644)
+}
+
+func LoadDiskIOBPF() (*ebpf.CollectionSpec, error) {
+	log.Println("[Loader] Loading Disk I/O BPF program...")
+
+	if len(diskIOObj) == 0 {
+		return nil, fmt.Errorf("embedded BPF object is empty - ensure disk_io.o is compiled")
+	}
+
+	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(diskIOObj))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load disk I/O spec: %w", err)
+	}
+
+	log.Println("[Loader] Disk I/O BPF program loaded successfully")
+	return spec, nil
 }

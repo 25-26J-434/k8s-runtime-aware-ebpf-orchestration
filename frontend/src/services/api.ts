@@ -1,11 +1,18 @@
-import type { MetricsResponse, ClusterTopology, Service, UnifiedMetricsResponse } from '../types/api';
+import type {
+    MetricsResponse,
+    ClusterTopology,
+    Service,
+    UnifiedMetricsResponse,
+    CommStats,
+    CommLogEntry,
+} from '../types/api';
 import type { ScalingRule, LatestMetric, DeploymentInfo } from '../types/scaling';
 
-const API_BASE = '';  // Proxy handles routing
+export const API_BASE = '';  // Proxy handles routing
 const SCALING_API_BASE = (import.meta as any).env?.VITE_SCALING_API_BASE || API_BASE;
 
 // Transform unified metrics to expected format
-function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
+export function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
     const node = data.node || {};
     const pods = data.pods || {};
     
@@ -148,6 +155,25 @@ export const api = {
         return data.services || [];
     },
 
+    // Disk I/O endpoints
+    async getDiskIOMetrics() {
+        const response = await fetch(`${API_BASE}/api/disk/metrics`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O metrics');
+        return response.json();
+    },
+    
+    async getDiskIOPods() {
+        const response = await fetch(`${API_BASE}/api/disk/pods`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O pod metrics');
+        return response.json();
+    },
+    
+    async getDiskIOContainers() {
+        const response = await fetch(`${API_BASE}/api/disk/containers`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O container metrics');
+        return response.json();
+    },
+    
     async getPodDNSMetrics() {
         const response = await fetch(`${API_BASE}/api/dns/pods`);
         if (!response.ok) throw new Error('Failed to fetch pod DNS metrics');
@@ -241,9 +267,7 @@ export const api = {
     async getScalingRules(): Promise<ScalingRule[]> {
         const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules`, {
             method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             cache: 'no-cache',
         });
         if (!response.ok) {
@@ -251,6 +275,20 @@ export const api = {
         }
         return response.json();
     },
+
+    // Node Communication APIs (Component 4)
+    async getCommStats(): Promise<CommStats> {
+        const response = await fetch(`${API_BASE}/api/comm/stats`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch communication stats: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
 
     async createScalingRule(rule: Partial<ScalingRule>): Promise<ScalingRule> {
         const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules`, {
@@ -319,4 +357,47 @@ export const api = {
         }
         return response.json();
     },
-};
+
+    async sendBroadcast(message: any): Promise<void> {
+        const response = await fetch(`${API_BASE}/api/comm/broadcast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(message),
+        });
+        if (!response.ok) throw new Error('Failed to send broadcast');
+    },
+
+    async sendUnicast(target: string, message: any): Promise<void> {
+        const response = await fetch(`${API_BASE}/api/comm/unicast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...message, targets: [target] }),
+        });
+        if (!response.ok) throw new Error('Failed to send unicast');
+    },
+
+    async sendMulticast(targets: string[], message: any): Promise<void> {
+        const response = await fetch(`${API_BASE}/api/comm/multicast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...message, targets }),
+        });
+        if (!response.ok) throw new Error('Failed to send multicast');
+    },
+
+    async getCommLogs(scope: 'local' | 'cluster' = 'local', limit = 50): Promise<CommLogEntry[]> {
+        const params = new URLSearchParams({ scope, limit: `${limit}` });
+        const response = await fetch(`${API_BASE}/api/comm/logs?${params.toString()}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch communication logs: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        return Array.isArray(data?.logs) ? (data.logs as CommLogEntry[]) : [];
+    },
+

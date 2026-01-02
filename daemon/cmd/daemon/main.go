@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/api"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/loader"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/plugins/routing"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scaling"
@@ -65,6 +66,14 @@ func main() {
 		log.Println("[Main] Warning: NODE_NAME not set, using 'unknown'")
 	}
 
+	nodeIP := os.Getenv("NODE_IP")
+	if nodeIP == "" {
+		log.Println("[Main] Warning: NODE_IP not set - communication subsystem will rely on discovery results")
+	}
+
+	commShutdown := comm.Init(comm.Config{NodeName: nodeName, NodeIP: nodeIP})
+	defer commShutdown()
+
 	log.Println("[Main] Initializing DNS collector...")
 	telemetry.InitDNSCollector(nodeName)
 
@@ -73,6 +82,9 @@ func main() {
 
 	log.Println("[Main] Initializing TCP Metrics collector...")
 	telemetry.InitTCPMetricsCollector(nodeName)
+
+	log.Println("[Main] Initializing Scheduling Latency collector...")
+	telemetry.InitSchedLatencyCollector(nodeName)
 
 	log.Println("[Main] Initializing Node System collector...")
 	telemetry.InitNodeSystemCollector(nodeName)
@@ -117,6 +129,7 @@ func main() {
 	telemetry.SetContainerMapper(containerMapper)
 	telemetry.SetTCPContainerMapper(containerMapper)
 	telemetry.SetSchedContainerMapper(containerMapper)
+	telemetry.SetDiskIOContainerMapper(containerMapper)
 	log.Println("[Main] Container Mapper initialized successfully")
 
 	if err := loader.AttachDNSProbes(); err != nil {
@@ -125,10 +138,27 @@ func main() {
 
 	defer loader.Close()
 
+	// Load and start Disk I/O eBPF
+	log.Println("[Main] Loading Disk I/O eBPF...")
+	diskIOSpec, err := loader.LoadDiskIOBPF()
+	if err != nil {
+		log.Printf("[Main] WARNING: Failed to load Disk I/O BPF: %v", err)
+		log.Println("[Main] Continuing without Disk I/O collection...")
+	} else {
+		if err := telemetry.LoadDiskIOBPF(diskIOSpec); err != nil {
+			log.Printf("[Main] WARNING: Failed to initialize Disk I/O: %v", err)
+		} else if err := telemetry.AttachDiskIOProbes(); err != nil {
+			log.Printf("[Main] WARNING: Failed to attach Disk I/O probes: %v", err)
+		} else {
+			log.Println("[Main] Disk I/O eBPF loaded and attached successfully")
+		}
+	}
+
 	go telemetry.StartDNSLatencyCollector()
 	go telemetry.StartRTTCollector()
 	go telemetry.StartTCPMetricsCollector()
 	go telemetry.StartSchedLatencyCollector()
+	go telemetry.StartDiskIOCollector()
 
 	// Start the sample latency-based router (Component 2) so routing decisions can
 	// consume telemetry directly in-process.

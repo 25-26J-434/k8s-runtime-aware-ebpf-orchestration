@@ -104,11 +104,12 @@ export function usePodDetails(refreshInterval: number = 5000) {
         }
       };
 
-      // Check connection status periodically and fallback if needed
-      fallbackInterval = setInterval(checkConnectionAndFallback, refreshInterval);
+      // Check connection status periodically and fallback if needed (only if WebSocket disconnected)
+      // Use longer interval to avoid constant polling
+      fallbackInterval = setInterval(checkConnectionAndFallback, 30000); // Check every 30 seconds
       
-      // Initial fallback check after a short delay
-      setTimeout(checkConnectionAndFallback, 1000);
+      // Initial fallback check after a longer delay (give WebSocket time to connect)
+      setTimeout(checkConnectionAndFallback, 5000);
 
       // Store the cleanup function
       return () => {
