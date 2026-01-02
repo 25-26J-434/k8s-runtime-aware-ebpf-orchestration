@@ -266,10 +266,10 @@ export function useMetrics(_refreshInterval = 3000, selectedNodeKey?: string | n
             clusterMetricsWebSocketSingleton.isConnecting = true;
 
             try {
+                // Use relative URL so Vite proxy handles it
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const host = window.location.hostname;
-                const port = '8080';
-                const wsUrl = `${protocol}//${host}:${port}/api/metrics/ws`;
+                const host = window.location.host;
+                const wsUrl = `${protocol}//${host}/api/metrics/ws`;
 
                 const ws = new WebSocket(wsUrl);
                 clusterMetricsWebSocketSingleton.ws = ws;

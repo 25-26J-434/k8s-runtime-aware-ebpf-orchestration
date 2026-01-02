@@ -142,5 +142,3 @@ func (r *LatencyBasedRouter) SelectEndpoint(serviceName string) string {
 func (r *LatencyBasedRouter) Stop() {
 	close(r.stopChan)
 }
-
-

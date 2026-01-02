@@ -100,6 +100,9 @@ func main() {
 	log.Println("[Main] Initializing Service Health collector...")
 	telemetry.InitServiceHealthCollector(nodeName, k8sClient)
 
+	// MongoDB-dependent features (scaling, scheduler) disabled
+	// log.Println("[Main] Starting Intelligent Scheduler...")
+	// log.Println("[Main] Starting Scaling Controller...")
 	log.Println("[Main] Initializing NAT Metadata collector...")
 	telemetry.InitNATMetadataCollector(nodeName)
 

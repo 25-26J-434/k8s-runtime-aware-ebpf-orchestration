@@ -27,7 +27,8 @@ interface TopPerformersProps {
 export function TopPerformers({ metrics }: TopPerformersProps = {}) {
     const [filter, setFilter] = useState<FilterType>('all');
 
-    if (!metrics || !metrics.dns.pods) return null;
+    const dnsPods = metrics?.dns?.pods;
+    if (!metrics || !dnsPods) return null;
 
     // Get all pod keys from all metric types
     const allPodKeys = new Set<string>();
@@ -291,5 +292,4 @@ export function TopPerformers({ metrics }: TopPerformersProps = {}) {
         </div>
     );
 }
-
 

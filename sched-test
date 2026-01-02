@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sched-test
+  namespace: dns-test
+  labels:
+    app: scale-test
+spec:
+  schedulerName: ebpf-scheduler
+  containers:
+  - name: test
+    image: busybox
+    command: ["sleep", "3600"]

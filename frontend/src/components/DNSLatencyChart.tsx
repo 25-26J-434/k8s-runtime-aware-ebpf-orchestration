@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -129,7 +129,6 @@ export function DNSLatencyChart({ currentLatency, title = 'DNS Latency' }: DNSLa
         </div>
     );
 }
-
 
 
 
