@@ -400,4 +400,4 @@ export const api = {
         const data = await response.json();
         return Array.isArray(data?.logs) ? (data.logs as CommLogEntry[]) : [];
     },
-
+}
