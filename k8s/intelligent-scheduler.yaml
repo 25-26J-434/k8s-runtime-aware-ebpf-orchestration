@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: intelligent-scheduler
+  namespace: ebpf-telemetry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: intelligent-scheduler
+  template:
+    metadata:
+      labels:
+        app: intelligent-scheduler
+    spec:
+      serviceAccountName: ebpf-daemon
+      containers:
+        - name: scheduler
+          image: ebpf-daemon:latest
+          imagePullPolicy: Never
+          command: ["sleep", "infinity"]

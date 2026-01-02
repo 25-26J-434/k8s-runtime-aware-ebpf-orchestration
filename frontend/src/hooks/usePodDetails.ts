@@ -63,7 +63,7 @@ export function usePodDetails(refreshInterval: number = 5000) {
 
   useEffect(() => {
     let mounted = true;
-    let fallbackInterval: NodeJS.Timeout | null = null;
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
 
     // Import WebSocket service
     import('../services/websocket').then(({ podDetailsWebSocket }) => {
@@ -85,7 +85,7 @@ export function usePodDetails(refreshInterval: number = 5000) {
       const checkConnectionAndFallback = async () => {
         if (!podDetailsWebSocket.isConnected() && mounted) {
           try {
-            const response = await fetch('http://localhost:8080/api/pod/details');
+            const response = await fetch('/api/pod/details');
             if (!response.ok) {
               throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -132,5 +132,4 @@ export function usePodDetails(refreshInterval: number = 5000) {
 
   return { data, loading, error };
 }
-
 

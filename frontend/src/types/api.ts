@@ -77,6 +77,25 @@ export interface TCPPodMetrics {
     recent_events?: TCPEvent[];
 }
 
+export interface DiskIOMetrics {
+    total_reads: number;
+    avg_read_latency_ns: number;
+    max_read_latency_ns: number;
+    total_read_bytes: number;
+    total_writes: number;
+    avg_write_latency_ns: number;
+    max_write_latency_ns: number;
+    total_write_bytes: number;
+    total_opens: number;
+    total_closes: number;
+    current_queue_depth: number;
+    max_queue_depth: number;
+    avg_queue_depth: number;
+    total_io_operations: number;
+    total_io_bytes: number;
+    avg_io_latency_ns: number;
+}
+
 export interface NodeSystemMetrics {
     cpu_usage_percent: number;
     memory_total_mb: number;
@@ -86,6 +105,7 @@ export interface NodeSystemMetrics {
     load_avg_1min: number;
     load_avg_5min: number;
     load_avg_15min: number;
+    disk_io?: DiskIOMetrics;
 }
 
 export interface PacketDistributionMetrics {

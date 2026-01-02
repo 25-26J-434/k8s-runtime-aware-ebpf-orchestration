@@ -47,14 +47,14 @@ func AttachTCPMetricsProbes() error {
 	log.Println("[Loader] Attaching TCP Metrics kprobes...")
 
 	probes := map[string]string{
-		"tcp_set_state_probe":      "tcp_set_state",
-		"tcp_retransmit_skb_probe": "tcp_retransmit_skb",
-		"tcp_rtt_estimator_probe":  "tcp_rtt_estimator",
-		"tcp_cwnd_restart_probe":   "tcp_cwnd_restart",
-		"tcp_enter_loss_probe":     "tcp_enter_loss",
+		"tcp_set_state_probe":        "tcp_set_state",
+		"tcp_retransmit_skb_probe":   "tcp_retransmit_skb",
+		"tcp_rtt_estimator_probe":    "tcp_rtt_estimator",
+		"tcp_cwnd_restart_probe":     "tcp_cwnd_restart",
+		"tcp_enter_loss_probe":       "tcp_enter_loss",
 		"tcp_v4_connect_start_probe": "tcp_v4_connect",
-		"tcp_syn_retransmit_probe": "tcp_syn_retransmit",
-		"tcp_close_probe":          "tcp_close",
+		"tcp_syn_retransmit_probe":   "tcp_syn_retransmit",
+		"tcp_close_probe":            "tcp_close",
 	}
 
 	for progName, kernelFunc := range probes {
@@ -77,7 +77,3 @@ func AttachTCPMetricsProbes() error {
 	log.Printf("[Loader] TCP Metrics: Attached %d probes", len(tcpMetricsLinks))
 	return nil
 }
-
-
-
-

@@ -31,8 +31,7 @@ export function IntentRuleBuilder() {
         let ignore = false;
         async function loadOptions() {
             try {
-                const [metrics, topology, services] = await Promise.all([
-                    api.getMetrics().catch(() => null),
+                const [topology, services] = await Promise.all([
                     api.getClusterTopology().catch(() => null),
                     api.getServices().catch(() => []),
                 ]);
