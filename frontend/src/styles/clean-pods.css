@@ -5,7 +5,8 @@
   border: 1px solid rgba(148, 163, 184, 0.1);
   border-radius: 12px;
   padding: 1.5rem;
-  transition: all 0.3s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  will-change: transform;
 }
 
 .pod-card-clean:hover {
@@ -249,6 +250,72 @@
 
 .dot-sep {
   color: rgba(148, 163, 184, 0.3);
+}
+
+/* Organized Container Metrics */
+.container-metrics-organized {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  margin-bottom: 0.875rem;
+}
+
+.container-metric-section {
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 6px;
+  padding: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.container-metric-section:hover {
+  background: rgba(15, 23, 42, 0.6);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.container-metric-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(148, 163, 184, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.625rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.container-metric-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.container-metric-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  padding: 0.25rem 0;
+}
+
+.metric-item-label {
+  color: rgba(148, 163, 184, 0.7);
+  font-weight: 500;
+}
+
+.metric-item-value {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+  font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
+  text-align: right;
+}
+
+.container-metric-empty {
+  font-size: 0.7rem;
+  color: rgba(148, 163, 184, 0.5);
+  text-align: center;
+  padding: 0.5rem;
+  font-style: italic;
 }
 
 /* Responsive */

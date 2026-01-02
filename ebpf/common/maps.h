@@ -1,5 +1,6 @@
 #pragma once
-#include "vmlinux.h"
+// vmlinux.h is already included by the eBPF programs before this header.
+// Keeping it out here avoids fragile relative include paths when building.
 #include <bpf/bpf_helpers.h>
 
 struct dns_event {

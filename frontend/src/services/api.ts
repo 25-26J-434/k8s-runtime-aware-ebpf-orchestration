@@ -5,6 +5,8 @@ import type {
     UnifiedMetricsResponse,
     RedirectionEvent,
     RedirectionEventPayload,
+    CommStats,
+    CommLogEntry,
 } from '../types/api';
 
 const API_BASE = '';  // Proxy handles routing
@@ -21,7 +23,7 @@ type ApplyResponse = {
 };
 
 // Transform unified metrics to expected format
-function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
+export function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
     const node = data.node || {};
     const pods = data.pods || {};
     
@@ -176,6 +178,25 @@ export const api = {
         if (!response.ok) throw new Error('Failed to fetch services');
         const data = await response.json();
         return data.services || [];
+    },
+
+    // Disk I/O endpoints
+    async getDiskIOMetrics() {
+        const response = await fetch(`${API_BASE}/api/disk/metrics`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O metrics');
+        return response.json();
+    },
+
+    async getDiskIOPods() {
+        const response = await fetch(`${API_BASE}/api/disk/pods`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O pod metrics');
+        return response.json();
+    },
+
+    async getDiskIOContainers() {
+        const response = await fetch(`${API_BASE}/api/disk/containers`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O container metrics');
+        return response.json();
     },
 
     async getPodDNSMetrics() {
@@ -428,5 +449,63 @@ export const api = {
             throw new Error(`Failed to fetch routing service identity: ${response.status} ${response.statusText}`);
         }
         return response.text();
+    },
+
+    // Node Communication APIs (Component 4)
+    async getCommStats(): Promise<CommStats> {
+        const response = await fetch(`${API_BASE}/api/comm/stats`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch communication stats: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async sendBroadcast(message: any): Promise<void> {
+        const response = await fetch(`${API_BASE}/api/comm/broadcast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(message),
+        });
+        if (!response.ok) throw new Error('Failed to send broadcast');
+    },
+
+    async sendUnicast(target: string, message: any): Promise<void> {
+        const response = await fetch(`${API_BASE}/api/comm/unicast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...message, targets: [target] }),
+        });
+        if (!response.ok) throw new Error('Failed to send unicast');
+    },
+
+    async sendMulticast(targets: string[], message: any): Promise<void> {
+        const response = await fetch(`${API_BASE}/api/comm/multicast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...message, targets }),
+        });
+        if (!response.ok) throw new Error('Failed to send multicast');
+    },
+
+    async getCommLogs(scope: 'local' | 'cluster' = 'local', limit = 50): Promise<CommLogEntry[]> {
+        const params = new URLSearchParams({ scope, limit: `${limit}` });
+        const response = await fetch(`${API_BASE}/api/comm/logs?${params.toString()}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch communication logs: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        return Array.isArray(data?.logs) ? (data.logs as CommLogEntry[]) : [];
     },
 };

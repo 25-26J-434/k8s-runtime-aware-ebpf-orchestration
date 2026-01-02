@@ -1,7 +1,7 @@
-import { useMetrics } from '../hooks/useMetrics';
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { FiSettings, FiInfo } from 'react-icons/fi';
+import type { MetricsResponse } from '../types/api';
 import './SystemHealth.css';
 
 interface HealthThresholds {
@@ -24,8 +24,11 @@ const DEFAULT_THRESHOLDS: HealthThresholds = {
     cpu_starvation: { excellent: 0, good: 5, warning: 20, critical: 20 }
 };
 
-export function SystemHealth() {
-    const { metrics } = useMetrics(3000);
+interface SystemHealthProps {
+    metrics?: MetricsResponse | null;
+}
+
+export function SystemHealth({ metrics }: SystemHealthProps = {}) {
     const [schedMetrics, setSchedMetrics] = useState<any>(null);
     const [showThresholds, setShowThresholds] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
@@ -35,21 +38,14 @@ export function SystemHealth() {
     });
     const [editThresholds, setEditThresholds] = useState<HealthThresholds>(thresholds);
 
-    // Fetch CPU scheduling metrics
+    // Extract CPU scheduling metrics from WebSocket
     useEffect(() => {
-        const fetchSchedMetrics = async () => {
-            try {
-                const data = await api.getSchedLatencyMetrics();
-                setSchedMetrics(data);
-            } catch (err) {
-                // Silently fail if scheduling metrics not available
-            }
-        };
-        
-        fetchSchedMetrics();
-        const interval = setInterval(fetchSchedMetrics, 3000);
-        return () => clearInterval(interval);
-    }, []);
+        if (metrics && (metrics as any).sched_latency) {
+            setSchedMetrics((metrics as any).sched_latency);
+        } else if (metrics && metrics.node_system && (metrics.node_system as any).sched_latency) {
+            setSchedMetrics((metrics.node_system as any).sched_latency);
+        }
+    }, [metrics]);
 
     const handleSaveThresholds = () => {
         setThresholds(editThresholds);
@@ -621,66 +617,6 @@ export function SystemHealth() {
                     )}
                 </div>
             </div>
-
-            {/* CPU Scheduling Health Card */}
-            {schedMetrics && schedMetrics.node_metrics && schedMetrics.node_metrics.total_events > 0 && (
-                <div className="health-card">
-                    <div className="health-header">
-                        <h3>CPU Scheduling</h3>
-                        <p style={{ fontSize: '0.75rem', color: '#71717a', marginTop: '0.25rem' }}>
-                            Run queue latency and CPU starvation metrics
-                        </p>
-                    </div>
-                    <div className="health-metrics">
-                        <div className="health-metric">
-                            <span className="health-label">Avg Run Queue Latency</span>
-                            <span className="health-value" style={{ 
-                                color: ((schedMetrics.node_metrics.avg_runqueue_latency_us || 0) / 1000) >= 50 ? '#ef4444' : 
-                                       ((schedMetrics.node_metrics.avg_runqueue_latency_us || 0) / 1000) >= 10 ? '#f59e0b' : '#10b981' 
-                            }}>
-                                {((schedMetrics.node_metrics.avg_runqueue_latency_us || 0) / 1000).toFixed(2)} ms
-                            </span>
-                        </div>
-                        <div className="health-metric">
-                            <span className="health-label">Max Run Queue Latency</span>
-                            <span className="health-value" style={{ 
-                                color: ((schedMetrics.node_metrics.max_runqueue_latency_us || 0) / 1000) >= 100 ? '#ef4444' : 
-                                       ((schedMetrics.node_metrics.max_runqueue_latency_us || 0) / 1000) >= 50 ? '#f59e0b' : '#cbd5e1' 
-                            }}>
-                                {((schedMetrics.node_metrics.max_runqueue_latency_us || 0) / 1000).toFixed(2)} ms
-                            </span>
-                        </div>
-                        <div className="health-metric">
-                            <span className="health-label">P95 Run Queue Latency</span>
-                            <span className="health-value">
-                                {((schedMetrics.node_metrics.p95_runqueue_latency_us || 0) / 1000).toFixed(2)} ms
-                            </span>
-                        </div>
-                        <div className="health-metric">
-                            <span className="health-label">P99 Run Queue Latency</span>
-                            <span className="health-value">
-                                {((schedMetrics.node_metrics.p99_runqueue_latency_us || 0) / 1000).toFixed(2)} ms
-                            </span>
-                        </div>
-                        <div className="health-metric">
-                            <span className="health-label">CPU Starvation Events</span>
-                            <span className="health-value" style={{ 
-                                color: (schedMetrics.node_metrics.cpu_starvation_count || 0) === 0 ? '#10b981' : 
-                                       (schedMetrics.node_metrics.cpu_starvation_count || 0) > 20 ? '#ef4444' : 
-                                       (schedMetrics.node_metrics.cpu_starvation_count || 0) > 5 ? '#f59e0b' : '#3b82f6' 
-                            }}>
-                                {(schedMetrics.node_metrics.cpu_starvation_count || 0).toLocaleString()}
-                            </span>
-                        </div>
-                        <div className="health-metric">
-                            <span className="health-label">Total Scheduling Events</span>
-                            <span className="health-value">
-                                {(schedMetrics.node_metrics.total_events || 0).toLocaleString()}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
