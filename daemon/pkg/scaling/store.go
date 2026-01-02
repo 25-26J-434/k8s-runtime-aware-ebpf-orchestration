@@ -2,6 +2,7 @@ package scaling
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -19,6 +20,8 @@ var (
 	collection  *mongo.Collection
 	initOnce    sync.Once
 )
+
+var ErrRuleNotFound = errors.New("scaling rule not found")
 
 // InitMongo initializes MongoDB connection (safe to call multiple times)
 func InitMongo() error {
@@ -192,6 +195,25 @@ func ToggleScalingRule(id primitive.ObjectID) (ScalingRule, error) {
 
 	applyDefaults(&updated)
 	return updated, nil
+}
+
+// DeleteScalingRule deletes a scaling rule by ID.
+func DeleteScalingRule(id primitive.ObjectID) error {
+	if mongoClient == nil || collection == nil {
+		return fmt.Errorf("mongo not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := collection.DeleteOne(ctx, bson.M{"_id": id})
+	if err != nil {
+		return err
+	}
+	if res.DeletedCount == 0 {
+		return ErrRuleNotFound
+	}
+	return nil
 }
 
 // UpdateScalingRuleStatus updates status fields for a rule (last action/value).

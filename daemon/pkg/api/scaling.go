@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -93,6 +94,19 @@ func handleScalingRuleByID(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) != 1 {
 		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		if err := scaling.DeleteScalingRule(id); err != nil {
+			if errors.Is(err, scaling.ErrRuleNotFound) {
+				http.Error(w, "rule not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
