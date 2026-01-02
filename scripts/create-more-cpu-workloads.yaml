@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpu-workload-3
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cpu-workload-3
+  template:
+    metadata:
+      labels:
+        app: cpu-workload-3
+    spec:
+      containers:
+      - name: cpu-intensive
+        image: busybox:latest
+        command: ['sh', '-c']
+        args:
+        - |
+          while true; do
+            # More intensive CPU work
+            for j in $(seq 1 100); do
+              i=0
+              while [ $i -lt 50000 ]; do
+                i=$((i + 1))
+              done
+            done
+            sleep 0.2
+          done
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "64Mi"
+          limits:
+            cpu: "1000m"
+            memory: "128Mi"
+
