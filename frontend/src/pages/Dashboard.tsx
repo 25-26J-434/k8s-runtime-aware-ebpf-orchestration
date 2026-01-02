@@ -6,7 +6,6 @@ import { DNSLatencyChart } from '../components/DNSLatencyChart';
 import { TCPMetricsChart } from '../components/TCPMetricsChart';
 import { SystemResourcesChart } from '../components/SystemResourcesChart';
 import { TCPIssuesChart } from '../components/TCPIssuesChart';
-import { PacketDistributionChart } from '../components/PacketDistributionChart';
 import { SystemHealth } from '../components/SystemHealth';
 import { TopPerformers } from '../components/TopPerformers';
 import { NetworkStats } from '../components/NetworkStats';
@@ -35,7 +34,7 @@ export function Dashboard() {
     const { metrics, loading, error, availableNodes, totalPodsAcrossAllNodes } = useMetrics(5000, selectedNodeKey);
     const clusterInfo = useClusterInfo(10000); // Increased from 5000ms to 10000ms
     const { data: podDetails, loading: podDetailsLoading } = usePodDetails(10000); // Increased from 5000ms to 10000ms
-    const [activeSection, setActiveSection] = useState<string>('overview');
+    const [activeSection, setActiveSection] = useState<string>('health');
     const sectionRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
     const [schedMetrics, setSchedMetrics] = useState<any>(null);
     const [containerSchedMetrics, setContainerSchedMetrics] = useState<any>({});
@@ -50,6 +49,13 @@ export function Dashboard() {
             setSelectedNodeKey(availableNodes[0].key);
         }
     }, [availableNodes, selectedNodeKey]);
+
+    // Save selected node to localStorage
+    useEffect(() => {
+        if (selectedNodeKey) {
+            localStorage.setItem('selectedNodeKey', selectedNodeKey);
+        }
+    }, [selectedNodeKey]);
 
     // Scroll to section
     const scrollToSection = (sectionId: string) => {
@@ -154,26 +160,24 @@ export function Dashboard() {
         );
     }
 
-    // Define navigation items with professional icons - ordered logically
+    // Define navigation items with professional icons - ordered to match dashboard sections
     const navItems = [
-        { id: 'overview', label: 'Overview', icon: FiBarChart2 },
         { id: 'health', label: 'System Health', icon: FiActivity },
-        { id: 'performance', label: 'Performance', icon: FiZap },
-        { id: 'cpu-scheduling', label: 'CPU Scheduling', icon: FiClock },
-        { id: 'disk-io', label: 'Disk I/O', icon: FiDownload },
         { id: 'node-metrics', label: 'Node Metrics', icon: FiServer },
-        { id: 'system', label: 'System Resources', icon: FiCpu },
-        { id: 'network', label: 'Network Stats', icon: FiGlobe },
-        { id: 'tcp-events', label: 'TCP Events', icon: FiRadio },
+        { id: 'system', label: 'Node System Metrics', icon: FiCpu },
+        { id: 'dns', label: 'DNS Metrics', icon: FiGlobe },
+        { id: 'tcp', label: 'TCP Metrics', icon: FiRadio },
+        { id: 'disk-io', label: 'Disk I/O', icon: FiDownload },
+        { id: 'cpu-scheduling', label: 'CPU Scheduling', icon: FiClock },
+        { id: 'performance', label: 'Performance', icon: FiZap },
         { id: 'pod-metrics', label: 'Pod Metrics', icon: FiPackage },
-        { id: 'packets', label: 'Packet Distribution', icon: FiDownload },
         { id: 'services', label: 'Service Health', icon: FiSettings },
     ];
 
     return (
         <div className="dashboard-content">
             {/* Node Selector - Top of Dashboard */}
-            {availableNodes.length > 1 && (
+            {availableNodes.length > 0 && (
                 <div style={{
                     position: 'sticky',
                     top: 0,
@@ -181,42 +185,88 @@ export function Dashboard() {
                     background: 'rgba(15, 23, 42, 0.95)',
                     backdropFilter: 'blur(10px)',
                     borderBottom: '1px solid rgba(71, 85, 105, 0.3)',
-                    padding: '1rem 2rem',
+                    padding: '1.25rem 2rem',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    gap: '1rem'
+                    gap: '2rem',
+                    flexWrap: 'wrap'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <FiServer style={{ color: '#60a5fa', fontSize: '1.25rem' }} />
-                        <label style={{ color: '#e2e8f0', fontSize: '0.95rem', fontWeight: 500 }}>
-                            Select Node:
-                        </label>
-                        <select
-                            value={selectedNodeKey || ''}
-                            onChange={(e) => setSelectedNodeKey(e.target.value || null)}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: 'rgba(30, 41, 59, 0.8)',
-                                border: '1px solid rgba(71, 85, 105, 0.5)',
-                                borderRadius: '6px',
-                                color: '#e2e8f0',
-                                fontSize: '0.95rem',
-                                cursor: 'pointer',
-                                minWidth: '250px',
-                                outline: 'none'
-                            }}
-                        >
-                            {availableNodes.map((node) => (
-                                <option key={node.key} value={node.key}>
-                                    {node.name} {node.ip ? `(${node.ip})` : ''}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                            <FiServer style={{ color: '#60a5fa', fontSize: '1.25rem' }} />
+                            <label style={{ color: '#e2e8f0', fontSize: '0.95rem', fontWeight: 600 }}>
+                                Selected Node:
+                            </label>
+                            <select
+                                value={selectedNodeKey || ''}
+                                onChange={(e) => {
+                                    const newKey = e.target.value || null;
+                                    setSelectedNodeKey(newKey);
+                                    if (newKey) {
+                                        localStorage.setItem('selectedNodeKey', newKey);
+                                    }
+                                }}
+                                style={{
+                                    padding: '0.625rem 1.25rem',
+                                    background: 'rgba(30, 41, 59, 0.8)',
+                                    border: '2px solid rgba(59, 130, 246, 0.4)',
+                                    borderRadius: '8px',
+                                    color: '#e2e8f0',
+                                    fontSize: '0.95rem',
+                                    fontWeight: 500,
+                                    cursor: 'pointer',
+                                    minWidth: '280px',
+                                    outline: 'none',
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onFocus={(e) => {
+                                    e.target.style.borderColor = 'rgba(59, 130, 246, 0.6)';
+                                    e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                                }}
+                                onBlur={(e) => {
+                                    e.target.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+                                    e.target.style.boxShadow = 'none';
+                                }}
+                            >
+                                {availableNodes.map((node) => (
+                                    <option key={node.key} value={node.key}>
+                                        {node.name} {node.ip ? `(${node.ip})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        
                         {metrics?.node_name && (
-                            <span>Current: {metrics.node_name} {metrics.node_ip ? `(${metrics.node_ip})` : ''}</span>
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.75rem',
+                                padding: '0.625rem 1.25rem',
+                                background: 'rgba(30, 41, 59, 0.6)',
+                                border: '2px solid rgba(71, 85, 105, 0.4)',
+                                borderRadius: '8px'
+                            }}>
+                                <FiServer style={{ color: '#94a3b8', fontSize: '1.1rem' }} />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
+                                    <span style={{ 
+                                        color: '#94a3b8', 
+                                        fontSize: '0.75rem', 
+                                        fontWeight: 600,
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px'
+                                    }}>
+                                        Current Node
+                                    </span>
+                                    <span style={{ 
+                                        color: '#e2e8f0', 
+                                        fontSize: '0.9rem', 
+                                        fontWeight: 500 
+                                    }}>
+                                        {metrics.node_name} {metrics.node_ip ? `(${metrics.node_ip})` : ''}
+                                    </span>
+                                </div>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -248,53 +298,6 @@ export function Dashboard() {
                 </nav>
 
             <main className="dashboard-main">
-                {/* Overview Section */}
-                <section 
-                    id="overview" 
-                    ref={(el) => (sectionRefs.current['overview'] = el)}
-                    className="section"
-                >
-                    <div className="section-header">
-                        <h2>DASHBOARD OVERVIEW</h2>
-                        <span className="section-badge">Real-time Monitoring</span>
-                    </div>
-                    <div className="overview-grid">
-                        <div className="overview-card">
-                            <div className="overview-label">Total Containers</div>
-                            <div className="overview-value">{podDetails?.cluster_metrics.total_containers || 0}</div>
-                        </div>
-                        <div className="overview-card">
-                            <div className="overview-label">Total Pods</div>
-                            <div className="overview-value">
-                                {totalPodsAcrossAllNodes > 0 ? totalPodsAcrossAllNodes : (podDetails?.cluster_metrics.total_pods || clusterInfo.activePods)}
-                            </div>
-                        </div>
-                        <div className="overview-card">
-                            <div className="overview-label">Total Nodes</div>
-                            <div className="overview-value">{podDetails?.cluster_metrics.total_nodes || 1}</div>
-                        </div>
-                        <div className="overview-card">
-                            <div className="overview-label">Namespaces</div>
-                            <div className="overview-value">{podDetails?.cluster_metrics.pods_by_namespace ? Object.keys(podDetails.cluster_metrics.pods_by_namespace).length : 0}</div>
-                        </div>
-                        <div className="overview-card">
-                            <div className="overview-label">eBPF Active Pods</div>
-                            <div className="overview-value">
-                                {metrics?.pods ? Object.keys(metrics.pods).length : 0}
-                            </div>
-                        </div>
-                        <div className="overview-card">
-                            <div className="overview-label">Node</div>
-                            <div className="overview-value">{metrics?.node_name || clusterInfo.node}</div>
-                            {metrics?.node_ip && (
-                                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.5rem' }}>
-                                    IP: {metrics.node_ip}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </section>
-
                 {/* System Health Overview */}
                 <section 
                     id="health" 
@@ -308,74 +311,115 @@ export function Dashboard() {
                     <SystemHealth metrics={metrics} />
                 </section>
 
-                {/* Top Performers */}
-                {metrics?.dns.pods && Object.keys(metrics.dns.pods).length > 0 && (
-                    <section 
-                        id="performance" 
-                        ref={(el) => (sectionRefs.current['performance'] = el)}
-                        className="section"
-                    >
-                        <div className="section-header">
-                            <h2>PERFORMANCE RANKINGS</h2>
-                            <span className="section-badge">Top & Bottom Pods</span>
-                        </div>
-                        <TopPerformers metrics={metrics} />
-                    </section>
-                )}
-
-                {/* CPU Scheduling Latency */}
-                <section 
-                    id="cpu-scheduling" 
-                    ref={(el) => (sectionRefs.current['cpu-scheduling'] = el)}
-                    className="section"
-                >
-                    <div className="section-header">
-                        <h2>CPU SCHEDULING LATENCY</h2>
-                        <span className="section-badge">Run Queue Performance</span>
-                    </div>
-                    <CPUSchedulingMetrics metrics={metrics} />
-                </section>
-
-                {/* Disk I/O Metrics */}
-                {diskIOMetrics && (
-                    <section 
-                        id="disk-io" 
-                        ref={(el) => (sectionRefs.current['disk-io'] = el)}
-                        className="section"
-                    >
-                        <div className="section-header">
-                            <h2>DISK I/O METRICS</h2>
-                            <span className="section-badge">Storage Performance</span>
-                        </div>
-                        <DiskIOMetrics 
-                            data={diskIOMetrics}
-                            title="Node Disk I/O Metrics"
-                        />
-                    </section>
-                )}
-
-                {/* Network Statistics */}
-                <section 
-                    id="network" 
-                    ref={(el) => (sectionRefs.current['network'] = el)}
-                    className="section"
-                >
-                    <div className="section-header">
-                        <h2>NETWORK STATISTICS</h2>
-                        <span className="section-badge">Distribution Analysis</span>
-                    </div>
-                    <NetworkStats />
-                </section>
-
-                {/* Node-Level Metrics Section */}
+                {/* Node Metrics Section */}
                 <section 
                     id="node-metrics" 
                     ref={(el) => (sectionRefs.current['node-metrics'] = el)}
                     className="section"
                 >
                     <div className="section-header">
-                        <h2>NODE-LEVEL METRICS</h2>
-                        <span className="section-badge">Cluster-wide Statistics</span>
+                        <h2>NODE METRICS</h2>
+                        <span className="section-badge">Node Overview</span>
+                    </div>
+                    <div className="overview-grid">
+                        <div className="overview-card">
+                            <div className="overview-label">Node Name</div>
+                            <div className="overview-value">{metrics?.node_name || 'N/A'}</div>
+                            {metrics?.node_ip && (
+                                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.5rem' }}>
+                                    IP: {metrics.node_ip}
+                                </div>
+                            )}
+                        </div>
+                        <div className="overview-card">
+                            <div className="overview-label">eBPF Active Pods</div>
+                            <div className="overview-value">
+                                {metrics?.pods ? Object.keys(metrics.pods).length : 0}
+                            </div>
+                        </div>
+                        <div className="overview-card">
+                            <div className="overview-label">Active Containers</div>
+                            <div className="overview-value">
+                                {metrics?.containers ? Object.keys(metrics.containers).length : 0}
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Node System Metrics */}
+                {metrics?.node_system && (
+                    <section 
+                        id="system" 
+                        ref={(el) => (sectionRefs.current['system'] = el)}
+                        className="section"
+                    >
+                        <div className="section-header">
+                            <h2>NODE SYSTEM METRICS</h2>
+                            <span className="section-badge">CPU & Memory</span>
+                        </div>
+
+                        {/* System Resources Chart */}
+                        <div className="chart-container">
+                            <SystemResourcesChart 
+                                cpuUsage={metrics.node_system.cpu_usage_percent}
+                                memoryUsage={metrics.node_system.memory_usage_percent}
+                                title="CPU & Memory Usage Over Time"
+                            />
+                        </div>
+
+                        <div className="metrics-grid">
+                            <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)', borderColor: 'rgba(59, 130, 246, 0.3)'}}>
+                                <div className="stat-header">
+                                    <h3>CPU Usage</h3>
+                                </div>
+                                <div className="stat-value" style={{color: metrics.node_system.cpu_usage_percent > 80 ? '#ef4444' : metrics.node_system.cpu_usage_percent > 60 ? '#f59e0b' : '#10b981'}}>
+                                    {metrics.node_system.cpu_usage_percent.toFixed(1)}%
+                                </div>
+                                <div className="stat-details">
+                                    <span className="stat-label">Current CPU Load</span>
+                                </div>
+                            </div>
+
+                            <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%)', borderColor: 'rgba(139, 92, 246, 0.3)'}}>
+                                <div className="stat-header">
+                                    <h3>Memory Usage</h3>
+                                </div>
+                                <div className="stat-value" style={{color: metrics.node_system.memory_usage_percent > 80 ? '#ef4444' : metrics.node_system.memory_usage_percent > 60 ? '#f59e0b' : '#10b981'}}>
+                                    {metrics.node_system.memory_usage_percent.toFixed(1)}%
+                                </div>
+                                <div className="stat-details">
+                                    <span className="stat-label">
+                                        {metrics.node_system.memory_used_mb.toLocaleString()} MB / {metrics.node_system.memory_total_mb.toLocaleString()} MB
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="stat-card">
+                                <div className="stat-header">
+                                    <h3>Load Average</h3>
+                                </div>
+                                <div className="stat-value" style={{fontSize: '1.1rem'}}>
+                                    <div>1min: {metrics.node_system.load_avg_1min.toFixed(2)}</div>
+                                    <div>5min: {metrics.node_system.load_avg_5min.toFixed(2)}</div>
+                                    <div>15min: {metrics.node_system.load_avg_15min.toFixed(2)}</div>
+                                </div>
+                                <div className="stat-details">
+                                    <span className="stat-label">System Load</span>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                )}
+
+                {/* DNS Metrics Section */}
+                <section 
+                    id="dns" 
+                    ref={(el) => (sectionRefs.current['dns'] = el)}
+                    className="section"
+                >
+                    <div className="section-header">
+                        <h2>DNS METRICS</h2>
+                        <span className="section-badge">Network Resolution</span>
                     </div>
 
                     {/* Node DNS Latency Chart */}
@@ -386,131 +430,291 @@ export function Dashboard() {
                         />
                     </div>
 
-                    {/* TCP Metrics Chart */}
-                    {metrics?.tcp && metrics.tcp.total_events > 0 && (
-                        <div className="chart-container">
-                            <TCPMetricsChart 
-                                currentSRTT={metrics.tcp.last_srtt_us || 0}
-                                currentMinRTT={metrics.tcp.last_min_rtt_us || 0}
-                                title="TCP RTT Metrics Over Time"
-                            />
-                        </div>
-                    )}
-
                     <div className="metrics-grid">
                         <div className="stat-card dns">
                             <div className="stat-header">
-                                <h3>DNS Events</h3>
+                                <h3>Total Events</h3>
                             </div>
                             <div className="stat-value">{metrics?.dns.total_events.toLocaleString() || 0}</div>
                             <div className="stat-details">
-                                <span className="stat-label">Total Queries</span>
-                                <span className="stat-sublabel">Avg: {metrics?.dns.avg_latency_us.toFixed(2)} μs</span>
+                                <span className="stat-label">DNS Queries</span>
                             </div>
                         </div>
 
                         <div className="stat-card latency">
                             <div className="stat-header">
-                                <h3>DNS Latency</h3>
+                                <h3>Average Latency</h3>
                             </div>
                             <div className="stat-value">{metrics?.dns.avg_latency_us.toFixed(2)} <span className="unit">μs</span></div>
                             <div className="stat-details">
-                                <span className="stat-label">Average Response Time</span>
-                                <span className="stat-range">Min: {metrics?.dns.min_latency_us.toFixed(2)} μs • Max: {metrics?.dns.max_latency_us.toFixed(2)} μs</span>
+                                <span className="stat-label">Mean Response Time</span>
+                                <span className="stat-sublabel">{(metrics?.dns.avg_latency_us / 1000).toFixed(2)} ms</span>
                             </div>
                         </div>
 
+                        <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)', borderColor: 'rgba(59, 130, 246, 0.3)'}}>
+                            <div className="stat-header">
+                                <h3>Last Latency</h3>
+                            </div>
+                            <div className="stat-value" style={{color: '#3b82f6'}}>
+                                {metrics?.dns.last_latency_us ? metrics.dns.last_latency_us.toFixed(2) : '0.00'} <span className="unit">μs</span>
+                            </div>
+                            <div className="stat-details">
+                                <span className="stat-label">Most Recent Query</span>
+                                <span className="stat-sublabel">
+                                    {metrics?.dns.last_latency_us ? (metrics.dns.last_latency_us / 1000).toFixed(2) + ' ms' : 'N/A'}
+                                </span>
+                            </div>
+                        </div>
 
-                        {metrics?.tcp && metrics.tcp.total_events > 0 && (
-                            <>
-                                <div className="stat-card tcp">
-                                    <div className="stat-header">
-                                        <h3>TCP Metrics</h3>
-                                    </div>
-                                    <div className="stat-value">{metrics.tcp.total_events.toLocaleString()}</div>
-                                    <div className="stat-details">
-                                        <span className="stat-label">Total Events</span>
-                                        <span className="stat-sublabel">SRTT: {metrics.tcp.last_srtt_us.toFixed(2)} μs</span>
-                                    </div>
-                                </div>
+                        <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)', borderColor: 'rgba(16, 185, 129, 0.3)'}}>
+                            <div className="stat-header">
+                                <h3>Min Latency</h3>
+                            </div>
+                            <div className="stat-value" style={{color: '#10b981'}}>
+                                {metrics?.dns.min_latency_us ? metrics.dns.min_latency_us.toFixed(2) : '0.00'} <span className="unit">μs</span>
+                            </div>
+                            <div className="stat-details">
+                                <span className="stat-label">Fastest Response</span>
+                                <span className="stat-sublabel">
+                                    {metrics?.dns.min_latency_us ? (metrics.dns.min_latency_us / 1000).toFixed(2) + ' ms' : 'N/A'}
+                                </span>
+                            </div>
+                        </div>
 
-                                <div className="stat-card tcp-details">
-                                    <div className="stat-header">
-                                        <h3>TCP Health</h3>
-                                    </div>
-                                    <div className="stat-value" style={{fontSize: '1.2rem'}}>
-                                        <div style={{marginBottom: '0.5rem'}}>Retrans: {metrics.tcp.retransmissions}</div>
-                                        <div style={{marginBottom: '0.5rem'}}>Loss: {metrics.tcp.packet_loss}</div>
-                                        <div>Bad HS: {metrics.tcp.bad_handshakes}</div>
-                                    </div>
-                                    <div className="stat-details">
-                                        <span className="stat-label">Network Quality</span>
-                                        <span className="stat-range">CWND: {metrics.tcp.last_cwnd.toLocaleString()}</span>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-
-                        {schedMetrics?.node_metrics && schedMetrics.node_metrics.total_events > 0 && (
-                            <>
-                                <div className="stat-card scheduling">
-                                    <div className="stat-header">
-                                        <h3>CPU Scheduling</h3>
-                                    </div>
-                                    <div className="stat-value">{schedMetrics.node_metrics.total_events.toLocaleString()}</div>
-                                    <div className="stat-details">
-                                        <span className="stat-label">Total Events</span>
-                                        <span className="stat-sublabel">
-                                            Avg: {(schedMetrics.node_metrics.avg_runqueue_latency_us || 0).toFixed(0)} μs
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div className="stat-card scheduling-latency">
-                                    <div className="stat-header">
-                                        <h3>Run Queue Latency</h3>
-                                    </div>
-                                    <div className="stat-value">
-                                        {(schedMetrics.node_metrics.avg_runqueue_latency_us || 0).toFixed(0)} <span className="unit">μs</span>
-                                    </div>
-                                    <div className="stat-details">
-                                        <span className="stat-label">Average Wait Time</span>
-                                        <span className="stat-range">
-                                            P95: {(schedMetrics.node_metrics.p95_runqueue_latency_us || 0).toFixed(0)} μs • 
-                                            Max: {(schedMetrics.node_metrics.max_runqueue_latency_us || 0).toFixed(0)} μs
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div className={`stat-card scheduling-starvation ${schedMetrics.node_metrics.cpu_starvation_count > 0 ? 'alert' : ''}`}>
-                                    <div className="stat-header">
-                                        <h3>CPU Starvation</h3>
-                                    </div>
-                                    <div className="stat-value" style={{
-                                        color: schedMetrics.node_metrics.cpu_starvation_count > 0 ? '#ef4444' : '#10b981'
-                                    }}>
-                                        {schedMetrics.node_metrics.cpu_starvation_count}
-                                    </div>
-                                    <div className="stat-details">
-                                        <span className="stat-label">Critical Delays</span>
-                                        <span className="stat-sublabel">Latency {'>'} 10ms</span>
-                                    </div>
-                                </div>
-                            </>
-                        )}
+                        <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%)', borderColor: 'rgba(239, 68, 68, 0.3)'}}>
+                            <div className="stat-header">
+                                <h3>Max Latency</h3>
+                            </div>
+                            <div className="stat-value" style={{color: '#ef4444'}}>
+                                {metrics?.dns.max_latency_us ? metrics.dns.max_latency_us.toFixed(2) : '0.00'} <span className="unit">μs</span>
+                            </div>
+                            <div className="stat-details">
+                                <span className="stat-label">Slowest Response</span>
+                                <span className="stat-sublabel">
+                                    {metrics?.dns.max_latency_us ? (metrics.dns.max_latency_us / 1000).toFixed(2) + ' ms' : 'N/A'}
+                                </span>
+                            </div>
+                        </div>
                     </div>
-                    
                 </section>
 
-                {/* TCP Events Timeline - Enhanced */}
+                {/* TCP Metrics Section */}
                 {metrics?.tcp && (
                     <section 
-                        id="tcp-events" 
-                        ref={(el) => (sectionRefs.current['tcp-events'] = el)}
+                        id="tcp" 
+                        ref={(el) => (sectionRefs.current['tcp'] = el)}
                         className="section"
                     >
                         <div className="section-header">
-                            <h2>TCP EVENTS TIMELINE</h2>
+                            <h2>TCP METRICS</h2>
+                            <span className="section-badge">Connection Performance</span>
+                        </div>
+
+                        {/* TCP Metrics Chart */}
+                        {metrics.tcp.total_events > 0 && (
+                            <div className="chart-container">
+                                <TCPMetricsChart 
+                                    currentSRTT={metrics.tcp.last_srtt_us || 0}
+                                    currentMinRTT={metrics.tcp.last_min_rtt_us || 0}
+                                    title="TCP RTT Metrics Over Time"
+                                />
+                            </div>
+                        )}
+
+                        {/* TCP Issues Chart */}
+                        {metrics.tcp.total_events > 0 && (
+                            <div className="chart-container" style={{marginBottom: '2rem'}}>
+                                <TCPIssuesChart 
+                                    retransmissions={metrics.tcp.retransmissions || 0}
+                                    packetLoss={metrics.tcp.packet_loss || 0}
+                                    title="TCP Retransmissions & Packet Loss Over Time"
+                                />
+                            </div>
+                        )}
+
+                        {metrics.tcp.total_events > 0 && (
+                            <div className="metrics-grid" style={{marginBottom: '2rem'}}>
+                                <div className="stat-card tcp">
+                                    <div className="stat-header">
+                                        <h3>Total Events</h3>
+                                    </div>
+                                    <div className="stat-value">{metrics.tcp.total_events.toLocaleString()}</div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">TCP Connections</span>
+                                    </div>
+                                </div>
+
+                                <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)', borderColor: 'rgba(59, 130, 246, 0.3)'}}>
+                                    <div className="stat-header">
+                                        <h3>Average SRTT</h3>
+                                    </div>
+                                    <div className="stat-value" style={{
+                                        color: '#3b82f6',
+                                        fontSize: metrics.tcp.avg_srtt_us > 1000000 ? '1.4rem' : '2rem',
+                                        wordBreak: 'break-word',
+                                        lineHeight: '1.2'
+                                    }}>
+                                        {(() => {
+                                            const val = metrics.tcp.avg_srtt_us || 0;
+                                            if (val >= 1000000) {
+                                                return (val / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' ms';
+                                            }
+                                            return val.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' μs';
+                                        })()}
+                                    </div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">Mean Smoothed RTT</span>
+                                        <span className="stat-sublabel">
+                                            {metrics.tcp.avg_srtt_us ? (
+                                                metrics.tcp.avg_srtt_us >= 1000000 
+                                                    ? (metrics.tcp.avg_srtt_us / 1000000).toFixed(2) + ' s'
+                                                    : (metrics.tcp.avg_srtt_us / 1000).toFixed(2) + ' ms'
+                                            ) : 'N/A'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%)', borderColor: 'rgba(139, 92, 246, 0.3)'}}>
+                                    <div className="stat-header">
+                                        <h3>Last SRTT</h3>
+                                    </div>
+                                    <div className="stat-value" style={{
+                                        color: '#a78bfa',
+                                        fontSize: metrics.tcp.last_srtt_us > 1000000 ? '1.4rem' : '2rem',
+                                        wordBreak: 'break-word',
+                                        lineHeight: '1.2'
+                                    }}>
+                                        {(() => {
+                                            const val = metrics.tcp.last_srtt_us || 0;
+                                            if (val >= 1000000) {
+                                                return (val / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' ms';
+                                            }
+                                            return val.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' μs';
+                                        })()}
+                                    </div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">Most Recent SRTT</span>
+                                        <span className="stat-sublabel">
+                                            {metrics.tcp.last_srtt_us ? (
+                                                metrics.tcp.last_srtt_us >= 1000000 
+                                                    ? (metrics.tcp.last_srtt_us / 1000000).toFixed(2) + ' s'
+                                                    : (metrics.tcp.last_srtt_us / 1000).toFixed(2) + ' ms'
+                                            ) : 'N/A'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)', borderColor: 'rgba(16, 185, 129, 0.3)'}}>
+                                    <div className="stat-header">
+                                        <h3>Min RTT</h3>
+                                    </div>
+                                    <div className="stat-value" style={{
+                                        color: '#10b981',
+                                        fontSize: metrics.tcp.last_min_rtt_us > 1000000 ? '1.4rem' : '2rem',
+                                        wordBreak: 'break-word',
+                                        lineHeight: '1.2'
+                                    }}>
+                                        {(() => {
+                                            const val = metrics.tcp.last_min_rtt_us || 0;
+                                            if (val >= 1000000) {
+                                                return (val / 1000).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' ms';
+                                            }
+                                            return val.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' μs';
+                                        })()}
+                                    </div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">Minimum Round Trip Time</span>
+                                        <span className="stat-sublabel">
+                                            {metrics.tcp.last_min_rtt_us ? (
+                                                metrics.tcp.last_min_rtt_us >= 1000000 
+                                                    ? (metrics.tcp.last_min_rtt_us / 1000000).toFixed(2) + ' s'
+                                                    : (metrics.tcp.last_min_rtt_us / 1000).toFixed(2) + ' ms'
+                                            ) : 'N/A'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%)', borderColor: 'rgba(239, 68, 68, 0.3)'}}>
+                                    <div className="stat-header">
+                                        <h3>Retransmissions</h3>
+                                    </div>
+                                    <div className="stat-value" style={{color: '#ef4444'}}>
+                                        {metrics.tcp.retransmissions.toLocaleString()}
+                                    </div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">Total Retransmissions</span>
+                                        <span className="stat-sublabel">
+                                            {metrics.tcp.total_events > 0 ? ((metrics.tcp.retransmissions / metrics.tcp.total_events) * 100).toFixed(2) + '% rate' : '0%'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%)', borderColor: 'rgba(245, 158, 11, 0.3)'}}>
+                                    <div className="stat-header">
+                                        <h3>Packet Loss</h3>
+                                    </div>
+                                    <div className="stat-value" style={{color: '#f59e0b'}}>
+                                        {metrics.tcp.packet_loss.toLocaleString()}
+                                    </div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">Total Packet Loss</span>
+                                        <span className="stat-sublabel">
+                                            {metrics.tcp.total_events > 0 ? ((metrics.tcp.packet_loss / metrics.tcp.total_events) * 100).toFixed(2) + '% rate' : '0%'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.1) 0%, rgba(236, 72, 153, 0.05) 100%)', borderColor: 'rgba(236, 72, 153, 0.3)'}}>
+                                    <div className="stat-header">
+                                        <h3>Bad Handshakes</h3>
+                                    </div>
+                                    <div className="stat-value" style={{color: '#ec4899'}}>
+                                        {metrics.tcp.bad_handshakes.toLocaleString()}
+                                    </div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">Failed Connections</span>
+                                        <span className="stat-sublabel">
+                                            {metrics.tcp.total_events > 0 ? ((metrics.tcp.bad_handshakes / metrics.tcp.total_events) * 100).toFixed(2) + '% rate' : '0%'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%)', borderColor: 'rgba(99, 102, 241, 0.3)'}}>
+                                    <div className="stat-header">
+                                        <h3>Congestion Window</h3>
+                                    </div>
+                                    <div className="stat-value" style={{
+                                        color: '#6366f1',
+                                        fontSize: metrics.tcp.last_cwnd > 1000000 ? '1.4rem' : '2rem',
+                                        wordBreak: 'break-word',
+                                        lineHeight: '1.2'
+                                    }}>
+                                        {(() => {
+                                            const val = metrics.tcp.last_cwnd || 0;
+                                            if (val >= 1073741824) {
+                                                return (val / 1073741824).toFixed(2) + ' GB';
+                                            } else if (val >= 1048576) {
+                                                return (val / 1048576).toFixed(2) + ' MB';
+                                            } else if (val >= 1024) {
+                                                return (val / 1024).toFixed(2) + ' KB';
+                                            }
+                                            return val.toLocaleString() + ' B';
+                                        })()}
+                                    </div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">Last CWND</span>
+                                        <span className="stat-sublabel">
+                                            {metrics.tcp.last_cwnd ? metrics.tcp.last_cwnd.toLocaleString() + ' bytes' : 'N/A'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* TCP Events Timeline */}
+                        <div className="section-header" style={{marginTop: '2rem', marginBottom: '1rem'}}>
+                            <h3 style={{fontSize: '1.1rem', color: '#e2e8f0', fontWeight: 600}}>TCP Events Timeline</h3>
                             <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
                                 <span className="section-badge">
                                     {metrics.tcp.recent_events && metrics.tcp.recent_events.length > 0 
@@ -531,17 +735,6 @@ export function Dashboard() {
                                 )}
                             </div>
                         </div>
-
-                        {/* TCP Issues Chart */}
-                        {metrics.tcp.total_events > 0 && (
-                            <div className="chart-container" style={{marginBottom: '2rem'}}>
-                                <TCPIssuesChart 
-                                    retransmissions={metrics.tcp.retransmissions || 0}
-                                    packetLoss={metrics.tcp.packet_loss || 0}
-                                    title="TCP Retransmissions & Packet Loss Over Time"
-                                />
-                            </div>
-                        )}
 
                         <div className="events-timeline">
                             {metrics.tcp.recent_events && Array.isArray(metrics.tcp.recent_events) && metrics.tcp.recent_events.length > 0 ? (
@@ -652,6 +845,52 @@ export function Dashboard() {
                                 </div>
                             )}
                         </div>
+                    </section>
+                )}
+
+                {/* Disk I/O Metrics */}
+                {diskIOMetrics && (
+                    <section 
+                        id="disk-io" 
+                        ref={(el) => (sectionRefs.current['disk-io'] = el)}
+                        className="section"
+                    >
+                        <div className="section-header">
+                            <h2>DISK I/O METRICS</h2>
+                            <span className="section-badge">Storage Performance</span>
+                        </div>
+                        <DiskIOMetrics 
+                            data={diskIOMetrics}
+                            title="Node Disk I/O Metrics"
+                        />
+                    </section>
+                )}
+
+                {/* CPU Scheduling Latency */}
+                <section 
+                    id="cpu-scheduling" 
+                    ref={(el) => (sectionRefs.current['cpu-scheduling'] = el)}
+                    className="section"
+                >
+                    <div className="section-header">
+                        <h2>CPU SCHEDULING LATENCY</h2>
+                        <span className="section-badge">Run Queue Performance</span>
+                    </div>
+                    <CPUSchedulingMetrics metrics={metrics} />
+                </section>
+
+                {/* Performance Rankings */}
+                {metrics?.dns.pods && Object.keys(metrics.dns.pods).length > 0 && (
+                    <section 
+                        id="performance" 
+                        ref={(el) => (sectionRefs.current['performance'] = el)}
+                        className="section"
+                    >
+                        <div className="section-header">
+                            <h2>PERFORMANCE RANKINGS</h2>
+                            <span className="section-badge">Top & Bottom Pods</span>
+                        </div>
+                        <TopPerformers metrics={metrics} />
                     </section>
                 )}
 
@@ -1871,174 +2110,154 @@ export function Dashboard() {
                 </section>
                 )}
 
-                {/* Node System Metrics */}
-                {metrics?.node_system && (
-                    <section 
-                        id="system" 
-                        ref={(el) => (sectionRefs.current['system'] = el)}
-                        className="section"
-                    >
-                        <div className="section-header">
-                            <h2>NODE SYSTEM METRICS</h2>
-                            <span className="section-badge">CPU & Memory</span>
-                        </div>
-
-                        {/* System Resources Chart */}
-                        <div className="chart-container">
-                            <SystemResourcesChart 
-                                cpuUsage={metrics.node_system.cpu_usage_percent}
-                                memoryUsage={metrics.node_system.memory_usage_percent}
-                                title="CPU & Memory Usage Over Time"
-                            />
-                        </div>
-
-                        <div className="metrics-grid">
-                            <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)', borderColor: 'rgba(59, 130, 246, 0.3)'}}>
-                                <div className="stat-header">
-                                    <h3>CPU Usage</h3>
-                                </div>
-                                <div className="stat-value" style={{color: metrics.node_system.cpu_usage_percent > 80 ? '#ef4444' : metrics.node_system.cpu_usage_percent > 60 ? '#f59e0b' : '#10b981'}}>
-                                    {metrics.node_system.cpu_usage_percent.toFixed(1)}%
-                                </div>
-                                <div className="stat-details">
-                                    <span className="stat-label">Current CPU Load</span>
-                                </div>
-                            </div>
-
-                            <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%)', borderColor: 'rgba(139, 92, 246, 0.3)'}}>
-                                <div className="stat-header">
-                                    <h3>Memory Usage</h3>
-                                </div>
-                                <div className="stat-value" style={{color: metrics.node_system.memory_usage_percent > 80 ? '#ef4444' : metrics.node_system.memory_usage_percent > 60 ? '#f59e0b' : '#10b981'}}>
-                                    {metrics.node_system.memory_usage_percent.toFixed(1)}%
-                                </div>
-                                <div className="stat-details">
-                                    <span className="stat-label">
-                                        {metrics.node_system.memory_used_mb.toLocaleString()} MB / {metrics.node_system.memory_total_mb.toLocaleString()} MB
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="stat-card">
-                                <div className="stat-header">
-                                    <h3>Load Average</h3>
-                                </div>
-                                <div className="stat-value" style={{fontSize: '1.1rem'}}>
-                                    <div>1min: {metrics.node_system.load_avg_1min.toFixed(2)}</div>
-                                    <div>5min: {metrics.node_system.load_avg_5min.toFixed(2)}</div>
-                                    <div>15min: {metrics.node_system.load_avg_15min.toFixed(2)}</div>
-                                </div>
-                                <div className="stat-details">
-                                    <span className="stat-label">System Load</span>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-                )}
-
-                {/* Packet Distribution */}
-                {metrics?.packet_distribution && (
-                    <section 
-                        id="packets" 
-                        ref={(el) => (sectionRefs.current['packets'] = el)}
-                        className="section"
-                    >
-                        <div className="section-header">
-                            <h2>PACKET DISTRIBUTION</h2>
-                            <span className="section-badge">Traffic Analysis</span>
-                        </div>
-
-                        {/* Packet Distribution Chart */}
-                        {Object.keys(metrics.packet_distribution.packets_by_protocol).length > 0 && (
-                            <div className="chart-container">
-                                <PacketDistributionChart 
-                                    packetsByProtocol={metrics.packet_distribution.packets_by_protocol}
-                                    title="Packet Distribution by Protocol"
-                                />
-                            </div>
-                        )}
-
-                        <div className="metrics-grid">
-                            <div className="stat-card">
-                                <div className="stat-header">
-                                    <h3>Total Packets</h3>
-                                </div>
-                                <div className="stat-value">{metrics.packet_distribution.total_packets.toLocaleString()}</div>
-                                <div className="stat-details">
-                                    <span className="stat-label">All Packets</span>
-                                </div>
-                            </div>
-
-                            {Object.keys(metrics.packet_distribution.packets_by_protocol).length > 0 && (
-                                <div className="stat-card">
-                                    <div className="stat-header">
-                                        <h3>By Protocol</h3>
-                                    </div>
-                                    <div className="stat-value" style={{fontSize: '1rem'}}>
-                                        {Object.entries(metrics.packet_distribution.packets_by_protocol).map(([proto, count]) => (
-                                            <div key={proto}>{proto.toUpperCase()}: {count.toLocaleString()}</div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </section>
-                )}
-
                 {/* Service Health */}
-                {metrics?.service_health && (
-                    <section 
-                        id="services" 
-                        ref={(el) => (sectionRefs.current['services'] = el)}
-                        className="section"
-                    >
-                        <div className="section-header">
-                            <div>
-                                <h2>SERVICE HEALTH</h2>
-                                <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.5rem' }}>
-                                    Real-time monitoring of Kubernetes services and their endpoint health status
-                                </p>
+                {metrics?.service_health && (() => {
+                    // Get pods on the selected node from podDetails (using node_name) and from metrics.pods
+                    const selectedNodeName = metrics?.node_name;
+                    const nodePodKeys = new Set<string>();
+                    
+                    // Add pods from metrics.pods (these are already filtered by selected node)
+                    if (metrics?.pods) {
+                        Object.keys(metrics.pods).forEach(podKey => nodePodKeys.add(podKey));
+                    }
+                    
+                    // Also add pods from podDetails that are on the selected node
+                    if (podDetails?.pods && selectedNodeName) {
+                        Object.entries(podDetails.pods).forEach(([podKey, podData]: [string, any]) => {
+                            if (podData.node_name === selectedNodeName) {
+                                nodePodKeys.add(podKey);
+                            }
+                        });
+                    }
+                    
+                    // Create a map of pod names (just name, not namespace/name) to pod keys for matching
+                    const podNameToKeyMap = new Map<string, Set<string>>();
+                    nodePodKeys.forEach(podKey => {
+                        const [, podName] = podKey.split('/');
+                        if (podName) {
+                            if (!podNameToKeyMap.has(podName)) {
+                                podNameToKeyMap.set(podName, new Set());
+                            }
+                            podNameToKeyMap.get(podName)!.add(podKey);
+                        }
+                    });
+                    
+                    // Filter service details to only include services with endpoints on this node
+                    const filteredServiceDetails: Record<string, any> = {};
+                    if (metrics.service_health.service_details) {
+                        Object.entries(metrics.service_health.service_details).forEach(([serviceKey, service]: [string, any]) => {
+                            // Check if this service has any endpoints on the selected node
+                            if (service.endpoint_health) {
+                                let hasEndpointOnNode = false;
+                                const filteredEndpoints: Record<string, any> = {};
+                                let nodeReadyEndpoints = 0;
+                                let nodeTotalEndpoints = 0;
+                                
+                                Object.entries(service.endpoint_health).forEach(([endpointKey, endpoint]: [string, any]) => {
+                                    const podName = endpoint.pod_name;
+                                    if (podName && podNameToKeyMap.has(podName)) {
+                                        // Check if this pod name matches any pod on the selected node
+                                        // For more accurate matching, we can check if the namespace matches too
+                                        const matchingKeys = podNameToKeyMap.get(podName)!;
+                                        // If there's a match, include this endpoint
+                                        if (matchingKeys.size > 0) {
+                                            // Try to match by namespace if available
+                                            const [serviceNamespace] = serviceKey.split('/');
+                                            let matched = false;
+                                            for (const key of matchingKeys) {
+                                                const [podNamespace] = key.split('/');
+                                                if (podNamespace === serviceNamespace) {
+                                                    matched = true;
+                                                    break;
+                                                }
+                                            }
+                                            // If namespace matches or we only have one pod with this name, include it
+                                            if (matched || matchingKeys.size === 1) {
+                                                hasEndpointOnNode = true;
+                                                filteredEndpoints[endpointKey] = endpoint;
+                                                nodeTotalEndpoints++;
+                                                if (endpoint.status === 'ready') {
+                                                    nodeReadyEndpoints++;
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                                
+                                if (hasEndpointOnNode) {
+                                    // Create filtered service with node-specific endpoint counts
+                                    filteredServiceDetails[serviceKey] = {
+                                        ...service,
+                                        endpoint_health: filteredEndpoints,
+                                        total_endpoints: nodeTotalEndpoints,
+                                        ready_endpoints: nodeReadyEndpoints,
+                                        // Recalculate status based on node endpoints
+                                        status: nodeReadyEndpoints === 0 ? 'unhealthy' : 
+                                                nodeReadyEndpoints === nodeTotalEndpoints ? 'healthy' : 'degraded'
+                                    };
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Calculate filtered summary counts
+                    const filteredTotalServices = Object.keys(filteredServiceDetails).length;
+                    const filteredHealthyServices = Object.values(filteredServiceDetails).filter((s: any) => s.status === 'healthy').length;
+                    const filteredUnhealthyServices = Object.values(filteredServiceDetails).filter((s: any) => s.status !== 'healthy').length;
+                    
+                    return (
+                        <section 
+                            id="services" 
+                            ref={(el) => (sectionRefs.current['services'] = el)}
+                            className="section"
+                        >
+                            <div className="section-header">
+                                <div>
+                                    <h2>SERVICE HEALTH</h2>
+                                    <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.5rem' }}>
+                                        Services with endpoints on selected node: {metrics?.node_name || 'N/A'}
+                                    </p>
+                                </div>
+                                <span className="section-badge">
+                                    {filteredHealthyServices} Healthy / {filteredTotalServices} Total
+                                </span>
                             </div>
-                            <span className="section-badge">
-                                {metrics.service_health.healthy_services} Healthy / {metrics.service_health.total_services} Total
-                            </span>
-                        </div>
 
-                        {/* Summary Cards */}
-                        <div className="metrics-grid" style={{ marginBottom: '2rem' }}>
-                            <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)', borderColor: 'rgba(16, 185, 129, 0.3)'}}>
-                                <div className="stat-header">
-                                    <h3>Healthy Services</h3>
+                            {/* Summary Cards */}
+                            <div className="metrics-grid" style={{ marginBottom: '2rem' }}>
+                                <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)', borderColor: 'rgba(16, 185, 129, 0.3)'}}>
+                                    <div className="stat-header">
+                                        <h3>Healthy Services</h3>
+                                    </div>
+                                    <div className="stat-value" style={{color: '#10b981'}}>{filteredHealthyServices}</div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">All endpoints ready</span>
+                                    </div>
                                 </div>
-                                <div className="stat-value" style={{color: '#10b981'}}>{metrics.service_health.healthy_services}</div>
-                                <div className="stat-details">
-                                    <span className="stat-label">All endpoints ready</span>
+
+                                <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%)', borderColor: 'rgba(239, 68, 68, 0.3)'}}>
+                                    <div className="stat-header">
+                                        <h3>Unhealthy Services</h3>
+                                    </div>
+                                    <div className="stat-value" style={{color: '#ef4444'}}>{filteredUnhealthyServices}</div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">Needs attention</span>
+                                    </div>
+                                </div>
+
+                                <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%)', borderColor: 'rgba(245, 158, 11, 0.3)'}}>
+                                    <div className="stat-header">
+                                        <h3>Total Services</h3>
+                                    </div>
+                                    <div className="stat-value" style={{color: '#f59e0b'}}>{filteredTotalServices}</div>
+                                    <div className="stat-details">
+                                        <span className="stat-label">On this node</span>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%)', borderColor: 'rgba(239, 68, 68, 0.3)'}}>
-                                <div className="stat-header">
-                                    <h3>Unhealthy Services</h3>
-                                </div>
-                                <div className="stat-value" style={{color: '#ef4444'}}>{metrics.service_health.unhealthy_services}</div>
-                                <div className="stat-details">
-                                    <span className="stat-label">Needs attention</span>
-                                </div>
-                            </div>
-
-                            <div className="stat-card" style={{background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%)', borderColor: 'rgba(245, 158, 11, 0.3)'}}>
-                                <div className="stat-header">
-                                    <h3>Total Services</h3>
-                                </div>
-                                <div className="stat-value" style={{color: '#f59e0b'}}>{metrics.service_health.total_services}</div>
-                                <div className="stat-details">
-                                    <span className="stat-label">Monitored</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Service Details Table */}
-                        {metrics.service_health.service_details && Object.keys(metrics.service_health.service_details).length > 0 && (
+                            {/* Service Details Table */}
+                            {Object.keys(filteredServiceDetails).length > 0 && (
                             <div style={{ marginTop: '2rem' }}>
                                 <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', color: '#e2e8f0' }}>Service Details</h3>
                                 <div style={{ 
@@ -2066,7 +2285,7 @@ export function Dashboard() {
                                         <div>Endpoints</div>
                                         <div>Last Check</div>
                                     </div>
-                                    {Object.entries(metrics.service_health.service_details).map(([serviceKey, service]: [string, any]) => {
+                                    {Object.entries(filteredServiceDetails).map(([serviceKey, service]: [string, any]) => {
                                         const statusColor = service.status === 'healthy' ? '#10b981' : 
                                                           service.status === 'degraded' ? '#f59e0b' : '#ef4444';
                                         const statusLabel = service.status === 'healthy' ? 'Healthy' : 
@@ -2144,7 +2363,7 @@ export function Dashboard() {
                         )}
 
                         {/* Endpoint Details */}
-                        {metrics.service_health.service_details && Object.entries(metrics.service_health.service_details).some(([_, service]: [string, any]) => 
+                        {Object.keys(filteredServiceDetails).length > 0 && Object.entries(filteredServiceDetails).some(([_, service]: [string, any]) => 
                             service.endpoint_health && Object.keys(service.endpoint_health).length > 0
                         ) && (
                             <div style={{ marginTop: '2rem' }}>
@@ -2154,7 +2373,7 @@ export function Dashboard() {
                                     gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
                                     gap: '1rem'
                                 }}>
-                                    {Object.entries(metrics.service_health.service_details).map(([serviceKey, service]: [string, any]) => {
+                                    {Object.entries(filteredServiceDetails).map(([serviceKey, service]: [string, any]) => {
                                         if (!service.endpoint_health || Object.keys(service.endpoint_health).length === 0) return null;
                                         
                                         return (
@@ -2239,37 +2458,9 @@ export function Dashboard() {
                             </div>
                         )}
 
-                        {/* Info Box */}
-                        <div style={{ 
-                            marginTop: '2rem',
-                            padding: '1rem',
-                            background: 'rgba(59, 130, 246, 0.1)',
-                            borderRadius: '8px',
-                            border: '1px solid rgba(59, 130, 246, 0.2)'
-                        }}>
-                            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
-                                <div style={{ fontSize: '1.2rem' }}>ℹ️</div>
-                                <div style={{ flex: 1 }}>
-                                    <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: '0.5rem' }}>How Service Health Works</div>
-                                    <div style={{ fontSize: '0.85rem', color: '#94a3b8', lineHeight: '1.6' }}>
-                                        <div style={{ marginBottom: '0.5rem' }}>
-                                            <strong style={{ color: '#cbd5e1' }}>Healthy:</strong> All endpoints are ready and responding
-                                        </div>
-                                        <div style={{ marginBottom: '0.5rem' }}>
-                                            <strong style={{ color: '#cbd5e1' }}>Degraded:</strong> Some endpoints are ready, but not all
-                                        </div>
-                                        <div>
-                                            <strong style={{ color: '#cbd5e1' }}>Unhealthy:</strong> No endpoints are ready or service has no endpoints
-                                        </div>
-                                        <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#64748b' }}>
-                                            Health checks are performed every 10 seconds. HTTP checks are attempted when service ports are available.
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </section>
-                )}
+                    );
+                })()}
 
             </main>
             </div>
