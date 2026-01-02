@@ -9,7 +9,7 @@ export default defineConfig({
         strictPort: true, // Fail if port 5000 is not available
         proxy: {
             '/api/scaling-rules': {
-                target: 'http://localhost:3000',
+                target: 'http://localhost:3001',
                 changeOrigin: true,
                 secure: false,
             },

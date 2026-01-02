@@ -11,7 +11,7 @@ app.use(express.json());
 app.use(cors());
 app.use(morgan('dev'));
 
-const PORT = process.env.SCALING_PORT || 3000;
+const PORT = process.env.SCALING_PORT || 3001;
 const MONGODB_URI = process.env.SCALING_MONGODB_URI || 'mongodb://localhost:27017/rulesdb';
 
 mongoose
