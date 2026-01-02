@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMetrics } from '../hooks/useMetrics';
-import { usePodDetails } from '../hooks/usePodDetails';
 import { api } from '../services/api';
 import { topologyWebSocket } from '../services/websocket';
 import { 
@@ -53,16 +52,26 @@ interface MigrationSuggestion {
 }
 
 export function NetworkTopology() {
-    const [selectedNode, setSelectedNode] = useState<string | null>(null);
-    const { data: podDetails } = usePodDetails(5000);
-    
     // Find node key from selected node name using useMetrics to get availableNodes
     // We need to call useMetrics to get availableNodes, but we'll use a separate call for metrics
     const { availableNodes } = useMetrics(3000, null);
     
-    // Find node key from selected node name
-    const selectedNodeKey = selectedNode 
-        ? availableNodes.find(node => node.name === selectedNode)?.key || null
+    // Get selected node key from localStorage (sync with Dashboard)
+    const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(() => {
+        const saved = localStorage.getItem('selectedNodeKey');
+        return saved || null;
+    });
+    
+    // Auto-select first node when nodes become available (if none selected)
+    useEffect(() => {
+        if (availableNodes.length > 0 && !selectedNodeKey) {
+            setSelectedNodeKey(availableNodes[0].key);
+        }
+    }, [availableNodes, selectedNodeKey]);
+    
+    // Find selected node name from key
+    const selectedNode = selectedNodeKey 
+        ? availableNodes.find(node => node.key === selectedNodeKey)?.name || null
         : null;
     
     // Get metrics for selected node (or first node if none selected)
@@ -740,31 +749,6 @@ export function NetworkTopology() {
 
     // Note: fetchLogsForPod removed - automatic log fetching for migration suggestions was disabled
     // Logs can still be fetched manually when viewing suggestion details
-
-    // Extract unique node names from cluster topology (has all nodes) or fallback to podDetails
-    // Use availableNodes from useMetrics hook if available, otherwise fallback to clusterTopology or podDetails
-    const topologyAvailableNodes = clusterTopology?.nodes
-        ? clusterTopology.nodes.map((node: any) => node.name)
-        : podDetails?.cluster_metrics?.pods_per_node 
-            ? Object.keys(podDetails.cluster_metrics.pods_per_node)
-            : podDetails?.pods 
-                ? Array.from(new Set(Object.values(podDetails.pods).map((pod: any) => pod.node_name).filter(Boolean)))
-                : [];
-    
-    // Use availableNodes from useMetrics if available (preferred), otherwise use topology nodes
-    const nodeListForSelector = availableNodes.length > 0 
-        ? availableNodes.map(node => node.name)
-        : topologyAvailableNodes;
-    
-    // Create a map of node name to pod count from topology or podDetails
-    const nodePodCounts = clusterTopology?.nodes
-        ? clusterTopology.nodes.reduce((acc: Record<string, number>, node: any) => {
-            acc[node.name] = node.pods?.length || 0;
-            return acc;
-          }, {})
-        : podDetails?.cluster_metrics?.pods_per_node || {};
-
-    // Note: nodePods removed - was computed but never used
     
     // Get pod count for selected node from cluster topology
     const selectedNodePodCount = selectedNode && clusterTopology?.nodes
@@ -772,7 +756,7 @@ export function NetworkTopology() {
             const selectedNodeData = clusterTopology.nodes.find((node: any) => node.name === selectedNode);
             return selectedNodeData?.pods?.length || 0;
           })()
-        : 0;
+        : pods.length;
 
     return (
         <div className="network-topology-pro">
@@ -791,8 +775,14 @@ export function NetworkTopology() {
                             Select Node:
                         </label>
                         <select
-                            value={selectedNode || ''}
-                            onChange={(e) => setSelectedNode(e.target.value || null)}
+                            value={selectedNodeKey || ''}
+                            onChange={(e) => {
+                                const newKey = e.target.value || null;
+                                setSelectedNodeKey(newKey);
+                                if (newKey) {
+                                    localStorage.setItem('selectedNodeKey', newKey);
+                                }
+                            }}
                             style={{
                                 padding: '0.5rem 1rem',
                                 background: 'rgba(30, 41, 59, 0.8)',
@@ -804,10 +794,9 @@ export function NetworkTopology() {
                                 minWidth: '250px',
                             }}
                         >
-                            <option value="">All Nodes</option>
-                            {nodeListForSelector.map((node: string) => (
-                                <option key={node} value={node}>
-                                    {node} ({nodePodCounts[node] || 0} pods)
+                            {availableNodes.map((node) => (
+                                <option key={node.key} value={node.key}>
+                                    {node.name} {node.ip ? `(${node.ip})` : ''}
                                 </option>
                             ))}
                         </select>
@@ -823,10 +812,6 @@ export function NetworkTopology() {
                         className={`control-btn-pro ${showMigrationAdvisor ? 'active' : ''}`}
                         onClick={() => {
                             setShowMigrationAdvisor(!showMigrationAdvisor);
-                            // Close node panel when opening recommendations
-                            if (!showMigrationAdvisor) {
-                                setSelectedNode(null);
-                            }
                         }}
                     >
                         <FiZap />
