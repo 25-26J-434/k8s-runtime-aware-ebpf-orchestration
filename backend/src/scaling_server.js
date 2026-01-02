@@ -12,7 +12,7 @@ app.use(cors());
 app.use(morgan('dev'));
 
 const PORT = process.env.SCALING_PORT || 3001;
-const MONGODB_URI = process.env.SCALING_MONGODB_URI || 'mongodb://localhost:27017/rulesdb';
+const MONGODB_URI = process.env.SCALING_MONGODB_URI;
 
 mongoose
   .connect(MONGODB_URI)
