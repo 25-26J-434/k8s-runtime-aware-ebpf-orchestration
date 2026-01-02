@@ -212,6 +212,7 @@ export interface MetricsResponse {
     packet_distribution?: PacketDistributionMetrics;
     service_health?: ServiceHealthMetrics;
     nat_metadata?: NATMetadataMetrics;
+    sched_latency?: any; // Scheduling latency metrics
     pods?: Record<string, PodMetrics>;
     containers?: Record<string, ContainerMetrics>; // Container-level metrics
 }
