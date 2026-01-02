@@ -48,6 +48,19 @@ const policyPresets = [
 const serviceOptions = ['service-a', 'service-b', 'service-c'];
 const portOptions = ['5000', '5001', '5003'];
 const backendLabelOptions = ['app=service-b', 'app=service-c'];
+const servicePortMap: Record<string, string> = {
+    'service-a': '5000',
+    'service-b': '5001',
+    'service-c': '5003',
+};
+
+const resolvePortForSelector = (selector: string) => {
+    const match = selector.match(/app=([\\w-]+)/);
+    if (match && match[1]) {
+        return servicePortMap[match[1]] || '';
+    }
+    return '';
+};
 
 export function Routing() {
     const { metrics } = useMetrics(6000);
@@ -119,6 +132,27 @@ export function Routing() {
         };
         fetchTopologyNode();
     }, []);
+
+    // Keep ports in sync with selected services/labels
+    useEffect(() => {
+        setPayload((prev) => {
+            const autoPort = servicePortMap[prev.source_service];
+            if (autoPort && prev.source_port !== autoPort) {
+                return { ...prev, source_port: autoPort };
+            }
+            return prev;
+        });
+    }, [payload.source_service]);
+
+    useEffect(() => {
+        setPayload((prev) => {
+            const autoPort = resolvePortForSelector(prev.target_selector || '');
+            if (autoPort && (prev.target_port !== autoPort || prev.final_backend_port !== autoPort)) {
+                return { ...prev, target_port: autoPort, final_backend_port: autoPort };
+            }
+            return prev;
+        });
+    }, [payload.target_selector]);
 
     const updateField = (field: keyof RoutingFormState, value: string | boolean | number) => {
         setPayload((prev) => ({
@@ -554,7 +588,14 @@ export function Routing() {
                             <span className="form-label">Source Service *</span>
                             <select
                                 value={payload.source_service || ''}
-                                onChange={(e) => updateField('source_service', e.target.value)}
+                                onChange={(e) => {
+                                    const nextService = e.target.value;
+                                    updateField('source_service', nextService);
+                                    const autoPort = servicePortMap[nextService];
+                                    if (autoPort) {
+                                        updateField('source_port', autoPort);
+                                    }
+                                }}
                                 required
                             >
                                 <option value="">Pick a service</option>
@@ -570,6 +611,7 @@ export function Routing() {
                             <select
                                 value={payload.source_port || ''}
                                 onChange={(e) => updateField('source_port', e.target.value)}
+                                disabled
                                 required
                             >
                                 <option value="">Pick a port</option>
@@ -587,6 +629,11 @@ export function Routing() {
                                 onChange={(e) => {
                                     updateField('target_selector', e.target.value);
                                     updateField('final_backend_label', e.target.value);
+                                    const autoPort = resolvePortForSelector(e.target.value);
+                                    if (autoPort) {
+                                        updateField('target_port', autoPort);
+                                        updateField('final_backend_port', autoPort);
+                                    }
                                 }}
                                 required
                             >
@@ -792,6 +839,7 @@ export function Routing() {
                                 <select value={payload.metric} onChange={(e) => updateField('metric', e.target.value)}>
                                     <option value="dns_us">dns_us (DNS latency)</option>
                                     <option value="rtt_us">rtt_us (round-trip)</option>
+                                    <option value="sched_latency_us">sched_latency_us (CPU scheduling)</option>
                                 </select>
                             </label>
                             <label className="form-field">

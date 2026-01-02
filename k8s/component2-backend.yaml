@@ -26,7 +26,7 @@ spec:
             - name: SERVICE_A_WHOAMI_URL
               value: "http://service-a.test-services.svc.cluster.local:5000/whoami"
             - name: MONGODB_URI
-              value: "mongodb://mongodb.test-services.svc.cluster.local:27017/ebpf-routing"
+              value: "mongodb+srv://kernelEye:root@cluster0.n2rdrcb.mongodb.net/?appName=Cluster0"
             - name: SERVICE_NAME
               value: "component2-backend"
 

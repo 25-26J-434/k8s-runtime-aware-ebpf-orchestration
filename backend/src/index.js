@@ -21,7 +21,9 @@ app.use(cors());
 app.use(morgan('dev'));
 
 const PORT = process.env.PORT || 4000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/ebpf-routing';
+const MONGODB_URI =
+  process.env.MONGODB_URI ||
+  'mongodb+srv://kernelEye:root@cluster0.n2rdrcb.mongodb.net/?appName=Cluster0';
 
 mongoose
   .connect(MONGODB_URI)
