@@ -9,6 +9,11 @@ RUN npm ci --only=production
 
 # Copy source
 COPY src ./src
+# Copy helper scripts (for apply-local-redirect)
+COPY k8s/component-2 ./k8s/component-2
+# Runtime tools needed by the helper (bash, jq, curl, kubectl)
+RUN apk add --no-cache bash jq curl kubectl \
+   && chmod +x /app/k8s/component-2/apply-local-redirect.sh
 
 ENV NODE_ENV=production \
     PORT=4000

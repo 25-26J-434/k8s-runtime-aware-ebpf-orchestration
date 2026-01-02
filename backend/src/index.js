@@ -328,8 +328,9 @@ async function applyLocalRedirectPolicy(policyDoc, ruleDoc) {
       API_URL: process.env.TELEMETRY_API_URL || process.env.API_URL || undefined,
     };
 
-    // Use bash explicitly to avoid PATH/shebang issues in different environments
-    const { stdout, stderr } = await execFileAsync('bash', [scriptPath, rulePath], {
+    // Use absolute bash path to avoid PATH issues in minimal images
+    const bashCmd = process.env.BASH_PATH || '/bin/bash';
+    const { stdout, stderr } = await execFileAsync(bashCmd, [scriptPath, rulePath], {
       env,
       timeout: APPLY_HELPER_TIMEOUT_MS,
     });

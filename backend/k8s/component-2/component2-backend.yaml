@@ -13,7 +13,6 @@ spec:
       labels:
         app: component2-backend
     spec:
-      serviceAccountName: component2-backend
       containers:
         - name: backend
           image: component2-backend:latest
@@ -29,7 +28,6 @@ spec:
               value: "mongodb://mongodb.test-services.svc.cluster.local:27017/ebpf-routing"
             - name: SERVICE_NAME
               value: "component2-backend"
-
 ---
 apiVersion: v1
 kind: Service
@@ -40,45 +38,6 @@ spec:
   selector:
     app: component2-backend
   ports:
-    - name: http
-      port: 4000
+    - port: 4000
       targetPort: 4000
-
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: component2-backend
-  namespace: test-services
-
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: component2-backend-lrp
-rules:
-  - apiGroups: ["apiextensions.k8s.io"]
-    resources: ["customresourcedefinitions"]
-    verbs: ["get", "list"]
-
-  - apiGroups: ["cilium.io"]
-    resources: ["ciliumlocalredirectpolicies"]
-    verbs: ["get", "list", "create", "update", "patch", "delete"]
-
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list", "watch", "patch"]
-
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: component2-backend-lrp-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: component2-backend-lrp
-subjects:
-  - kind: ServiceAccount
-    name: component2-backend
-    namespace: test-services
+      name: http
