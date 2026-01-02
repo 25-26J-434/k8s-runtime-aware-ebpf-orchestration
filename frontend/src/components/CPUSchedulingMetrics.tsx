@@ -6,7 +6,11 @@ interface SchedMetrics {
     total_events: number;
     avg_runqueue_latency_us: number;
     max_runqueue_latency_us: number;
+    min_runqueue_latency_us: number;
+    p50_runqueue_latency_us: number;
     p95_runqueue_latency_us: number;
+    p99_runqueue_latency_us: number;
+    avg_cpu_time_us: number;
     cpu_starvation_count: number;
 }
 
@@ -43,7 +47,11 @@ export function CPUSchedulingMetrics({ metrics }: CPUSchedulingMetricsProps = {}
                 total_events: nodeData.total_events || 0,
                 avg_runqueue_latency_us: nodeData.avg_runqueue_latency_us || 0,
                 max_runqueue_latency_us: nodeData.max_runqueue_latency_us || 0,
+                min_runqueue_latency_us: nodeData.min_runqueue_latency_us || 0,
+                p50_runqueue_latency_us: nodeData.p50_runqueue_latency_us || 0,
                 p95_runqueue_latency_us: nodeData.p95_runqueue_latency_us || 0,
+                p99_runqueue_latency_us: nodeData.p99_runqueue_latency_us || 0,
+                avg_cpu_time_us: nodeData.avg_cpu_time_us || 0,
                 cpu_starvation_count: nodeData.cpu_starvation_count || 0,
             });
 
@@ -131,6 +139,54 @@ export function CPUSchedulingMetrics({ metrics }: CPUSchedulingMetricsProps = {}
 
                 <div className="sched-card">
                     <div className="sched-card-content">
+                        <div className="sched-card-label">Min Latency</div>
+                        <div className="sched-card-value" style={{ 
+                            color: '#10b981'
+                        }}>
+                            {formatLatency(nodeMetrics.min_runqueue_latency_us)}
+                        </div>
+                        <div className="sched-card-subtitle">Minimum delay</div>
+                    </div>
+                </div>
+
+                <div className="sched-card">
+                    <div className="sched-card-content">
+                        <div className="sched-card-label">P50 (Median)</div>
+                        <div className="sched-card-value" style={{ 
+                            color: getLatencyColor(nodeMetrics.p50_runqueue_latency_us) 
+                        }}>
+                            {formatLatency(nodeMetrics.p50_runqueue_latency_us)}
+                        </div>
+                        <div className="sched-card-subtitle">50th percentile</div>
+                    </div>
+                </div>
+
+                <div className="sched-card">
+                    <div className="sched-card-content">
+                        <div className="sched-card-label">P99</div>
+                        <div className="sched-card-value" style={{ 
+                            color: getLatencyColor(nodeMetrics.p99_runqueue_latency_us) 
+                        }}>
+                            {formatLatency(nodeMetrics.p99_runqueue_latency_us)}
+                        </div>
+                        <div className="sched-card-subtitle">99th percentile</div>
+                    </div>
+                </div>
+
+                <div className="sched-card">
+                    <div className="sched-card-content">
+                        <div className="sched-card-label">Avg CPU Time</div>
+                        <div className="sched-card-value" style={{ 
+                            color: '#60a5fa'
+                        }}>
+                            {formatLatency(nodeMetrics.avg_cpu_time_us)}
+                        </div>
+                        <div className="sched-card-subtitle">Average execution time</div>
+                    </div>
+                </div>
+
+                <div className="sched-card">
+                    <div className="sched-card-content">
                         <div className="sched-card-label">Total Events</div>
                         <div className="sched-card-value">
                             {nodeMetrics.total_events.toLocaleString()}
@@ -196,15 +252,6 @@ export function CPUSchedulingMetrics({ metrics }: CPUSchedulingMetricsProps = {}
                 </div>
             )}
 
-            {/* Info Footer */}
-            <div className="sched-info-footer">
-                <div className="info-item">
-                    <strong>Run Queue Latency:</strong> Time processes wait in CPU queue before being scheduled
-                </div>
-                <div className="info-item">
-                    <strong>Source:</strong> eBPF tracepoints on <code>sched:sched_wakeup</code> and <code>sched:sched_switch</code>
-                </div>
-            </div>
         </div>
     );
 }

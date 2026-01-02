@@ -358,6 +358,28 @@ func buildUnifiedMetricsResponse(metricType, level string) UnifiedMetricsRespons
 				"avg_io_latency_ns":    metrics.AvgIOLatencyNs,
 			}
 		}
+
+		// Get container scheduling latency metrics
+		schedContainerMetrics := telemetry.GetContainerSchedLatencyMetrics()
+		for containerKey, metrics := range schedContainerMetrics {
+			if response.Containers[containerKey] == nil {
+				response.Containers[containerKey] = make(map[string]interface{})
+			}
+
+			response.Containers[containerKey]["sched_latency"] = map[string]interface{}{
+				"container_key":            metrics.ContainerKey,
+				"container_name":           metrics.ContainerName,
+				"pod_key":                  metrics.PodKey,
+				"pod_name":                 metrics.PodName,
+				"namespace":                metrics.Namespace,
+				"event_count":              metrics.EventCount,
+				"avg_runqueue_latency_us":  metrics.AvgRunqueueLatencyUs,
+				"max_runqueue_latency_us":  metrics.MaxRunqueueLatencyUs,
+				"avg_cpu_time_us":          metrics.AvgCPUTimeUs,
+				"cpu_starvation_count":     metrics.CPUStarvationCount,
+				"last_seen":                metrics.LastSeen.Format(time.RFC3339),
+			}
+		}
 	}
 
 	return response

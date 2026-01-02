@@ -100,23 +100,16 @@ export function Dashboard() {
             setDiskIOMetrics(metrics.node_system.disk_io);
         }
         
-        // Extract pod-level scheduling and disk I/O
+        // Extract pod-level disk I/O (pod-level scheduling is already in schedMetrics.pod_metrics)
         if (metrics.pods) {
-            const schedByPod: any = {};
             const diskIOByPod: any = {};
             
             Object.entries(metrics.pods).forEach(([podKey, podData]: [string, any]) => {
-                if (podData.sched_latency) {
-                    schedByPod[podKey] = podData.sched_latency;
-                }
                 if (podData.disk_io) {
                     diskIOByPod[podKey] = podData.disk_io;
                 }
             });
             
-            if (Object.keys(schedByPod).length > 0) {
-                setContainerSchedMetrics(schedByPod);
-            }
             if (Object.keys(diskIOByPod).length > 0) {
                 setDiskIOPodMetrics(diskIOByPod);
             }
@@ -125,10 +118,14 @@ export function Dashboard() {
         // Extract container-level metrics
         if (metrics.containers) {
             const diskIOByContainer: any = {};
+            const schedByContainer: any = {};
             
             Object.entries(metrics.containers).forEach(([containerKey, containerData]: [string, any]) => {
                 if (containerData.disk_io) {
                     diskIOByContainer[containerKey] = containerData.disk_io;
+                }
+                if (containerData.sched_latency) {
+                    schedByContainer[containerKey] = containerData.sched_latency;
                 }
             });
             
@@ -137,6 +134,13 @@ export function Dashboard() {
             } else {
                 // Clear if no data
                 setDiskIOContainerMetrics({});
+            }
+            
+            if (Object.keys(schedByContainer).length > 0) {
+                setContainerSchedMetrics(schedByContainer);
+            } else {
+                // Clear if no data
+                setContainerSchedMetrics({});
             }
         }
     }, [metrics]);
