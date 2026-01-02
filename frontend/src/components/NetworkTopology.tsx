@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMetrics } from '../hooks/useMetrics';
-import { usePodDetails } from '../hooks/usePodDetails';
 import { api } from '../services/api';
 import { 
     FiRefreshCw, FiTrash2, FiX, FiCheckCircle, 
     FiAlertCircle, FiTerminal, FiRotateCw, FiZap,
-    FiArrowRight, FiCpu
+    FiArrowRight
 } from 'react-icons/fi';
 import './NetworkTopology.css';
 
@@ -53,7 +52,6 @@ interface MigrationSuggestion {
 
 export function NetworkTopology() {
     const { metrics } = useMetrics(3000);
-    const { data: podDetails } = usePodDetails(5000);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [pods, setPods] = useState<PodNode[]>([]);
     const [connections, setConnections] = useState<Connection[]>([]);
@@ -394,8 +392,6 @@ export function NetworkTopology() {
 
                 const dx = target.x - source.x;
                 const dy = target.y - source.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                
                 // Color based on latency
                 const color = conn.latency > 10000 ? '#ef4444' : conn.latency > 5000 ? '#f59e0b' : '#3b82f6';
                 

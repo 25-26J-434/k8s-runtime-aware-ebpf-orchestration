@@ -348,6 +348,44 @@
   opacity: 0.55;
 }
 
+.scaling-table tbody tr.selected-row {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.scaling-metric-cards {
+  margin-top: 2rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.scaling-metric-card {
+  background: #f8fafc;
+  color: #0f172a;
+  border-radius: 12px;
+  padding: 1rem 1.2rem;
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.12);
+}
+
+.scaling-metric-card .metric-label {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+}
+
+.scaling-metric-card .metric-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-top: 0.3rem;
+}
+
+.scaling-metric-card .metric-subtext {
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
 .scaling-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -359,6 +397,26 @@
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+.scaling-form input,
+.scaling-form select {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+  color: #e6eef8;
+  outline: none;
+}
+
+.scaling-form select option {
+  color: #0f172a;
+}
+
+.scaling-form input:focus,
+.scaling-form select:focus {
+  border-color: rgba(59, 130, 246, 0.7);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
 .scaling-form .form-actions {

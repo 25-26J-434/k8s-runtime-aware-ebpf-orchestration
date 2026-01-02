@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-    Bar,
-    Chart as ReactChart,
-} from 'react-chartjs-2';
+import { Chart as ReactChart } from 'react-chartjs-2';
 import {
     BarElement,
     CategoryScale,

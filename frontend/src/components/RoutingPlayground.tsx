@@ -146,7 +146,7 @@ export function RoutingPlayground() {
                     <select
                         className="routing-select"
                         value={cluster}
-                        onChange={(e) => {
+                        onChange={() => {
                             // Placeholder for future multi-cluster; single cluster in Kind setup.
                         }}
                     >

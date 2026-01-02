@@ -20,12 +20,13 @@ export function TopPerformers() {
     const { metrics } = useMetrics(3000);
     const [filter, setFilter] = useState<FilterType>('all');
 
-    if (!metrics || !metrics.dns.pods) return null;
+    const dnsPods = metrics?.dns?.pods;
+    if (!metrics || !dnsPods) return null;
 
-        // Calculate performance score for each pod based on selected filter
-        const pods: PodPerformance[] = Object.keys(metrics.dns.pods).map((podKey) => {
+    // Calculate performance score for each pod based on selected filter
+    const pods: PodPerformance[] = Object.keys(dnsPods).map((podKey) => {
         const [namespace, name] = podKey.split('/');
-        const dnsMetrics = metrics.dns.pods[podKey];
+        const dnsMetrics = dnsPods[podKey];
         const tcpMetrics = metrics.tcp?.pods?.[podKey];
 
         // Get metrics (normalize to avoid division by zero)
@@ -199,5 +200,4 @@ export function TopPerformers() {
         </div>
     );
 }
-
 

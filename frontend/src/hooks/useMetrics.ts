@@ -119,7 +119,7 @@ export function useMetrics(refreshInterval = 3000) {
 
     useEffect(() => {
         let mounted = true;
-        let fallbackInterval: NodeJS.Timeout | null = null;
+        let fallbackInterval: ReturnType<typeof setInterval> | null = null;
 
         // Try WebSocket connection first
         metricsWebSocket.connect();

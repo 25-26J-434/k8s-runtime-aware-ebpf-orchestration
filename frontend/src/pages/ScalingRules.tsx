@@ -1,5 +1,5 @@
 import './Page.css';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScalingRulesTable } from '../components/ScalingRulesTable';
 import { ScalingRuleForm } from '../components/ScalingRuleForm';
 import { useScalingRules } from '../hooks/useScalingRules';
@@ -8,6 +8,13 @@ import type { ScalingRule } from '../types/scaling';
 export function ScalingRules() {
     const { rules, deployments, latestMetrics, loading, error, createRule, toggleRule, deleteRule } = useScalingRules();
     const [showForm, setShowForm] = useState(false);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (rules && rules.length > 0 && !selectedId) {
+            setSelectedId(rules[0]._id);
+        }
+    }, [rules, selectedId]);
 
     const handleCreate = async (rule: Partial<ScalingRule>) => {
         await createRule(rule);
@@ -28,7 +35,7 @@ export function ScalingRules() {
                     <div className="scaling-toolbar">
                         <div style={{ flex: 1 }}>
                             <strong>Rules</strong>
-                            <div className="list-subtext">Create and manage autoscaling rules. Frontend communicates with backend only.</div>
+                            <div className="list-subtext">Create and manage autoscaling rules.</div>
                         </div>
                         <div>
                             <button className="btn btn-primary" onClick={() => { setShowForm(true); }}>Create Rule</button>
@@ -47,11 +54,47 @@ export function ScalingRules() {
                             latestMetrics={latestMetrics}
                             onToggle={async (id, enabled) => { try { await toggleRule(id, enabled); } catch (err) { console.error(err); } }}
                             onDelete={async (id) => { try { await deleteRule(id); } catch (err) { console.error(err); } }}
+                            selectedId={selectedId}
+                            onSelect={(id) => setSelectedId(id)}
                         />
                     )}
 
                 </div>
             </div>
+
+            {rules && rules.length > 0 && (() => {
+                const active = rules.find((r) => r._id === selectedId) || rules[0];
+                const depKey = `${active.namespace}/${active.deployment}`;
+                const dep = deployments[depKey];
+                const metricKey = `${active.namespace}/${active.deployment}/${active.metric}`;
+                const latest = latestMetrics[metricKey];
+                const lastActionText = active.lastAction
+                    ? `${active.lastAction}${active.lastFrom !== undefined && active.lastTo !== undefined ? ` (${active.lastFrom}→${active.lastTo})` : ''}`
+                    : '—';
+                const lastActionAt = active.lastActionAt ? new Date(active.lastActionAt).toLocaleString() : '';
+
+                return (
+                    <div className="page-content">
+                        <div className="scaling-metric-cards">
+                            <div className="scaling-metric-card">
+                                <div className="metric-label">Current Replicas</div>
+                                <div className="metric-value">{dep ? `${dep.replicas}` : '—'}</div>
+                                <div className="metric-subtext">{active.namespace}/{active.deployment}</div>
+                            </div>
+                            <div className="scaling-metric-card">
+                                <div className="metric-label">Latest Metric</div>
+                                <div className="metric-value">{latest ? `${latest.value}` : '—'}</div>
+                                <div className="metric-subtext">{active.metric}</div>
+                            </div>
+                            <div className="scaling-metric-card">
+                                <div className="metric-label">Last Action</div>
+                                <div className="metric-value" title={lastActionAt}>{lastActionText}</div>
+                                <div className="metric-subtext">{lastActionAt || 'No actions yet'}</div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {showForm && (
                 <div className="modal">

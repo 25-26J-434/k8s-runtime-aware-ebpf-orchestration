@@ -27,7 +27,7 @@ func StartScalingController(k8sClient *kubernetes.Clientset) {
 		}
 
 		for _, rule := range rules {
-			value, err := GetMetricValue(rule.Metric)
+			value, err := GetDeploymentMetricValue(k8sClient, rule)
 			if err != nil {
 				// don’t spam logs
 				continue

@@ -15,13 +15,12 @@ export function ScalingRuleForm({ initial = {}, onCancel, onSubmit }: Props) {
     const [threshold, setThreshold] = useState<number>(initial.threshold ?? 0);
     const [minReplicas, setMinReplicas] = useState<number>(initial.minReplicas ?? 1);
     const [maxReplicas, setMaxReplicas] = useState<number>(initial.maxReplicas ?? 1);
-    const [step, setStep] = useState<number>(initial.step ?? 1);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         setError(null);
-    }, [namespace, deployment, metric, operator, threshold, minReplicas, maxReplicas, step]);
+    }, [namespace, deployment, metric, operator, threshold, minReplicas, maxReplicas]);
 
     const validate = () => {
         if (!deployment) return 'Deployment is required';
@@ -36,7 +35,7 @@ export function ScalingRuleForm({ initial = {}, onCancel, onSubmit }: Props) {
         if (v) { setError(v); return; }
         setSubmitting(true);
         try {
-        await onSubmit({ namespace, deployment, metric, operator, threshold, minReplicas, maxReplicas, step, enabled: true });
+        await onSubmit({ namespace, deployment, metric, operator, threshold, minReplicas, maxReplicas, enabled: true });
         } catch (err: any) {
             setError(err?.message || 'Error submitting');
         } finally {
@@ -88,11 +87,6 @@ export function ScalingRuleForm({ initial = {}, onCancel, onSubmit }: Props) {
             <div className="form-row">
                 <label>Max Replicas</label>
                 <input type="number" value={maxReplicas} onChange={(e) => setMaxReplicas(Number(e.target.value))} />
-            </div>
-
-            <div className="form-row">
-                <label>Step</label>
-                <input type="number" value={step} onChange={(e) => setStep(Number(e.target.value))} />
             </div>
 
             <div className="form-row form-actions">
