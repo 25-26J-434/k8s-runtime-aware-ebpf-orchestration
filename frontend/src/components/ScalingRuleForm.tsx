@@ -35,7 +35,7 @@ export function ScalingRuleForm({ initial = {}, onCancel, onSubmit }: Props) {
         if (v) { setError(v); return; }
         setSubmitting(true);
         try {
-        await onSubmit({ namespace, deployment, metric, operator, threshold, minReplicas, maxReplicas, enabled: true });
+        await onSubmit({ namespace, deployment, metric, operator, threshold, minReplicas, maxReplicas, step: 1, enabled: true });
         } catch (err: any) {
             setError(err?.message || 'Error submitting');
         } finally {

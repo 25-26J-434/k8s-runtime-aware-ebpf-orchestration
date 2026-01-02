@@ -43,16 +43,16 @@ function App() {
                     </div>
                 } />
                 <Route path="/scaling" element={
-                    <>
+                    <div className="app">
                         <Navigation />
                         <Scalings />
-                    </>
+                    </div>
                 } />
                 <Route path="/deployments" element={
-                    <>
+                    <div className="app">
                         <Navigation />
                         <Deployments />
-                    </>
+                    </div>
                 } />
                 <Route path="/federation" element={
                     <div className="app">
