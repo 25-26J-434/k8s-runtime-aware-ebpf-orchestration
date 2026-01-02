@@ -35,7 +35,7 @@ export function Dashboard() {
     const clusterInfo = useClusterInfo(10000); // Increased from 5000ms to 10000ms
     const { data: podDetails, loading: podDetailsLoading } = usePodDetails(10000); // Increased from 5000ms to 10000ms
     const [activeSection, setActiveSection] = useState<string>('health');
-    const sectionRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+    const sectionRefs = useRef<{ [key: string]: HTMLElement | null }>({});
     const [schedMetrics, setSchedMetrics] = useState<any>(null);
     const [containerSchedMetrics, setContainerSchedMetrics] = useState<any>({});
     const [selectedPod, setSelectedPod] = useState<string>('all');
@@ -143,6 +143,11 @@ export function Dashboard() {
                 setContainerSchedMetrics({});
             }
         }
+    }, [metrics]);
+
+    // Extract podMetrics from metrics
+    const podMetrics = useMemo(() => {
+        return metrics?.pods || {};
     }, [metrics]);
 
     if (loading && !metrics) {
@@ -449,10 +454,10 @@ export function Dashboard() {
                             <div className="stat-header">
                                 <h3>Average Latency</h3>
                             </div>
-                            <div className="stat-value">{metrics?.dns.avg_latency_us.toFixed(2)} <span className="unit">μs</span></div>
+                            <div className="stat-value">{(metrics?.dns?.avg_latency_us || 0).toFixed(2)} <span className="unit">μs</span></div>
                             <div className="stat-details">
                                 <span className="stat-label">Mean Response Time</span>
-                                <span className="stat-sublabel">{(metrics?.dns.avg_latency_us / 1000).toFixed(2)} ms</span>
+                                <span className="stat-sublabel">{((metrics?.dns?.avg_latency_us || 0) / 1000).toFixed(2)} ms</span>
                             </div>
                         </div>
 
@@ -1515,7 +1520,7 @@ export function Dashboard() {
                                                         // Get container data from both sources
                                                         const containerData = containerMetrics[containerName] || {};
                                                         // Also try direct lookup from metrics.containers using full key
-                                                        const containerDataDirect = metrics.containers?.[containerKey] || {};
+                                                        const containerDataDirect = metrics?.containers?.[containerKey] || {};
                                                         
                                                         // Merge both sources (direct lookup takes precedence)
                                                         const mergedContainerData = { ...containerData, ...containerDataDirect };
@@ -1931,7 +1936,7 @@ export function Dashboard() {
                                                             // Get container data from both sources
                                                             const containerData = containerMetrics[containerName] || {};
                                                             // Also try direct lookup from metrics.containers using full key
-                                                            const containerDataDirect = metrics.containers?.[containerKey] || {};
+                                                            const containerDataDirect = metrics?.containers?.[containerKey] || {};
                                                             
                                                             // Merge both sources (direct lookup takes precedence)
                                                             const mergedContainerData = { ...containerData, ...containerDataDirect };
