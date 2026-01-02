@@ -9,7 +9,6 @@ import type {
 import type { ScalingRule, LatestMetric, DeploymentInfo } from '../types/scaling';
 
 export const API_BASE = '';  // Proxy handles routing
-const SCALING_API_BASE = (import.meta as any).env?.VITE_SCALING_API_BASE || API_BASE;
 
 // Transform unified metrics to expected format
 export function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
@@ -265,7 +264,7 @@ export const api = {
     },
 
     async getScalingRules(): Promise<ScalingRule[]> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules`, {
+        const response = await fetch(`${API_BASE}/api/scaling/rules`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' },
             cache: 'no-cache',
@@ -291,7 +290,7 @@ export const api = {
 
 
     async createScalingRule(rule: Partial<ScalingRule>): Promise<ScalingRule> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules`, {
+        const response = await fetch(`${API_BASE}/api/scaling/rules`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -305,7 +304,7 @@ export const api = {
     },
 
     async updateScalingRule(id: string, rule: Partial<ScalingRule>): Promise<ScalingRule> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules/${id}`, {
+        const response = await fetch(`${API_BASE}/api/scaling/rules/${id}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -318,8 +317,20 @@ export const api = {
         return response.json();
     },
 
+    async toggleScalingRule(id: string): Promise<void> {
+        const response = await fetch(`${API_BASE}/api/scaling/rules/${id}/toggle`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to toggle scaling rule: ${response.status} ${response.statusText}`);
+        }
+    },
+
     async deleteScalingRule(id: string): Promise<void> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules/${id}`, {
+        const response = await fetch(`${API_BASE}/api/scaling/rules/${id}`, {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',

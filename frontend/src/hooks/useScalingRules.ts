@@ -67,9 +67,8 @@ export function useScalingRules(refreshInterval = 5000) {
     }, [fetchAll]);
 
     const deleteRule = useCallback(async (id: string) => {
-        const res = await api.deleteScalingRule(id);
+        await api.deleteScalingRule(id);
         await fetchAll();
-        return res;
     }, [fetchAll]);
 
     return {

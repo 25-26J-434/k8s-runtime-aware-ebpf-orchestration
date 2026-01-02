@@ -195,6 +195,19 @@ func ToggleScalingRule(id primitive.ObjectID) (ScalingRule, error) {
 	return updated, nil
 }
 
+// DeleteScalingRule removes a scaling rule by ID.
+func DeleteScalingRule(id primitive.ObjectID) error {
+	if mongoClient == nil || collection == nil {
+		return fmt.Errorf("mongo not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := collection.DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
 // UpdateScalingRuleStatus updates status fields for a rule (last action/value).
 func UpdateScalingRuleStatus(id primitive.ObjectID, updates bson.M) error {
 	if mongoClient == nil || collection == nil {
