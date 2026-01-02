@@ -243,6 +243,17 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 				Value:      dnsSum / float64(dnsCount),
 				Timestamp:  now,
 			})
+		} else {
+			dns := telemetry.GetDNSMetrics()
+			if dns.LastLatencyNs > 0 {
+				out = append(out, LatestMetric{
+					Namespace:  dep.Namespace,
+					Deployment: dep.Name,
+					Metric:     "dns_latency",
+					Value:      float64(dns.LastLatencyNs),
+					Timestamp:  now,
+				})
+			}
 		}
 		if rttCount > 0 {
 			out = append(out, LatestMetric{
@@ -252,6 +263,17 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 				Value:      rttSum / float64(rttCount),
 				Timestamp:  now,
 			})
+		} else {
+			rtt := telemetry.GetRTTMetrics()
+			if rtt.LastRTTNs > 0 {
+				out = append(out, LatestMetric{
+					Namespace:  dep.Namespace,
+					Deployment: dep.Name,
+					Metric:     "rtt",
+					Value:      float64(rtt.LastRTTNs),
+					Timestamp:  now,
+				})
+			}
 		}
 		if tcpCount > 0 {
 			out = append(out, LatestMetric{
@@ -261,6 +283,17 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 				Value:      tcpSum / float64(tcpCount),
 				Timestamp:  now,
 			})
+		} else {
+			tcp := telemetry.GetTCPMetrics()
+			if tcp.Retransmissions > 0 {
+				out = append(out, LatestMetric{
+					Namespace:  dep.Namespace,
+					Deployment: dep.Name,
+					Metric:     "tcp_retrans",
+					Value:      float64(tcp.Retransmissions),
+					Timestamp:  now,
+				})
+			}
 		}
 	}
 

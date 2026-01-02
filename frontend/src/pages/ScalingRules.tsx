@@ -50,8 +50,6 @@ export function ScalingRules() {
                     {rules && rules.length > 0 && (
                         <ScalingRulesTable
                             rules={rules}
-                            deployments={deployments}
-                            latestMetrics={latestMetrics}
                             onToggle={async (id, enabled) => { try { await toggleRule(id, enabled); } catch (err) { console.error(err); } }}
                             onDelete={async (id) => { try { await deleteRule(id); } catch (err) { console.error(err); } }}
                             selectedId={selectedId}
@@ -68,10 +66,13 @@ export function ScalingRules() {
                 const dep = deployments[depKey];
                 const metricKey = `${active.namespace}/${active.deployment}/${active.metric}`;
                 const latest = latestMetrics[metricKey];
-                const lastActionText = active.lastAction
+                const latestValue = latest?.value ?? active.lastValue;
+                const hasLastAction = Boolean(active.lastAction && active.lastAction !== 'noop' && active.lastActionAt);
+                const isStaleAction = hasLastAction && dep && active.lastTo !== undefined && dep.replicas !== active.lastTo;
+                const lastActionText = hasLastAction && !isStaleAction
                     ? `${active.lastAction}${active.lastFrom !== undefined && active.lastTo !== undefined ? ` (${active.lastFrom}→${active.lastTo})` : ''}`
                     : '—';
-                const lastActionAt = active.lastActionAt ? new Date(active.lastActionAt).toLocaleString() : '';
+                const lastActionAt = hasLastAction && !isStaleAction ? new Date(active.lastActionAt as string).toLocaleString() : '';
 
                 return (
                     <div className="page-content">
@@ -83,7 +84,7 @@ export function ScalingRules() {
                             </div>
                             <div className="scaling-metric-card">
                                 <div className="metric-label">Latest Metric</div>
-                                <div className="metric-value">{latest ? `${latest.value}` : '—'}</div>
+                                <div className="metric-value">{latestValue !== undefined ? `${latestValue}` : '—'}</div>
                                 <div className="metric-subtext">{active.metric}</div>
                             </div>
                             <div className="scaling-metric-card">
