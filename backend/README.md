@@ -119,6 +119,7 @@ npm start              # or npm run dev for watch mode
   "notes": "example rule"
 }
 ```
+- Supported metrics in the helper: `dns_us`, `rtt_us`, `sched_latency_us` (default is `rtt_us`). Set `TELEMETRY_BASE_URL` (or `TELEMETRY_API_URL_DNS|RTT|SCHED`) so the helper can reach the correct telemetry endpoint (`/api/dns/pods`, `/api/rtt/pods`, `/api/sched/pods` on the daemon).
 
 ### Combined legacy rule (POST /api/rules)
 If you prefer the single payload used previously, the legacy `/api/rules` endpoint still accepts the combined object (policy + rule):

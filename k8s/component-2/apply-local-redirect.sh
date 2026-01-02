@@ -80,16 +80,31 @@ if ! kubectl get crd ciliumlocalredirectpolicies.cilium.io >/dev/null 2>&1; then
   exit 1
 fi
 
-case "$metric" in
-  dns_us)
-    API_URL="${API_URL:-http://127.0.0.1:8080/api/dns/pods}"
-    VALUE_FIELD="avg_latency_us"
-    ;;
-  *)
-    API_URL="${API_URL:-http://127.0.0.1:8080/api/rtt/pods}"
-    VALUE_FIELD="avg_rtt_us"
-    ;;
-esac
+TELEMETRY_BASE_URL="${TELEMETRY_BASE_URL:-http://127.0.0.1:8080}"
+
+resolve_metric_source() {
+  case "$metric" in
+    dns_us)
+      # Priority: per-metric override -> legacy API_URL -> base + path
+      TELEMETRY_URL="${TELEMETRY_API_URL_DNS:-${API_URL:-${TELEMETRY_BASE_URL}/api/dns/pods}}"
+      VALUE_FIELD="avg_latency_us"
+      ;;
+    rtt_us|rtt)
+      TELEMETRY_URL="${TELEMETRY_API_URL_RTT:-${API_URL:-${TELEMETRY_BASE_URL}/api/rtt/pods}}"
+      VALUE_FIELD="avg_rtt_us"
+      ;;
+    sched_latency_us|sched_us)
+      TELEMETRY_URL="${TELEMETRY_API_URL_SCHED:-${TELEMETRY_BASE_URL}/api/sched/pods}"
+      VALUE_FIELD="avg_runqueue_latency_us"
+      ;;
+    *)
+      echo "Unsupported metric \"$metric\". Supported: dns_us, rtt_us, sched_latency_us." >&2
+      exit 1
+      ;;
+  esac
+}
+
+resolve_metric_source
 
 if [[ "$backend_label" != *"="* ]]; then
   echo "redirect_backend_label must be in key=value form." >&2
@@ -112,24 +127,26 @@ if [[ "$choose_best_pod" == "true" ]]; then
   winner_label_value=${redirect_winner_label#*=}
 fi
 
-telemetry_json=$(curl -sf "$API_URL" || true)
+telemetry_json=$(curl -sf "$TELEMETRY_URL" || true)
 if [[ -z "$telemetry_json" ]]; then
-  echo "Telemetry API response empty/unreachable at $API_URL; skipping redirect. (Check API endpoint and port-forward.)"
+  echo "Telemetry API response empty/unreachable at $TELEMETRY_URL; skipping redirect. (Check API endpoint and port-forward.)"
   exit 0
 fi
 if ! jq empty <<<"$telemetry_json" >/dev/null 2>&1; then
-  echo "Telemetry API returned invalid JSON from $API_URL; skipping redirect. (Inspect telemetry service output.)"
+  echo "Telemetry API returned invalid JSON from $TELEMETRY_URL; skipping redirect. (Inspect telemetry service output.)"
   exit 0
 fi
 
-# Compute average metric for monitored pods
+# Compute average metric for monitored pods (supports shapes: {pods:{...}}, {pod_metrics:{...}}, or plain map)
 avg_value=$(jq --arg ns "$namespace" --arg contains "$monitor_pod_contains" --arg field "$VALUE_FIELD" '
-  (.pods // {}) as $pods
-  | [ $pods[]
-      | select(.namespace == $ns and (.pod_name | contains($contains)))
-      | select(.[$field] != null)
-      | .[$field]
-    ]
+  ( .pods // .pod_metrics // . ) as $pods
+  | (if ($pods|type) == "object" then
+       [ $pods[]
+         | select(.namespace == $ns and ((.pod_name // "") | contains($contains)))
+         | select(.[$field] != null)
+         | .[$field]
+       ]
+     else [] end)
   | if length == 0 then null else (add / length) end
 ' <<<"$telemetry_json")
 

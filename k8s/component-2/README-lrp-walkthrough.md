@@ -71,6 +71,7 @@ We use the sample at `k8s/component-2/redirect-rule.example.json` (already set t
 ```
 Notes:
 - `metric`: use `dns_us` unless RTT is populated. RTT is empty by default in this cluster.
+- Other supported metrics in the helper: `rtt_us` (RTT feed) and `sched_latency_us` (scheduler latency feed). Set `TELEMETRY_BASE_URL` or `TELEMETRY_API_URL_DNS|RTT|SCHED` so the helper hits the right daemon endpoint.
 - Lower `violation_threshold` if you want to force a redirect (example uses 1000µs).
 - To target service-b instead, set `redirect_backend_label: "app=service-b"` and `redirect_backend_port: "5001"`.
 - `ttl_seconds` is required; after this many seconds, the helper deletes the LRP (and clears the winner label if used) so traffic returns to normal unless a new violation triggers a reapply.

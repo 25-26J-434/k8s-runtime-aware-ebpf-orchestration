@@ -47,6 +47,7 @@ const REQUIRED_POLICY_FIELDS = [
 const POLICY_NUMERIC_FIELDS = ['ttl_seconds', 'redirect_backend_port', 'frontend_service_port'];
 const BOOLEAN_FIELDS = ['choose_best_pod'];
 const STRATEGY_VALUES = ['all', 'best_pod'];
+const ALLOWED_METRICS = ['rtt_us', 'dns_us', 'sched_latency_us'];
 const execFileAsync = util.promisify(execFile);
 const APPLY_SCRIPT_CANDIDATES = [
   process.env.LRP_HELPER_PATH,
@@ -169,6 +170,14 @@ function normalizeRuleDefinition(body, { requireAll } = { requireAll: true }, po
 
   if (data.violation_threshold !== undefined && data.violation_threshold <= 0) {
     return { error: 'violation_threshold must be greater than zero' };
+  }
+
+  if (data.metric !== undefined) {
+    const metricName = String(data.metric);
+    if (!ALLOWED_METRICS.includes(metricName)) {
+      return { error: `metric must be one of: ${ALLOWED_METRICS.join(', ')}` };
+    }
+    data.metric = metricName;
   }
 
   if (requireAll && data.metric === undefined) {
