@@ -139,10 +139,16 @@ fi
 
 # Compute average metric for monitored pods (supports shapes: {pods:{...}}, {pod_metrics:{...}}, or plain map)
 avg_value=$(jq --arg ns "$namespace" --arg contains "$monitor_pod_contains" --arg field "$VALUE_FIELD" '
-  ( .pods // .pod_metrics // . ) as $pods
-  | (if ($pods|type) == "object" then
-       [ $pods[]
-         | select(.namespace == $ns and ((.pod_name // "") | contains($contains)))
+  ( .pods // .pod_metrics // . ) as $src
+  | (if ($src|type) == "object" then
+       [ $src[]
+         | select((.namespace // .ns) == $ns and ((.pod_name // .name // .pod // "") | contains($contains)))
+         | select(.[$field] != null)
+         | .[$field]
+       ]
+     elif ($src|type) == "array" then
+       [ $src[]
+         | select((.namespace // .ns) == $ns and ((.pod_name // .name // .pod // "") | contains($contains)))
          | select(.[$field] != null)
          | .[$field]
        ]
