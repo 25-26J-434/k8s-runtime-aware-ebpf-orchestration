@@ -12,12 +12,12 @@ import (
 
 // NATMetadataMetrics holds NAT translation metadata
 type NATMetadataMetrics struct {
-	TotalConnections   uint64            `json:"total_connections"`
-	ActiveConnections  uint64            `json:"active_connections"`
-	ConnectionsByPod   map[string]uint64 `json:"connections_by_pod"`
-	SNATTranslations   uint64            `json:"snat_translations"`
-	DNATTranslations   uint64            `json:"dnat_translations"`
-	TranslationErrors  uint64            `json:"translation_errors"`
+	TotalConnections  uint64            `json:"total_connections"`
+	ActiveConnections uint64            `json:"active_connections"`
+	ConnectionsByPod  map[string]uint64 `json:"connections_by_pod"`
+	SNATTranslations  uint64            `json:"snat_translations"`
+	DNATTranslations  uint64            `json:"dnat_translations"`
+	TranslationErrors uint64            `json:"translation_errors"`
 }
 
 var natMetadataMetrics NATMetadataMetrics
@@ -108,7 +108,7 @@ func collectNATMetadata() {
 	// Try to read from conntrack
 	// This requires conntrack-tools or access to /proc/net/nf_conntrack
 	// For now, we'll parse /proc/net/stat/nf_conntrack if available
-	
+
 	// Try /proc/net/stat/nf_conntrack first (newer kernels)
 	stats, err := readConntrackStats("/proc/net/stat/nf_conntrack")
 	if err != nil {
@@ -118,7 +118,7 @@ func collectNATMetadata() {
 			log.Printf("[NATMetadata] Failed to collect NAT metadata: %v, %v", err, err2)
 			return
 		}
-		
+
 		natMetricsMutex.Lock()
 		natMetadataMetrics.ActiveConnections = active
 		natMetricsMutex.Unlock()
@@ -132,22 +132,22 @@ func collectNATMetadata() {
 }
 
 type ConntrackStats struct {
-	Active    uint64
-	Searched  uint64
-	Found     uint64
-	New       uint64
-	Invalid   uint64
-	Ignore    uint64
-	Delete    uint64
-	DeleteList uint64
-	Insert    uint64
-	InsertFailed uint64
-	Drop      uint64
-	EarlyDrop uint64
-	ICMPError uint64
-	ExpectNew uint64
-	ExpectCreate uint64
-	ExpectDelete uint64
+	Active        uint64
+	Searched      uint64
+	Found         uint64
+	New           uint64
+	Invalid       uint64
+	Ignore        uint64
+	Delete        uint64
+	DeleteList    uint64
+	Insert        uint64
+	InsertFailed  uint64
+	Drop          uint64
+	EarlyDrop     uint64
+	ICMPError     uint64
+	ExpectNew     uint64
+	ExpectCreate  uint64
+	ExpectDelete  uint64
 	SearchRestart uint64
 }
 
@@ -216,4 +216,3 @@ func GetNATMetadataMetrics() NATMetadataMetrics {
 	defer natMetricsMutex.RUnlock()
 	return natMetadataMetrics
 }
-

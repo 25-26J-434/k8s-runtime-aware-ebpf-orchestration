@@ -63,7 +63,7 @@ export function usePodDetails(refreshInterval: number = 5000) {
 
   useEffect(() => {
     let mounted = true;
-    let fallbackInterval: NodeJS.Timeout | null = null;
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
 
     // Import WebSocket service
     import('../services/websocket').then(({ podDetailsWebSocket }) => {
@@ -132,5 +132,4 @@ export function usePodDetails(refreshInterval: number = 5000) {
 
   return { data, loading, error };
 }
-
 

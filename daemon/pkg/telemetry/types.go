@@ -9,15 +9,15 @@ import (
 type MetricType string
 
 const (
-	MetricTypeDNS              MetricType = "dns_latency"
-	MetricTypeRTT              MetricType = "rtt"
-	MetricTypeSocketCount      MetricType = "socket_count"
-	MetricTypePacketDrop       MetricType = "packet_drop"
-	MetricTypeTCP              MetricType = "tcp_metrics"
-	MetricTypeNodeSystem       MetricType = "node_system"
+	MetricTypeDNS                MetricType = "dns_latency"
+	MetricTypeRTT                MetricType = "rtt"
+	MetricTypeSocketCount        MetricType = "socket_count"
+	MetricTypePacketDrop         MetricType = "packet_drop"
+	MetricTypeTCP                MetricType = "tcp_metrics"
+	MetricTypeNodeSystem         MetricType = "node_system"
 	MetricTypePacketDistribution MetricType = "packet_distribution"
-	MetricTypeServiceHealth    MetricType = "service_health"
-	MetricTypeNAT              MetricType = "nat_metadata"
+	MetricTypeServiceHealth      MetricType = "service_health"
+	MetricTypeNAT                MetricType = "nat_metadata"
 )
 
 // MetricLevel defines the aggregation level

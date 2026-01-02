@@ -899,7 +899,7 @@ export function Dashboard() {
                 )}
 
                 {/* Pod-Level Metrics Section */}
-                {metrics?.pods && Object.keys(metrics.pods).length > 0 && (
+                {podMetrics && Object.keys(podMetrics).length > 0 && (
                     <section 
                         id="pod-metrics" 
                         ref={(el) => (sectionRefs.current['pod-metrics'] = el)}
@@ -908,7 +908,7 @@ export function Dashboard() {
                         <div className="section-header">
                             <h2>POD-LEVEL METRICS</h2>
                             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                                <span className="section-badge">{Object.keys(metrics.pods).length} Active Pods</span>
+                                <span className="section-badge">{Object.keys(podMetrics).length} Active Pods</span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                     <label style={{ color: '#94a3b8', fontSize: '0.875rem' }}>Filter Pod:</label>
                                     <select 
@@ -925,8 +925,8 @@ export function Dashboard() {
                                             minWidth: '250px'
                                         }}
                                     >
-                                        <option value="all">All Pods ({Object.keys(metrics.pods).length})</option>
-                                        {Object.keys(metrics.pods).sort().map((podKey) => {
+                                        <option value="all">All Pods ({Object.keys(podMetrics).length})</option>
+                                        {Object.keys(podMetrics).sort().map((podKey) => {
                                             const [ns, name] = podKey.split('/');
                                             return (
                                                 <option key={podKey} value={podKey}>
@@ -1316,20 +1316,19 @@ export function Dashboard() {
 
                         {selectedPod === 'all' ? (
                             <div className="pods-grid">
-                                {Object.entries(metrics.pods).map(([podKey, podData]) => {
+                                {Object.entries(podMetrics).map(([podKey, podData]) => {
                                 const dnsStats = podData.dns_latency;
                                 const tcpStats = podData.tcp_metrics;
                                 const podDiskIO = diskIOPodMetrics[podKey];
                                 const [namespace, podName] = podKey.split('/');
                                 
-                                // Calculate microsecond values from nanoseconds
-                                const dnsAvgLatencyUs = dnsStats ? (dnsStats.avg_latency_ns / 1000) : 0;
-                                const dnsMinLatencyUs = dnsStats ? (dnsStats.min_latency_ns / 1000) : 0;
-                                const dnsMaxLatencyUs = dnsStats ? (dnsStats.max_latency_ns / 1000) : 0;
+                                const dnsAvgLatencyUs = dnsStats?.avg_latency_us || 0;
+                                const dnsMinLatencyUs = dnsStats?.min_latency_us || 0;
+                                const dnsMaxLatencyUs = dnsStats?.max_latency_us || 0;
                                 
                                 // Get container-level metrics for this pod
                                 const containerMetrics: Record<string, any> = {};
-                                if (metrics.containers) {
+                                if (metrics?.containers) {
                                     Object.entries(metrics.containers).forEach(([containerKey, containerData]) => {
                                         // containerKey format: "namespace/podname/containername"
                                         const parts = containerKey.split('/');
@@ -1385,21 +1384,21 @@ export function Dashboard() {
                                                     <div className="metric-block-title">TCP Metrics</div>
                                                     <div className="metric-grid-clean">
                                                         <div className="metric-cell-clean">
-                                                            <div className="metric-label-clean">Connections</div>
-                                                            <div className="metric-value-clean">{(tcpStats.connection_count || 0).toLocaleString()}</div>
-                                                        </div>
-                                                        <div className="metric-cell-clean">
-                                                            <div className="metric-label-clean">Events</div>
-                                                            <div className="metric-value-clean">{(tcpStats.total_events || 0).toLocaleString()}</div>
-                                                        </div>
-                                                        <div className="metric-cell-clean">
-                                                            <div className="metric-label-clean">Retransmits</div>
-                                                            <div className="metric-value-clean">{(tcpStats.total_retransmissions || 0).toLocaleString()}</div>
-                                                        </div>
-                                                        <div className="metric-cell-clean">
-                                                            <div className="metric-label-clean">Avg RTT</div>
-                                                            <div className="metric-value-clean">{((tcpStats.avg_rtt_us || 0) / 1000).toFixed(2)} ms</div>
-                                                        </div>
+                                                        <div className="metric-label-clean">Connections</div>
+                                                        <div className="metric-value-clean">{(tcpStats.total_events || 0).toLocaleString()}</div>
+                                                    </div>
+                                                    <div className="metric-cell-clean">
+                                                        <div className="metric-label-clean">Events</div>
+                                                        <div className="metric-value-clean">{(tcpStats.total_events || 0).toLocaleString()}</div>
+                                                    </div>
+                                                    <div className="metric-cell-clean">
+                                                        <div className="metric-label-clean">Retransmits</div>
+                                                        <div className="metric-value-clean">{(tcpStats.retransmissions || 0).toLocaleString()}</div>
+                                                    </div>
+                                                    <div className="metric-cell-clean">
+                                                        <div className="metric-label-clean">Avg SRTT</div>
+                                                        <div className="metric-value-clean">{((tcpStats.avg_srtt_us || 0) / 1000).toFixed(2)} ms</div>
+                                                    </div>
                                                     </div>
                                                 </div>
                                             )}
@@ -1697,19 +1696,19 @@ export function Dashboard() {
                             <div className="enhanced-pod-view">
                                 {(() => {
                                     const podKey = selectedPod;
-                                    const podData = metrics.pods[podKey];
+                                    const podData = podMetrics?.[podKey];
                                     if (!podData) return null;
                                     
                                     const dnsStats = podData.dns_latency;
                                     const tcpStats = podData.tcp_metrics;
                                     const [namespace, podName] = podKey.split('/');
                                     
-                                    const dnsAvgLatencyUs = dnsStats ? (dnsStats.avg_latency_ns / 1000) : 0;
-                                    const dnsMinLatencyUs = dnsStats ? (dnsStats.min_latency_ns / 1000) : 0;
-                                    const dnsMaxLatencyUs = dnsStats ? (dnsStats.max_latency_ns / 1000) : 0;
+                                    const dnsAvgLatencyUs = dnsStats?.avg_latency_us || 0;
+                                    const dnsMinLatencyUs = dnsStats?.min_latency_us || 0;
+                                    const dnsMaxLatencyUs = dnsStats?.max_latency_us || 0;
                                     
                                     const containerMetrics: Record<string, any> = {};
-                                    if (metrics.containers) {
+                                    if (metrics?.containers) {
                                         Object.entries(metrics.containers).forEach(([containerKey, containerData]) => {
                                             const parts = containerKey.split('/');
                                             if (parts.length >= 3) {
@@ -1766,11 +1765,11 @@ export function Dashboard() {
                                                 {tcpStats && tcpStats.total_events > 0 && (
                                                     <div className="enhanced-metric-card">
                                                         <div className="enhanced-metric-header">TCP Metrics</div>
-                                                        <div className="enhanced-metric-value">{((tcpStats.avg_rtt_us || 0) / 1000).toFixed(2)} ms</div>
+                                                        <div className="enhanced-metric-value">{((tcpStats.avg_srtt_us || 0) / 1000).toFixed(2)} ms</div>
                                                         <div className="enhanced-metric-details">
-                                                            <span>Connections: {(tcpStats.connection_count || 0).toLocaleString()}</span>
+                                                            <span>Connections: {(tcpStats.total_events || 0).toLocaleString()}</span>
                                                             <span>Events: {(tcpStats.total_events || 0).toLocaleString()}</span>
-                                                            <span>Retrans: {(tcpStats.total_retransmissions || 0).toLocaleString()}</span>
+                                                            <span>Retrans: {(tcpStats.retransmissions || 0).toLocaleString()}</span>
                                                         </div>
                                                     </div>
                                                 )}
@@ -1863,7 +1862,7 @@ export function Dashboard() {
                                                         <div className="detail-metrics">
                                                             <div className="detail-row">
                                                                 <span className="detail-label">Active Connections:</span>
-                                                                <span className="detail-value">{(tcpStats.connection_count || 0).toLocaleString()}</span>
+                                                                <span className="detail-value">{(tcpStats.total_events || 0).toLocaleString()}</span>
                                                             </div>
                                                             <div className="detail-row">
                                                                 <span className="detail-label">Total Events:</span>
@@ -1871,11 +1870,11 @@ export function Dashboard() {
                                                             </div>
                                                             <div className="detail-row">
                                                                 <span className="detail-label">Retransmissions:</span>
-                                                                <span className="detail-value">{(tcpStats.total_retransmissions || 0).toLocaleString()}</span>
+                                                                <span className="detail-value">{(tcpStats.retransmissions || 0).toLocaleString()}</span>
                                                             </div>
                                                             <div className="detail-row">
                                                                 <span className="detail-label">Average RTT:</span>
-                                                                <span className="detail-value">{((tcpStats.avg_rtt_us || 0) / 1000).toFixed(2)} ms</span>
+                                                                <span className="detail-value">{((tcpStats.avg_srtt_us || 0) / 1000).toFixed(2)} ms</span>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -2108,7 +2107,7 @@ export function Dashboard() {
                                             )}
                                         </div>
                                 );
-                            })}
+                            })()}
                         </div>
                     )}
                 </section>
@@ -2476,4 +2475,3 @@ export function Dashboard() {
         </div>
     );
 }
-

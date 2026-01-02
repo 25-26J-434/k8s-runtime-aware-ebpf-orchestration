@@ -21,7 +21,6 @@ var rttObj []byte
 //go:embed bpf/tcp_metrics.o
 var tcpMetricsObj []byte
 
-//go:embed bpf/sched_latency.o
 var schedLatencyObj []byte
 
 //go:embed bpf/disk_io.o

@@ -11,14 +11,14 @@ import (
 
 // NodeSystemMetrics holds node-level system metrics (CPU, RAM)
 type NodeSystemMetrics struct {
-	CPUUsagePercent float64 `json:"cpu_usage_percent"`
-	MemoryTotalMB   uint64  `json:"memory_total_mb"`
-	MemoryUsedMB    uint64  `json:"memory_used_mb"`
-	MemoryFreeMB    uint64  `json:"memory_free_mb"`
+	CPUUsagePercent    float64 `json:"cpu_usage_percent"`
+	MemoryTotalMB      uint64  `json:"memory_total_mb"`
+	MemoryUsedMB       uint64  `json:"memory_used_mb"`
+	MemoryFreeMB       uint64  `json:"memory_free_mb"`
 	MemoryUsagePercent float64 `json:"memory_usage_percent"`
-	LoadAvg1min     float64 `json:"load_avg_1min"`
-	LoadAvg5min     float64 `json:"load_avg_5min"`
-	LoadAvg15min    float64 `json:"load_avg_15min"`
+	LoadAvg1min        float64 `json:"load_avg_1min"`
+	LoadAvg5min        float64 `json:"load_avg_5min"`
+	LoadAvg15min       float64 `json:"load_avg_15min"`
 }
 
 var nodeSystemMetrics NodeSystemMetrics
@@ -280,4 +280,3 @@ func GetNodeSystemMetrics() NodeSystemMetrics {
 	defer nodeSystemMetricsMutex.RUnlock()
 	return nodeSystemMetrics
 }
-

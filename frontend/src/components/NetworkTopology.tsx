@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { useMetrics } from '../hooks/useMetrics';
-import { usePodDetails } from '../hooks/usePodDetails';
 import { api } from '../services/api';
 import { topologyWebSocket } from '../services/websocket';
 import { 
@@ -449,8 +448,6 @@ export function NetworkTopology() {
 
                 const dx = target.x - source.x;
                 const dy = target.y - source.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                
                 // Color based on latency
                 const color = conn.latency > 10000 ? '#ef4444' : conn.latency > 5000 ? '#f59e0b' : '#3b82f6';
                 
