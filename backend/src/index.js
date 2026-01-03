@@ -26,6 +26,7 @@ const MONGODB_URI =
 const APPLY_HELPER_TIMEOUT_MS = Number(process.env.LRP_HELPER_TIMEOUT_MS || 60000);
 const KUBECTL = process.env.KUBECTL_PATH || 'kubectl';
 const KUBECTL_TIMEOUT_MS = Number(process.env.KUBECTL_TIMEOUT_MS || 20000);
+const TTL_SWEEP_MS = Number(process.env.TTL_SWEEP_MS || 30000);
 
 async function kubectlJson(args) {
     const { stdout } = await execFileAsync(KUBECTL, args, { timeout: KUBECTL_TIMEOUT_MS });
@@ -117,6 +118,33 @@ function resolveHelper() {
         throw new Error(`apply-local-redirect.sh not found. Checked: ${HELPER_PATHS.join(', ')}`);
     }
     return found;
+}
+
+async function expirePolicyDoc(p, trigger = 'manual') {
+    const helper = resolveHelper();
+    const bashCmd = process.env.BASH_PATH || '/bin/bash';
+    try {
+        const { stdout, stderr } = await execFileAsync(bashCmd, [helper, '--delete', p.namespace, p.policy_name], {
+            env: process.env,
+            timeout: APPLY_HELPER_TIMEOUT_MS,
+        });
+
+        p.status = p.status || {};
+        p.status.last_expired_at = new Date();
+        p.status.last_decision = 'EXPIRED';
+        p.status.last_error = null;
+
+        pushHistory(p, 'EXPIRED', 'LRP deleted', { stdout, stderr, trigger });
+        await p.save();
+
+        return { stdout, stderr };
+    } catch (err) {
+        p.status = p.status || {};
+        p.status.last_error = err.message;
+        pushHistory(p, 'ERROR', `Expire failed: ${err.message}`, { trigger });
+        await p.save();
+        throw err;
+    }
 }
 
 function pushHistory(doc, event, message, data) {
@@ -563,28 +591,9 @@ app.post('/api/policies/:name/expire', async (req, res) => {
     if (!p) return res.status(404).json({ message: 'Policy not found' });
 
     try {
-        const helper = resolveHelper();
-        const bashCmd = process.env.BASH_PATH || '/bin/bash';
-        const { stdout, stderr } = await execFileAsync(bashCmd, [helper, '--delete', p.namespace, p.policy_name], {
-            env: process.env,
-            timeout: APPLY_HELPER_TIMEOUT_MS,
-        });
-
-        p.status = p.status || {};
-        p.status.last_expired_at = new Date();
-        p.status.last_decision = 'EXPIRED';
-        p.status.last_error = null;
-
-        pushHistory(p, 'EXPIRED', 'LRP deleted', { stdout, stderr });
-        await p.save();
-
+        const { stdout, stderr } = await expirePolicyDoc(p, 'manual');
         res.json({ message: 'Expired (LRP deleted)', stdout, stderr });
     } catch (err) {
-        p.status = p.status || {};
-        p.status.last_error = err.message;
-        pushHistory(p, 'ERROR', `Expire failed: ${err.message}`);
-        await p.save();
-
         res.status(500).json({ message: `Expire failed: ${err.message}` });
     }
 });
@@ -712,5 +721,44 @@ app.use((err, _req, res, _next) => {
     console.error(err);
     res.status(500).json({ message: 'Internal server error' });
 });
+
+let ttlSweepRunning = false;
+
+async function sweepExpiringPolicies() {
+    if (ttlSweepRunning) return;
+    ttlSweepRunning = true;
+    try {
+        const now = Date.now();
+        const policies = await Policy.find({ 'action.ttl_seconds': { $gt: 0 } });
+
+        for (const p of policies) {
+            const anchor =
+                p.status?.last_applied_at ||
+                p.status?.last_evaluated_at ||
+                p.updatedAt ||
+                p.createdAt;
+
+            const ttlMs = (p.action?.ttl_seconds || 0) * 1000;
+            if (!anchor || !ttlMs) continue;
+
+            const due = new Date(anchor).getTime() + ttlMs;
+            if (due <= now && p.status?.last_decision !== 'EXPIRED') {
+                try {
+                    await expirePolicyDoc(p, 'auto-ttl');
+                } catch (err) {
+                    console.error(`Auto TTL expire failed for ${p.policy_name}:`, err.message || err);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('TTL sweep error:', err);
+    } finally {
+        ttlSweepRunning = false;
+    }
+}
+
+setInterval(sweepExpiringPolicies, TTL_SWEEP_MS);
+// kick off once on startup
+sweepExpiringPolicies().catch((err) => console.error('Initial TTL sweep error:', err));
 
 app.listen(PORT, () => console.log(`[component2-backend] Listening on port ${PORT}`));
