@@ -29,7 +29,7 @@ type ScalingRule struct {
 	// status fields populated by the scaling controller
 	LastAction   string    `bson:"lastAction,omitempty" json:"lastAction,omitempty"`
 	LastActionAt time.Time `bson:"lastActionAt,omitempty" json:"lastActionAt,omitempty"`
-	LastValue    float64   `bson:"lastValue,omitempty" json:"lastValue,omitempty"`
+	LastValue    float64   `bson:"lastValue,omitempty" json:"lastValue"`
 	LastFrom     int32     `bson:"lastFrom,omitempty" json:"lastFrom,omitempty"`
 	LastTo       int32     `bson:"lastTo,omitempty" json:"lastTo,omitempty"`
 }

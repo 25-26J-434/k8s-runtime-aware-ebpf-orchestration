@@ -39,10 +39,20 @@ export function ScalingRulesTable({ rules, onToggle, onDelete, selectedId, onSel
                             <td>{r.minReplicas}</td>
                             <td>{r.maxReplicas}</td>
                             <td>
-                                <input type="checkbox" checked={r.enabled} onChange={() => { void onToggle(r._id, !r.enabled); }} />
+                                <input
+                                    type="checkbox"
+                                    checked={r.enabled}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => {
+                                        e.stopPropagation();
+                                        void onToggle(r._id, !r.enabled);
+                                    }}
+                                />
                             </td>
                             <td>
-                                <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); void onDelete(r._id); }}>Delete</button>
+                                <button className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); void onDelete(r._id); }}>
+                                    Delete
+                                </button>
                             </td>
                         </tr>
                     );

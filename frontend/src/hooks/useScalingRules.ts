@@ -61,6 +61,7 @@ export function useScalingRules(refreshInterval = 5000) {
     }, [fetchAll]);
 
     const toggleRule = useCallback(async (id: string, enabled: boolean) => {
+        setRules((prev) => prev?.map((r) => (r._id === id ? { ...r, enabled } : r)) ?? prev);
         const res = await api.updateScalingRule(id, { enabled });
         await fetchAll();
         return res;

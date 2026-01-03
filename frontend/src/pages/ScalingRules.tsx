@@ -1,14 +1,16 @@
 import './Page.css';
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { ScalingRulesTable } from '../components/ScalingRulesTable';
 import { ScalingRuleForm } from '../components/ScalingRuleForm';
 import { useScalingRules } from '../hooks/useScalingRules';
 import type { ScalingRule } from '../types/scaling';
 
 export function ScalingRules() {
-    const { rules, deployments, latestMetrics, loading, error, createRule, toggleRule, deleteRule } = useScalingRules();
+    const { rules, deployments, latestMetrics, loading, error, createRule, toggleRule, deleteRule, reload } = useScalingRules();
     const [showForm, setShowForm] = useState(false);
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const location = useLocation();
 
     useEffect(() => {
         if (rules && rules.length > 0 && !selectedId) {
@@ -16,8 +18,15 @@ export function ScalingRules() {
         }
     }, [rules, selectedId]);
 
+    useEffect(() => {
+        reload();
+    }, [location.pathname, reload]);
+
     const handleCreate = async (rule: Partial<ScalingRule>) => {
-        await createRule(rule);
+        const created = await createRule(rule);
+        if (created?._id) {
+            setSelectedId(created._id);
+        }
         setShowForm(false);
     };
 
@@ -62,12 +71,13 @@ export function ScalingRules() {
 
             {rules && rules.length > 0 && (() => {
                 const active = rules.find((r) => r._id === selectedId) || rules[0];
+                const ruleEnabled = Boolean(active.enabled);
                 const depKey = `${active.namespace}/${active.deployment}`;
-                const dep = deployments[depKey];
+                const dep = ruleEnabled ? deployments[depKey] : undefined;
                 const metricKey = `${active.namespace}/${active.deployment}/${active.metric}`;
-                const latest = latestMetrics[metricKey];
-                const latestValue = latest?.value ?? active.lastValue;
-                const hasLastAction = Boolean(active.lastAction && active.lastAction !== 'noop' && active.lastActionAt);
+                const latest = ruleEnabled ? latestMetrics[metricKey] : undefined;
+                const latestValue = ruleEnabled ? (latest?.value ?? active.lastValue) : undefined;
+                const hasLastAction = ruleEnabled && Boolean(active.lastAction && active.lastAction !== 'noop' && active.lastActionAt);
                 const isStaleAction = hasLastAction && dep && active.lastTo !== undefined && dep.replicas !== active.lastTo;
                 const lastActionText = hasLastAction && !isStaleAction
                     ? `${active.lastAction}${active.lastFrom !== undefined && active.lastTo !== undefined ? ` (${active.lastFrom}→${active.lastTo})` : ''}`
@@ -90,7 +100,7 @@ export function ScalingRules() {
                             <div className="scaling-metric-card">
                                 <div className="metric-label">Last Action</div>
                                 <div className="metric-value" title={lastActionAt}>{lastActionText}</div>
-                                <div className="metric-subtext">{lastActionAt || 'No actions yet'}</div>
+                                <div className="metric-subtext">{ruleEnabled ? (lastActionAt || 'No actions yet') : '—'}</div>
                             </div>
                         </div>
                     </div>
