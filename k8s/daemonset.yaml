@@ -56,6 +56,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: MONGO_URI
+              value: "mongodb+srv://kernelEye:root@cluster0.n2rdrcb.mongodb.net/?appName=Cluster0"
           securityContext:
             privileged: true
             capabilities:
