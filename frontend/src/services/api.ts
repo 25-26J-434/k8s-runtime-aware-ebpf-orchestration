@@ -276,6 +276,20 @@ export const api = {
         return response.json();
     },
 
+    async getNamespaces(): Promise<string[]> {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/namespaces`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch namespaces: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
     // Node Communication APIs (Component 4)
     async getCommStats(): Promise<CommStats> {
         const response = await fetch(`${API_BASE}/api/comm/stats`, {
@@ -330,8 +344,9 @@ export const api = {
         }
     },
 
-    async getDeployments(): Promise<DeploymentInfo[]> {
-        const response = await fetch(`${API_BASE}/api/scaling/deployments`, {
+    async getDeployments(namespace?: string): Promise<DeploymentInfo[]> {
+        const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/deployments${query}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',

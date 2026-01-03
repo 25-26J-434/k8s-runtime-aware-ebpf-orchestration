@@ -7,8 +7,9 @@ import { useScalingRules } from '../hooks/useScalingRules';
 import type { ScalingRule } from '../types/scaling';
 
 export function ScalingRules() {
-    const { rules, deployments, latestMetrics, loading, error, createRule, toggleRule, deleteRule, reload } = useScalingRules();
+    const { rules, deployments, latestMetrics, loading, error, createRule, updateRule, toggleRule, deleteRule, reload } = useScalingRules();
     const [showForm, setShowForm] = useState(false);
+    const [editingRule, setEditingRule] = useState<ScalingRule | null>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const location = useLocation();
 
@@ -28,6 +29,14 @@ export function ScalingRules() {
             setSelectedId(created._id);
         }
         setShowForm(false);
+        setEditingRule(null);
+    };
+
+    const handleUpdate = async (rule: Partial<ScalingRule>) => {
+        if (!editingRule?._id) return;
+        await updateRule(editingRule._id, rule);
+        setShowForm(false);
+        setEditingRule(null);
     };
 
     return (
@@ -47,7 +56,7 @@ export function ScalingRules() {
                             <div className="list-subtext">Create and manage autoscaling rules.</div>
                         </div>
                         <div>
-                            <button className="btn btn-primary" onClick={() => { setShowForm(true); }}>Create Rule</button>
+                            <button className="btn btn-primary" onClick={() => { setEditingRule(null); setShowForm(true); }}>Create Rule</button>
                         </div>
                     </div>
 
@@ -63,6 +72,7 @@ export function ScalingRules() {
                             onDelete={async (id) => { try { await deleteRule(id); } catch (err) { console.error(err); } }}
                             selectedId={selectedId}
                             onSelect={(id) => setSelectedId(id)}
+                            onEdit={(rule) => { setEditingRule(rule); setShowForm(true); }}
                         />
                     )}
 
@@ -110,10 +120,12 @@ export function ScalingRules() {
             {showForm && (
                 <div className="modal">
                     <div className="modal-card">
-                        <h2>Create Rule</h2>
+                        <h2>{editingRule ? 'Edit Rule' : 'Create Rule'}</h2>
                         <ScalingRuleForm
+                            initial={editingRule ?? undefined}
                             onCancel={() => { setShowForm(false); }}
-                            onSubmit={handleCreate}
+                            onSubmit={editingRule ? handleUpdate : handleCreate}
+                            submitLabel={editingRule ? 'Update' : 'Create'}
                         />
                     </div>
                 </div>

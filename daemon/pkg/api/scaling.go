@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,8 +14,8 @@ import (
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"k8s.io/apimachinery/pkg/labels"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 type DeploymentInfo struct {
@@ -150,7 +151,8 @@ func handleScalingDeployments(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	deps, err := k8sClient.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	namespace := r.URL.Query().Get("namespace")
+	deps, err := k8sClient.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -169,6 +171,34 @@ func handleScalingDeployments(w http.ResponseWriter, r *http.Request) {
 			AvailableReplicas: dep.Status.AvailableReplicas,
 		})
 	}
+
+	writeJSON(w, out)
+}
+
+func handleScalingNamespaces(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if k8sClient == nil {
+		http.Error(w, "Kubernetes client not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	namespaces, err := k8sClient.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	out := make([]string, 0, len(namespaces.Items))
+	for _, ns := range namespaces.Items {
+		out = append(out, ns.Name)
+	}
+	sort.Strings(out)
 
 	writeJSON(w, out)
 }
@@ -297,7 +327,7 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 func normalizeScalingUpdates(updates bson.M) (bson.M, error) {
 	for key, val := range updates {
 		switch key {
-		case "namespace", "deployment", "metric", "operator":
+		case "namespace", "deployment", "metric", "operator", "action":
 			s, ok := val.(string)
 			if !ok {
 				return nil, fmt.Errorf("invalid type for %s", key)
@@ -309,7 +339,13 @@ func normalizeScalingUpdates(updates bson.M) (bson.M, error) {
 				return nil, fmt.Errorf("invalid type for threshold")
 			}
 			updates[key] = f
-		case "minReplicas", "maxReplicas", "step":
+		case "step":
+			i, ok := toInt32(val)
+			if !ok {
+				return nil, fmt.Errorf("invalid type for %s", key)
+			}
+			updates[key] = i
+		case "minReplicas", "maxReplicas":
 			i, ok := toInt32(val)
 			if !ok {
 				return nil, fmt.Errorf("invalid type for %s", key)

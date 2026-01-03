@@ -137,7 +137,7 @@ metadata:
   name: ebpf-daemon
 rules:
   - apiGroups: [""]
-    resources: ["nodes", "pods", "services", "endpoints"]
+    resources: ["nodes", "pods", "services", "endpoints", "namespaces"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods/log"]
