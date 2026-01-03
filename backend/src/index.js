@@ -62,6 +62,112 @@ function validatePort(port, field) {
     return null;
 }
 
+function normalizeUpdatePayload(body) {
+    // Partial update allowed: only validate fields that exist
+    const data = {};
+
+    if (body.namespace !== undefined) data.namespace = String(body.namespace);
+
+    // frontend
+    const frontend_service = body.frontend?.service ?? body.frontend_service;
+    const frontend_port = body.frontend?.port ?? body.frontend_port ?? body.frontend_service_port;
+    if (frontend_service !== undefined || frontend_port !== undefined) {
+        data.frontend = {};
+        if (frontend_service !== undefined) data.frontend.service = String(frontend_service);
+        if (frontend_port !== undefined) {
+            const fpErr = validatePort(frontend_port, 'frontend.port');
+            if (fpErr) return { error: fpErr };
+            data.frontend.port = Number(frontend_port);
+        }
+    }
+
+    // telemetry
+    const metric = body.telemetry?.metric ?? body.metric;
+    const violation_threshold = body.telemetry?.violation_threshold ?? body.violation_threshold;
+    const monitor_pod_contains = body.telemetry?.monitor_pod_contains ?? body.monitor_pod_contains;
+
+    if (metric !== undefined || violation_threshold !== undefined || monitor_pod_contains !== undefined) {
+        data.telemetry = {};
+        if (metric !== undefined) {
+            if (!['rtt_us', 'dns_us', 'sched_latency_us'].includes(String(metric))) {
+                return { error: 'metric must be one of: rtt_us, dns_us, sched_latency_us' };
+            }
+            data.telemetry.metric = String(metric);
+        }
+        if (violation_threshold !== undefined) {
+            const th = Number(violation_threshold);
+            if (!Number.isFinite(th) || th <= 0) return { error: 'violation_threshold must be a positive number' };
+            data.telemetry.violation_threshold = th;
+        }
+        if (monitor_pod_contains !== undefined) data.telemetry.monitor_pod_contains = String(monitor_pod_contains);
+    }
+
+    // action
+    const action_type = body.action?.type ?? body.action;
+    const backend_selector = body.action?.backend_selector ?? body.redirect_backend_label ?? body.backend_selector;
+    const backend_port = body.action?.backend_port ?? body.redirect_backend_port ?? body.backend_port;
+    const protocol = body.action?.protocol ?? body.redirect_backend_protocol;
+    const ttl_seconds = body.action?.ttl_seconds ?? body.ttl_seconds;
+    const strategy = body.action?.strategy ?? body.strategy;
+    const backend_candidates_selector = body.action?.backend_candidates_selector ?? body.backend_candidate_label;
+    const winner_label = body.action?.winner_label ?? body.redirect_winner_label;
+
+    if (
+        action_type !== undefined ||
+        backend_selector !== undefined ||
+        backend_port !== undefined ||
+        protocol !== undefined ||
+        ttl_seconds !== undefined ||
+        strategy !== undefined ||
+        backend_candidates_selector !== undefined ||
+        winner_label !== undefined
+    ) {
+        data.action = {};
+
+        if (action_type !== undefined) data.action.type = String(action_type);
+
+        if (backend_selector !== undefined) {
+            const sel = parseSelector(String(backend_selector));
+            if (!sel.ok) return { error: sel.error };
+            data.action.backend_selector = String(backend_selector);
+        }
+
+        if (backend_port !== undefined) {
+            const bpErr = validatePort(backend_port, 'backend_port');
+            if (bpErr) return { error: bpErr };
+            data.action.backend_port = Number(backend_port);
+        }
+
+        if (protocol !== undefined) data.action.protocol = String(protocol);
+
+        if (ttl_seconds !== undefined) {
+            const ttl = Number(ttl_seconds);
+            if (!Number.isFinite(ttl) || ttl <= 0) return { error: 'ttl_seconds must be a positive number' };
+            data.action.ttl_seconds = ttl;
+        }
+
+        if (strategy !== undefined) {
+            if (!['all', 'best_pod'].includes(String(strategy))) {
+                return { error: 'strategy must be one of: all, best_pod' };
+            }
+            data.action.strategy = String(strategy);
+        }
+
+        if (backend_candidates_selector !== undefined) data.action.backend_candidates_selector = String(backend_candidates_selector);
+
+        if (winner_label !== undefined) {
+            if (String(winner_label) && !String(winner_label).includes('=')) {
+                return { error: 'winner_label must be key=value (example: redirect-winner=yes)' };
+            }
+            data.action.winner_label = String(winner_label);
+        }
+    }
+
+    if (!Object.keys(data).length) return { error: 'No fields provided to update' };
+
+    return { data };
+}
+
 function normalizeCreatePayload(body) {
     // This lets you create policy with a single request.
     // Accept both flat and nested payload shapes.
@@ -246,24 +352,62 @@ app.post('/api/policies', async (req, res) => {
     const { data, error } = normalizeCreatePayload(req.body);
     if (error) return res.status(400).json({ message: error });
 
-    const existing = await Policy.findOne({ policy_name: data.policy_name });
-    const doc = existing || new Policy(data);
-
-    // merge on upsert (if exists)
-    if (existing) {
-        doc.namespace = data.namespace;
-        doc.frontend = data.frontend;
-        doc.telemetry = data.telemetry;
-        doc.action = data.action;
+    const exists = await Policy.findOne({ policy_name: data.policy_name });
+    if (exists) {
+        return res.status(409).json({ message: `Policy ${data.policy_name} already exists. Use PUT /api/policies/${data.policy_name} to edit.` });
     }
 
-    pushHistory(doc, existing ? 'UPDATED' : 'CREATED', 'Policy saved', {
-        policy_name: data.policy_name,
-    });
-
+    const doc = new Policy(data);
+    pushHistory(doc, 'CREATED', 'Policy created', { policy_name: data.policy_name });
     await doc.save();
-    res.status(existing ? 200 : 201).json(doc);
+
+    res.status(201).json(doc);
 });
+
+app.put('/api/policies/:name', async (req, res) => {
+    const p = await Policy.findOne({ policy_name: req.params.name });
+    if (!p) return res.status(404).json({ message: 'Policy not found' });
+
+    const { data, error } = normalizeUpdatePayload(req.body);
+    if (error) return res.status(400).json({ message: error });
+
+    // Merge safely (only provided fields)
+    if (data.namespace !== undefined) p.namespace = data.namespace;
+
+    if (data.frontend) {
+        p.frontend = p.frontend || {};
+        if (data.frontend.service !== undefined) p.frontend.service = data.frontend.service;
+        if (data.frontend.port !== undefined) p.frontend.port = data.frontend.port;
+    }
+
+    if (data.telemetry) {
+        p.telemetry = p.telemetry || {};
+        if (data.telemetry.metric !== undefined) p.telemetry.metric = data.telemetry.metric;
+        if (data.telemetry.violation_threshold !== undefined) p.telemetry.violation_threshold = data.telemetry.violation_threshold;
+        if (data.telemetry.monitor_pod_contains !== undefined) p.telemetry.monitor_pod_contains = data.telemetry.monitor_pod_contains;
+    }
+
+    if (data.action) {
+        p.action = p.action || {};
+        if (data.action.type !== undefined) p.action.type = data.action.type;
+        if (data.action.backend_selector !== undefined) p.action.backend_selector = data.action.backend_selector;
+        if (data.action.backend_port !== undefined) p.action.backend_port = data.action.backend_port;
+        if (data.action.protocol !== undefined) p.action.protocol = data.action.protocol;
+        if (data.action.ttl_seconds !== undefined) p.action.ttl_seconds = data.action.ttl_seconds;
+        if (data.action.strategy !== undefined) p.action.strategy = data.action.strategy;
+        if (data.action.backend_candidates_selector !== undefined) p.action.backend_candidates_selector = data.action.backend_candidates_selector;
+        if (data.action.winner_label !== undefined) p.action.winner_label = data.action.winner_label;
+    }
+
+    // Good default: if telemetry.monitor_pod_contains missing, set it to frontend.service
+    if (!p.telemetry.monitor_pod_contains) p.telemetry.monitor_pod_contains = p.frontend.service;
+
+    pushHistory(p, 'UPDATED', 'Policy updated', { updatedFields: Object.keys(data) });
+    await p.save();
+
+    res.json(p);
+});
+
 
 /**
  * LIST policies

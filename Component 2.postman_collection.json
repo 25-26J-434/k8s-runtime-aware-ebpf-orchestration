@@ -62,7 +62,7 @@
           "response": []
         },
         {
-          "name": "Create or Upsert Policy",
+          "name": "Create Policy",
           "request": {
             "method": "POST",
             "header": [
@@ -73,7 +73,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"policy_name\": \"redirect-service-a-to-c\",\n  \"namespace\": \"test-services\",\n  \"frontend\": {\n    \"service\": \"service-a\",\n    \"port\": 5000\n  },\n  \"telemetry\": {\n    \"metric\": \"rtt_us\",\n    \"violation_threshold\": 2500,\n    \"monitor_pod_contains\": \"service-a\"\n  },\n  \"action\": {\n    \"type\": \"redirect\",\n    \"backend_selector\": \"app=service-c\",\n    \"backend_port\": 5003,\n    \"protocol\": \"TCP\",\n    \"ttl_seconds\": 300,\n    \"strategy\": \"all\",\n    \"backend_candidates_selector\": \"app=service-c\",\n    \"winner_label\": \"redirect-winner=yes\"\n  }\n}"
+              "raw": "{\n  \"policy_name\": \"redirect-service-a-to-c\",\n  \"namespace\": \"test-services\",\n  \"frontend\": {\n    \"service\": \"service-a\",\n    \"port\": 5000\n  },\n  \"telemetry\": {\n    \"metric\": \"rtt_us\",\n    \"violation_threshold\": 2500,\n    \"monitor_pod_contains\": \"service-a\"\n  },\n  \"action\": {\n    \"type\": \"redirect\",\n    \"backend_selector\": \"app=service-c\",\n    \"backend_port\": 5003,\n    \"protocol\": \"TCP\",\n    \"ttl_seconds\": 300,\n    \"strategy\": \"best_pod\",\n    \"backend_candidates_selector\": \"app=service-c\",\n    \"winner_label\": \"redirect-winner=yes\"\n  }\n}"
             },
             "url": {
               "raw": "{{BASE_URL}}/api/policies",
@@ -85,7 +85,36 @@
                 "policies"
               ]
             },
-            "description": "Creates or updates a policy in the new schema (frontend + telemetry + action)."
+            "description": "Create a policy (frontend + telemetry + action). Returns 409 if the policy already exists; use Update Policy instead."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Policy",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"namespace\": \"test-services\",\n  \"frontend\": {\n    \"service\": \"service-a\",\n    \"port\": 5001\n  },\n  \"telemetry\": {\n    \"violation_threshold\": 2000,\n    \"metric\": \"dns_us\",\n    \"monitor_pod_contains\": \"service-a\"\n  },\n  \"action\": {\n    \"backend_selector\": \"app=service-b\",\n    \"backend_port\": 5002,\n    \"protocol\": \"TCP\",\n    \"ttl_seconds\": 120,\n    \"strategy\": \"all\",\n    \"backend_candidates_selector\": \"app=service-b\",\n    \"winner_label\": \"redirect-winner=yes\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{POLICY_NAME}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{POLICY_NAME}}"
+              ]
+            },
+            "description": "Partial update for an existing policy (only send fields you want to change)."
           },
           "response": []
         },
