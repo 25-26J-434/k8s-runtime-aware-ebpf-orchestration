@@ -21,9 +21,89 @@ const execFileAsync = util.promisify(execFile);
 const PORT = Number(process.env.PORT || 4000);
 const MONGODB_URI =
     process.env.MONGODB_URI ||
-    'mongodb+srv://kernelEye:root@cluster0.n2rdrcb.mongodb.net/?appName=Cluster0';
+    'mongodb+srv://kernelEye:root@cluster0.n2rdrcb.mongodb.net/rulesdb?appName=Cluster0';
 
 const APPLY_HELPER_TIMEOUT_MS = Number(process.env.LRP_HELPER_TIMEOUT_MS || 60000);
+const KUBECTL = process.env.KUBECTL_PATH || 'kubectl';
+const KUBECTL_TIMEOUT_MS = Number(process.env.KUBECTL_TIMEOUT_MS || 20000);
+
+async function kubectlJson(args) {
+    const { stdout } = await execFileAsync(KUBECTL, args, { timeout: KUBECTL_TIMEOUT_MS });
+    return JSON.parse(stdout);
+}
+
+async function kubectlText(args) {
+    const { stdout } = await execFileAsync(KUBECTL, args, { timeout: KUBECTL_TIMEOUT_MS });
+    return stdout.trim();
+}
+
+function pick(obj, keys) {
+    const out = {};
+    for (const k of keys) out[k] = obj?.[k];
+    return out;
+}
+
+function getContainerPorts(pod) {
+    const containers = pod?.spec?.containers || [];
+    return containers.map((c) => ({
+        name: c.name,
+        ports: (c.ports || []).map((p) => ({
+            name: p.name,
+            containerPort: p.containerPort,
+            protocol: p.protocol || 'TCP',
+        })),
+    }));
+}
+
+function svcPorts(svc) {
+    const ports = svc?.spec?.ports || [];
+    return ports.map((p) => ({
+        name: p.name,
+        port: p.port,
+        targetPort: p.targetPort,
+        protocol: p.protocol || 'TCP',
+    }));
+}
+
+function buildEndpointsByService(endpointSlices) {
+    // endpointSlice: discovery.k8s.io/v1
+    // We map by {namespace}/{serviceName} => list of addresses + ports
+    const map = new Map();
+
+    for (const es of endpointSlices?.items || []) {
+        const ns = es?.metadata?.namespace;
+        const svcName = es?.metadata?.labels?.['kubernetes.io/service-name'];
+        if (!ns || !svcName) continue;
+
+        const key = `${ns}/${svcName}`;
+        if (!map.has(key)) map.set(key, []);
+
+        const ports = (es.ports || []).map((p) => ({
+            name: p.name,
+            port: p.port,
+            protocol: p.protocol || 'TCP',
+        }));
+
+        const endpoints = es.endpoints || [];
+        for (const ep of endpoints) {
+            const addrs = ep.addresses || [];
+            const targetRef = ep.targetRef
+                ? pick(ep.targetRef, ['kind', 'name', 'namespace'])
+                : null;
+
+            for (const addr of addrs) {
+                map.get(key).push({
+                    address: addr,
+                    ports,
+                    targetRef,
+                    conditions: ep.conditions || {},
+                });
+            }
+        }
+    }
+
+    return map;
+}
 
 // Helper script is at repo root (same folder level as Dockerfile) in your screenshot
 const HELPER_PATHS = [
@@ -530,6 +610,102 @@ app.delete('/api/policies/:name', async (req, res) => {
 
     await Policy.deleteOne({ policy_name: req.params.name });
     res.json({ deleted: true });
+});
+/**
+ * GET /api/cluster/summary
+ * Query params:
+ *   ?namespace=test-services (optional; if omitted, returns all namespaces)
+ */
+app.get('/api/cluster/summary', async (req, res) => {
+    try {
+        const onlyNs = req.query.namespace ? String(req.query.namespace) : null;
+
+        // Cluster/context info
+        const context = await kubectlText(['config', 'current-context']).catch(() => '');
+        const clusterInfo = await kubectlText(['cluster-info']).catch(() => '');
+
+        // Nodes
+        const nodesJson = await kubectlJson(['get', 'nodes', '-o', 'json']);
+        const nodes = (nodesJson.items || []).map((n) => ({
+            name: n.metadata?.name,
+            labels: n.metadata?.labels || {},
+            internalIP:
+                (n.status?.addresses || []).find((a) => a.type === 'InternalIP')?.address || null,
+            roles: Object.keys(n.metadata?.labels || {})
+                .filter((k) => k.startsWith('node-role.kubernetes.io/'))
+                .map((k) => k.replace('node-role.kubernetes.io/', '')),
+            kubeletVersion: n.status?.nodeInfo?.kubeletVersion,
+            osImage: n.status?.nodeInfo?.osImage,
+        }));
+
+        // Namespaces
+        const nsJson = await kubectlJson(['get', 'namespaces', '-o', 'json']);
+        const namespaces = (nsJson.items || [])
+            .map((n) => n.metadata?.name)
+            .filter(Boolean)
+            .filter((n) => (onlyNs ? n === onlyNs : true));
+
+        // Pods (all or one namespace)
+        const podsArgs = onlyNs
+            ? ['get', 'pods', '-n', onlyNs, '-o', 'json']
+            : ['get', 'pods', '-A', '-o', 'json'];
+        const podsJson = await kubectlJson(podsArgs);
+        const pods = (podsJson.items || []).map((p) => ({
+            namespace: p.metadata?.namespace,
+            name: p.metadata?.name,
+            node: p.spec?.nodeName,
+            podIP: p.status?.podIP,
+            phase: p.status?.phase,
+            labels: p.metadata?.labels || {},
+            containers: getContainerPorts(p),
+        }));
+
+        // Services (ports)
+        const svcArgs = onlyNs
+            ? ['get', 'svc', '-n', onlyNs, '-o', 'json']
+            : ['get', 'svc', '-A', '-o', 'json'];
+        const svcJson = await kubectlJson(svcArgs);
+        const services = (svcJson.items || []).map((s) => ({
+            namespace: s.metadata?.namespace,
+            name: s.metadata?.name,
+            type: s.spec?.type,
+            clusterIP: s.spec?.clusterIP,
+            selector: s.spec?.selector || {},
+            ports: svcPorts(s),
+        }));
+
+        // EndpointSlices (real backend addresses+ports behind services)
+        const epsArgs = onlyNs
+            ? ['get', 'endpointslices.discovery.k8s.io', '-n', onlyNs, '-o', 'json']
+            : ['get', 'endpointslices.discovery.k8s.io', '-A', '-o', 'json'];
+        const epsJson = await kubectlJson(epsArgs);
+        const endpointsBySvc = buildEndpointsByService(epsJson);
+
+        // Merge endpoints into service list
+        const servicesWithEndpoints = services.map((svc) => {
+            const key = `${svc.namespace}/${svc.name}`;
+            return {
+                ...svc,
+                endpoints: endpointsBySvc.get(key) || [],
+            };
+        });
+
+        res.json({
+            cluster: {
+                context,
+                clusterInfo,
+            },
+            nodes,
+            namespaces,
+            pods,
+            services: servicesWithEndpoints,
+        });
+    } catch (err) {
+        res.status(500).json({
+            message: 'Failed to build cluster summary',
+            error: err.message || String(err),
+        });
+    }
 });
 
 app.use((err, _req, res, _next) => {
