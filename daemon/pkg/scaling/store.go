@@ -71,6 +71,39 @@ func MongoDB() *mongo.Client {
 	return mongoClient
 }
 
+// WatchRuleChanges emits a signal whenever scaling rules change.
+func WatchRuleChanges(ctx context.Context) (<-chan struct{}, error) {
+	if mongoClient == nil || collection == nil {
+		return nil, fmt.Errorf("mongo not initialized")
+	}
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"operationType": bson.M{"$in": []string{"insert", "update", "replace", "delete"}}}}},
+	}
+	opts := options.ChangeStream().SetFullDocument(options.UpdateLookup)
+
+	stream, err := collection.Watch(ctx, pipeline, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	events := make(chan struct{}, 1)
+
+	go func() {
+		defer close(events)
+		defer stream.Close(ctx)
+
+		for stream.Next(ctx) {
+			select {
+			case events <- struct{}{}:
+			default:
+			}
+		}
+	}()
+
+	return events, nil
+}
+
 // GetEnabledScalingRules fetches enabled scaling rules
 func GetEnabledScalingRules() ([]ScalingRule, error) {
 	if mongoClient == nil || collection == nil {
