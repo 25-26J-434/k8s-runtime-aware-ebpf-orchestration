@@ -43,7 +43,7 @@ export function Routing() {
     const [lastUpdated, setLastUpdated] = useState<string | null>(null);
     const [selectedPolicy, setSelectedPolicy] = useState<PolicyRecord | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
-    const [drawerMode, setDrawerMode] = useState<'view' | 'edit'>('view');
+    const [drawerMode, setDrawerMode] = useState<'view' | 'edit' | 'create'>('view');
     const [editForm, setEditForm] = useState<any>({});
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -54,6 +54,23 @@ export function Routing() {
     const strategyOptions = ['best_pod', 'all'];
     const [deleteTarget, setDeleteTarget] = useState<PolicyRecord | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const defaultCreateForm = {
+        policy_name: '',
+        namespace: 'test-services',
+        frontend_service: '',
+        frontend_port: '',
+        telemetry_metric: metricOptions[0],
+        telemetry_violation_threshold: '',
+        telemetry_monitor: '',
+        action_type: 'redirect',
+        action_backend_selector: '',
+        action_backend_port: '',
+        action_protocol: 'TCP',
+        action_ttl_seconds: '300',
+        action_strategy: 'best_pod',
+        action_backend_candidates_selector: '',
+        action_winner_label: '',
+    };
 
     const formatValue = (value: any) => {
         if (value === null || value === undefined) return '—';
@@ -180,17 +197,93 @@ export function Routing() {
         setDrawerSuccess(null);
     };
 
+    const openCreate = () => {
+        setSelectedPolicy(null);
+        setDrawerMode('create');
+        setEditForm(defaultCreateForm);
+        setDrawerOpen(true);
+        setDrawerError(null);
+        setDrawerSuccess(null);
+    };
+
     const handleSave = async (event?: React.FormEvent) => {
         if (event) event.preventDefault();
-        if (!selectedPolicy) return;
-        const targetName = selectedPolicy.policy_name || editForm.policy_name;
-        if (!targetName) {
-            setDrawerError('Policy name is required.');
-            return;
-        }
         setSaving(true);
         setDrawerError(null);
         setDrawerSuccess(null);
+
+        if (drawerMode === 'create') {
+            const required = [
+                'policy_name',
+                'namespace',
+                'frontend_service',
+                'frontend_port',
+                'telemetry_metric',
+                'telemetry_violation_threshold',
+                'telemetry_monitor',
+                'action_backend_selector',
+                'action_backend_port',
+                'action_protocol',
+                'action_ttl_seconds',
+            ];
+            for (const key of required) {
+                if (!editForm[key]) {
+                    setDrawerError('Please fill all required fields.');
+                    setSaving(false);
+                    return;
+                }
+            }
+
+            const body = {
+                policy_name: editForm.policy_name,
+                namespace: editForm.namespace,
+                frontend: {
+                    service: editForm.frontend_service,
+                    port: numOrString(editForm.frontend_port),
+                },
+                telemetry: {
+                    metric: editForm.telemetry_metric,
+                    violation_threshold: numOrString(editForm.telemetry_violation_threshold),
+                    monitor_pod_contains: editForm.telemetry_monitor,
+                },
+                action: {
+                    type: editForm.action_type || 'redirect',
+                    backend_selector: editForm.action_backend_selector,
+                    backend_port: numOrString(editForm.action_backend_port),
+                    protocol: editForm.action_protocol || 'TCP',
+                    ttl_seconds: numOrString(editForm.action_ttl_seconds),
+                    strategy: editForm.action_strategy || '',
+                    backend_candidates_selector: editForm.action_backend_candidates_selector || '',
+                    winner_label: editForm.action_winner_label || '',
+                },
+            };
+
+            try {
+                const created = await api.createPolicy(body);
+                setDrawerSuccess('Policy created.');
+                setSelectedPolicy(created);
+                setDrawerMode('view');
+                fetchPolicies();
+            } catch (err: any) {
+                setDrawerError(err?.message || 'Failed to create policy');
+            } finally {
+                setSaving(false);
+            }
+            return;
+        }
+
+        if (!selectedPolicy) {
+            setDrawerError('No policy selected.');
+            setSaving(false);
+            return;
+        }
+
+        const targetName = selectedPolicy.policy_name || editForm.policy_name;
+        if (!targetName) {
+            setDrawerError('Policy name is required.');
+            setSaving(false);
+            return;
+        }
 
         const body: any = {};
 
@@ -354,10 +447,9 @@ export function Routing() {
                     <span>Policies</span>
                 </div>
                 <div className="table-toolbar">
-                    <div className="table-meta">
-                        {loading ? 'Loading policies…' : `${policies.length} policies`}
-                        {formattedUpdated && !loading ? ` • Updated ${formattedUpdated}` : ''}
-                    </div>
+                    <button className="ghost-button" type="button" onClick={openCreate}>
+                        Create policy
+                    </button>
                     <button className="ghost-button" onClick={fetchPolicies} disabled={loading}>
                         <FiRefreshCw /> Reload
                     </button>
@@ -456,8 +548,12 @@ export function Routing() {
             <div className={`drawer ${drawerOpen ? 'open' : ''}`}>
                 <div className="drawer-header">
                     <div>
-                        <div className="drawer-title">{selectedPolicy?.policy_name || 'Policy details'}</div>
-                        <div className="drawer-subtitle">{selectedPolicy?.namespace || '—'}</div>
+                        <div className="drawer-title">
+                            {drawerMode === 'create'
+                                ? 'Create policy'
+                                : selectedPolicy?.policy_name || 'Policy details'}
+                        </div>
+                        <div className="drawer-subtitle">{selectedPolicy?.namespace || editForm.namespace || '—'}</div>
                     </div>
                     <div className="drawer-header-actions">
                         {selectedPolicy && drawerMode === 'view' && (
@@ -674,6 +770,187 @@ export function Routing() {
                             </button>
                             <button type="submit" className="primary-button" disabled={saving}>
                                 {saving ? 'Saving…' : 'Save'}
+                            </button>
+                        </div>
+                    </form>
+                ) : drawerMode === 'create' ? (
+                    <form className="drawer-form" onSubmit={handleSave}>
+                        <div className="form-grid single-column">
+                            <label className="form-field">
+                                <span className="form-label">Policy Name *</span>
+                                <input
+                                    type="text"
+                                    value={editForm.policy_name || ''}
+                                    onChange={(e) => setEditForm((prev: any) => ({ ...prev, policy_name: e.target.value }))}
+                                    required
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Namespace *</span>
+                                <input
+                                    type="text"
+                                    value={editForm.namespace || ''}
+                                    onChange={(e) => setEditForm((prev: any) => ({ ...prev, namespace: e.target.value }))}
+                                    required
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Frontend Service *</span>
+                                <input
+                                    type="text"
+                                    value={editForm.frontend_service || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({ ...prev, frontend_service: e.target.value }))
+                                    }
+                                    required
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Frontend Port *</span>
+                                <input
+                                    type="number"
+                                    value={editForm.frontend_port || ''}
+                                    onChange={(e) => setEditForm((prev: any) => ({ ...prev, frontend_port: e.target.value }))}
+                                    required
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Telemetry Metric *</span>
+                                <select
+                                    value={editForm.telemetry_metric || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({ ...prev, telemetry_metric: e.target.value }))
+                                    }
+                                    required
+                                >
+                                    <option value="">Select metric</option>
+                                    {metricOptions.map((m) => (
+                                        <option key={m} value={m}>
+                                            {m}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Violation Threshold *</span>
+                                <input
+                                    type="number"
+                                    value={editForm.telemetry_violation_threshold || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({
+                                            ...prev,
+                                            telemetry_violation_threshold: e.target.value,
+                                        }))
+                                    }
+                                    required
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Monitor Selector *</span>
+                                <input
+                                    type="text"
+                                    value={editForm.telemetry_monitor || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({ ...prev, telemetry_monitor: e.target.value }))
+                                    }
+                                    required
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Backend Selector *</span>
+                                <input
+                                    type="text"
+                                    value={editForm.action_backend_selector || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({ ...prev, action_backend_selector: e.target.value }))
+                                    }
+                                    required
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Backend Port *</span>
+                                <input
+                                    type="number"
+                                    value={editForm.action_backend_port || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({ ...prev, action_backend_port: e.target.value }))
+                                    }
+                                    required
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Protocol *</span>
+                                <input
+                                    type="text"
+                                    value={editForm.action_protocol || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({ ...prev, action_protocol: e.target.value }))
+                                    }
+                                    required
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">TTL Seconds *</span>
+                                <input
+                                    type="number"
+                                    value={editForm.action_ttl_seconds || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({ ...prev, action_ttl_seconds: e.target.value }))
+                                    }
+                                    required
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Strategy</span>
+                                <select
+                                    value={editForm.action_strategy || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({ ...prev, action_strategy: e.target.value }))
+                                    }
+                                >
+                                    <option value="">Select strategy</option>
+                                    {strategyOptions.map((s) => (
+                                        <option key={s} value={s}>
+                                            {s}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Backend Candidates Selector</span>
+                                <input
+                                    type="text"
+                                    value={editForm.action_backend_candidates_selector || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({
+                                            ...prev,
+                                            action_backend_candidates_selector: e.target.value,
+                                        }))
+                                    }
+                                />
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Winner Label</span>
+                                <input
+                                    type="text"
+                                    value={editForm.action_winner_label || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({ ...prev, action_winner_label: e.target.value }))
+                                    }
+                                />
+                            </label>
+                        </div>
+                        <div className="drawer-footer">
+                            <button
+                                type="button"
+                                className="ghost-button"
+                                onClick={() => setDrawerOpen(false)}
+                                disabled={saving}
+                            >
+                                Cancel
+                            </button>
+                            <button type="submit" className="primary-button" disabled={saving}>
+                                {saving ? 'Creating…' : 'Create'}
                             </button>
                         </div>
                     </form>
