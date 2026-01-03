@@ -1,0 +1,14 @@
+{
+  "policy_name": "Policy1",
+  "namespace": "test-services",
+  "frontend": { "service": "service-a", "port": 5000 },
+  "telemetry": { "metric": "dns_us", "violation_threshold": 100 },
+  "action": {
+    "type": "redirect",
+    "backend_selector": "app=service-c",
+    "backend_port": 5003,
+    "protocol": "TCP",
+    "ttl_seconds": 300,
+    "strategy": "all"
+  }
+}
