@@ -34,7 +34,7 @@ fi
 
 # Check CRD exists
 if ! kubectl get crd ciliumlocalredirectpolicies.cilium.io >/dev/null 2>&1; then
-  echo "CiliumLocalRedirectPolicy CRD not found. Install/enable it before running." >&2
+  echo "RedirectPolicy CRD not found. Install/enable it before running." >&2
   exit 1
 fi
 
@@ -168,7 +168,7 @@ if [[ "$violation" -ne 1 ]]; then
   exit 0
 fi
 
-echo "Violation detected -> applying CiliumLocalRedirectPolicy \"$policy_slug\"..."
+echo "Violation detected -> applying RedirectPolicy \"$policy_slug\"..."
 
 # best-pod: label the best candidate and select it using winner_label
 if [[ "$choose_best_pod" == "true" ]]; then
