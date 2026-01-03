@@ -57,6 +57,25 @@ export function Routing() {
     const [applyingPolicy, setApplyingPolicy] = useState<string | null>(null);
     const [applyError, setApplyError] = useState<string | null>(null);
     const [applyStatus, setApplyStatus] = useState<string | null>(null);
+    const [clusterSummary, setClusterSummary] = useState<any>(null);
+    const [clusterLoading, setClusterLoading] = useState(false);
+    const [clusterError, setClusterError] = useState<string | null>(null);
+    const [selectedNode, setSelectedNode] = useState<string>('');
+
+    const fetchClusterSummary = async () => {
+        setClusterLoading(true);
+        setClusterError(null);
+        try {
+            const data = await api.getClusterSummary();
+            setClusterSummary(data || {});
+            const firstNode = data?.nodes?.[0]?.name || '';
+            setSelectedNode(firstNode);
+        } catch (err: any) {
+            setClusterError(err?.message || 'Failed to fetch cluster summary');
+        } finally {
+            setClusterLoading(false);
+        }
+    };
     const defaultCreateForm = {
         policy_name: '',
         namespace: 'test-services',
@@ -207,6 +226,9 @@ export function Routing() {
         setDrawerOpen(true);
         setDrawerError(null);
         setDrawerSuccess(null);
+        if (!clusterSummary && !clusterLoading) {
+            fetchClusterSummary();
+        }
     };
 
     const handleApplyPolicy = async (policy: PolicyRecord) => {
@@ -420,6 +442,12 @@ export function Routing() {
         return () => window.removeEventListener('keydown', onKey);
     }, []);
 
+    useEffect(() => {
+        if (!clusterSummary && drawerMode === 'create') {
+            fetchClusterSummary();
+        }
+    }, [clusterSummary, drawerMode]);
+
     const formattedUpdated = useMemo(() => {
         if (!lastUpdated) return '';
         try {
@@ -451,6 +479,33 @@ export function Routing() {
                 <pre className="detail-pre">{JSON.stringify(value, null, 2)}</pre>
             </details>
         );
+    };
+
+    const namespacesForNode = useMemo(() => {
+        if (!selectedNode || !clusterSummary?.pods) return clusterSummary?.namespaces || [];
+        const nsSet = new Set<string>();
+        for (const pod of clusterSummary.pods || []) {
+            if (pod.node === selectedNode && pod.namespace) nsSet.add(pod.namespace);
+        }
+        return Array.from(nsSet);
+    }, [selectedNode, clusterSummary]);
+
+    const servicesForNamespace = (ns: string) => {
+        if (!ns || !clusterSummary?.services) return [];
+        return (clusterSummary.services as any[]).filter((svc) => svc.namespace === ns);
+    };
+
+    const podsForNamespace = (ns: string) => {
+        if (!ns || !clusterSummary?.pods) return [];
+        return (clusterSummary.pods as any[]).filter((p) => p.namespace === ns);
+    };
+
+    const selectorFromService = (svc: any) => {
+        if (!svc?.selector) return '';
+        const entries = Object.entries(svc.selector);
+        if (!entries.length) return '';
+        const [k, v] = entries[0];
+        return `${k}=${v}`;
     };
 
     return (
@@ -815,6 +870,32 @@ export function Routing() {
                 ) : drawerMode === 'create' ? (
                     <form className="drawer-form" onSubmit={handleSave}>
                         <div className="form-grid single-column">
+                            {clusterError && (
+                                <div className="alert error">
+                                    <FiAlertTriangle /> {clusterError}
+                                </div>
+                            )}
+                            <label className="form-field">
+                                <span className="form-label">Node</span>
+                                <select
+                                    value={selectedNode}
+                                    onChange={(e) => {
+                                        setSelectedNode(e.target.value);
+                                        const nsList = namespacesForNode;
+                                        if (nsList.length) {
+                                            setEditForm((prev: any) => ({ ...prev, namespace: nsList[0] }));
+                                        }
+                                    }}
+                                    disabled={clusterLoading}
+                                >
+                                    <option value="">Select node</option>
+                                    {(clusterSummary?.nodes || []).map((n: any) => (
+                                        <option key={n.name} value={n.name}>
+                                            {n.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
                             <label className="form-field">
                                 <span className="form-label">Policy Name *</span>
                                 <input
@@ -826,23 +907,47 @@ export function Routing() {
                             </label>
                             <label className="form-field">
                                 <span className="form-label">Namespace *</span>
-                                <input
-                                    type="text"
+                                <select
                                     value={editForm.namespace || ''}
                                     onChange={(e) => setEditForm((prev: any) => ({ ...prev, namespace: e.target.value }))}
                                     required
-                                />
+                                    disabled={clusterLoading}
+                                >
+                                    <option value="">Select namespace</option>
+                                    {(namespacesForNode.length ? namespacesForNode : clusterSummary?.namespaces || []).map(
+                                        (ns: string) => (
+                                            <option key={ns} value={ns}>
+                                                {ns}
+                                            </option>
+                                        )
+                                    )}
+                                </select>
                             </label>
                             <label className="form-field">
                                 <span className="form-label">Frontend Service *</span>
-                                <input
-                                    type="text"
+                                <select
                                     value={editForm.frontend_service || ''}
-                                    onChange={(e) =>
-                                        setEditForm((prev: any) => ({ ...prev, frontend_service: e.target.value }))
-                                    }
+                                    onChange={(e) => {
+                                        const svcName = e.target.value;
+                                        setEditForm((prev: any) => ({ ...prev, frontend_service: svcName }));
+                                        const svc = servicesForNamespace(editForm.namespace || '').find(
+                                            (s: any) => s.name === svcName
+                                        );
+                                        const port = svc?.ports?.[0]?.port;
+                                        if (port) {
+                                            setEditForm((prev: any) => ({ ...prev, frontend_port: port }));
+                                        }
+                                    }}
                                     required
-                                />
+                                    disabled={clusterLoading}
+                                >
+                                    <option value="">Select service</option>
+                                    {servicesForNamespace(editForm.namespace || '').map((svc: any) => (
+                                        <option key={`${svc.namespace}-${svc.name}`} value={svc.name}>
+                                            {svc.name}
+                                        </option>
+                                    ))}
+                                </select>
                             </label>
                             <label className="form-field">
                                 <span className="form-label">Frontend Port *</span>
@@ -897,14 +1002,35 @@ export function Routing() {
                             </label>
                             <label className="form-field">
                                 <span className="form-label">Backend Selector *</span>
-                                <input
-                                    type="text"
+                                <select
                                     value={editForm.action_backend_selector || ''}
                                     onChange={(e) =>
                                         setEditForm((prev: any) => ({ ...prev, action_backend_selector: e.target.value }))
                                     }
                                     required
-                                />
+                                    disabled={clusterLoading}
+                                >
+                                    <option value="">Select backend selector</option>
+                                    {servicesForNamespace(editForm.namespace || '').map((svc: any) => {
+                                        const sel = selectorFromService(svc);
+                                        if (!sel) return null;
+                                        return (
+                                            <option key={`${svc.namespace}-${svc.name}-sel`} value={sel}>
+                                                {svc.name} ({sel})
+                                            </option>
+                                        );
+                                    })}
+                                    {podsForNamespace(editForm.namespace || '').map((pod: any) => {
+                                        const app = pod.labels?.app;
+                                        const sel = app ? `app=${app}` : '';
+                                        if (!sel) return null;
+                                        return (
+                                            <option key={`${pod.namespace}-${pod.name}-pod`} value={sel}>
+                                                Pod {pod.name} ({sel})
+                                            </option>
+                                        );
+                                    })}
+                                </select>
                             </label>
                             <label className="form-field">
                                 <span className="form-label">Backend Port *</span>

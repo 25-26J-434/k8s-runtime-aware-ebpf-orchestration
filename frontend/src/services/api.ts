@@ -512,6 +512,19 @@ export const api = {
         return response.text();
     },
 
+    async getClusterSummary(): Promise<any> {
+        const response = await fetch(`${ROUTING_API_BASE}/api/cluster/summary`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
+        });
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to fetch cluster summary: ${response.status} ${response.statusText} - ${text}`);
+        }
+        return response.json();
+    },
+
     // Node Communication APIs (Component 4)
     async getCommStats(): Promise<CommStats> {
         const response = await fetch(`${API_BASE}/api/comm/stats`, {
