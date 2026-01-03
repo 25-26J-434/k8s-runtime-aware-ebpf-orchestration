@@ -296,6 +296,48 @@
   width: 100%;
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  z-index: 60;
+}
+
+.modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(360px, 90vw);
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 1.15rem;
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(59, 130, 246, 0.18);
+}
+
+.modal-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #e5e7eb;
+  margin-bottom: 0.35rem;
+}
+
+.modal-body {
+  color: #cbd5e1;
+  margin-bottom: 0.9rem;
+  line-height: 1.45;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 .routing-status .status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

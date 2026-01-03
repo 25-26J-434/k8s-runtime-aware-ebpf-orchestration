@@ -52,6 +52,8 @@ export function Routing() {
 
     const metricOptions = ['rtt_us', 'dns_us', 'sched_latency_us'];
     const strategyOptions = ['best_pod', 'all'];
+    const [deleteTarget, setDeleteTarget] = useState<PolicyRecord | null>(null);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     const formatValue = (value: any) => {
         if (value === null || value === undefined) return '—';
@@ -269,15 +271,11 @@ export function Routing() {
         }
     };
 
-    const handleDelete = async (policy?: PolicyRecord) => {
-        const policyName = policy?.policy_name || selectedPolicy?.policy_name;
+    const handleDelete = async () => {
+        const policyName = deleteTarget?.policy_name || selectedPolicy?.policy_name;
         if (!policyName) {
             setDrawerError('Policy name not found.');
             return;
-        }
-        if (!window.confirm(`Delete policy "${policyName}"?`)) return;
-        if (policy && policy !== selectedPolicy) {
-            setSelectedPolicy(policy);
         }
         setDeleting(true);
         setDrawerError(null);
@@ -285,8 +283,12 @@ export function Routing() {
         try {
             await api.deletePolicy(policyName);
             setDrawerSuccess('Policy deleted.');
-            setDrawerOpen(false);
-            setSelectedPolicy(null);
+            setShowDeleteConfirm(false);
+            setDeleteTarget(null);
+            if (selectedPolicy?.policy_name === policyName) {
+                setDrawerOpen(false);
+                setSelectedPolicy(null);
+            }
             fetchPolicies();
         } catch (err: any) {
             setDrawerError(err?.message || 'Failed to delete policy');
@@ -434,7 +436,10 @@ export function Routing() {
                                                     type="button"
                                                     className="icon-button danger"
                                                     aria-label="Delete policy"
-                                                    onClick={() => handleDelete(policy)}
+                                                    onClick={() => {
+                                                        setDeleteTarget(policy);
+                                                        setShowDeleteConfirm(true);
+                                                    }}
                                                 >
                                                     <FiTrash2 />
                                                 </button>
@@ -659,7 +664,10 @@ export function Routing() {
                             <button
                                 type="button"
                                 className="ghost-button danger"
-                                onClick={() => handleDelete()}
+                                onClick={() => {
+                                    setDeleteTarget(selectedPolicy);
+                                    setShowDeleteConfirm(true);
+                                }}
                                 disabled={deleting || saving}
                             >
                                 {deleting ? 'Deleting…' : 'Delete'}
@@ -705,6 +713,69 @@ export function Routing() {
                     </div>
                 )}
             </div>
+            {showDeleteConfirm && (
+                <div
+                    className="modal-overlay"
+                    onClick={() => !deleting && setShowDeleteConfirm(false)}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}
+                >
+                    <div
+                        className="modal"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            width: '520px',
+                            maxWidth: '92vw',
+                            padding: '22px 24px',
+                            boxSizing: 'border-box',
+                        }}
+                    >
+
+                        <div
+                            className="modal-body"
+                            style={{
+                                textAlign: 'center',
+                                lineHeight: 1.5,
+                                marginBottom: '18px',
+                                wordBreak: 'normal',
+                                overflowWrap: 'anywhere',
+                            }}
+                        >
+                            Are you sure you want to delete{' '}
+                            <strong>{deleteTarget?.policy_name || selectedPolicy?.policy_name || 'this policy'}</strong>?
+                        </div>
+
+                        <div
+                            className="modal-actions"
+                            style={{
+                                display: 'flex',
+                                justifyContent: 'center',
+                                gap: '12px',
+                            }}
+                        >
+                            <button
+                                type="button"
+                                className="ghost-button"
+                                onClick={() => setShowDeleteConfirm(false)}
+                                disabled={deleting}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                className="ghost-button danger"
+                                onClick={handleDelete}
+                                disabled={deleting}
+                            >
+                                {deleting ? 'Deleting…' : 'Delete'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
