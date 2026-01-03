@@ -57,6 +57,7 @@ export function Routing() {
     const [applyingPolicy, setApplyingPolicy] = useState<string | null>(null);
     const [applyError, setApplyError] = useState<string | null>(null);
     const [applyStatus, setApplyStatus] = useState<string | null>(null);
+    const [applyToastTs, setApplyToastTs] = useState<string | null>(null);
     const [clusterSummary, setClusterSummary] = useState<any>(null);
     const [clusterLoading, setClusterLoading] = useState(false);
     const [clusterError, setClusterError] = useState<string | null>(null);
@@ -91,7 +92,7 @@ export function Routing() {
         action_ttl_seconds: '300',
         action_strategy: 'best_pod',
         action_backend_candidates_selector: '',
-        action_winner_label: '',
+        action_winner_label: 'redirect-winner=yes',
     };
 
     const formatValue = (value: any) => {
@@ -163,7 +164,7 @@ export function Routing() {
             frontend_port: policy.frontend?.port || policy.frontend_service_port || '',
             telemetry_metric: policy.telemetry?.metric || policy.metric || '',
             telemetry_violation_threshold: policy.telemetry?.violation_threshold || policy.violation_threshold || '',
-            telemetry_monitor: policy.telemetry?.monitor_pod_contains || policy.monitor_pod_contains || '',
+            telemetry_monitor: policy.frontend?.service || policy.frontend_service || policy.telemetry?.monitor_pod_contains || policy.monitor_pod_contains || '',
             action_type: actionObj.type || policy.action || 'redirect',
             action_backend_selector: actionObj.backend_selector || policy.redirect_backend_label || '',
             action_backend_port: actionObj.backend_port || policy.redirect_backend_port || '',
@@ -238,7 +239,8 @@ export function Routing() {
         setApplyStatus(null);
         try {
             const res = await api.applyPolicy(policy.policy_name);
-            setApplyStatus(res?.message || `Applied ${policy.policy_name}`);
+            setApplyStatus('Evaluate executed');
+            setApplyToastTs(new Date().toLocaleTimeString());
         } catch (err: any) {
             setApplyError(err?.message || `Failed to apply ${policy.policy_name}`);
         } finally {
@@ -260,7 +262,6 @@ export function Routing() {
                 'frontend_port',
                 'telemetry_metric',
                 'telemetry_violation_threshold',
-                'telemetry_monitor',
                 'action_backend_selector',
                 'action_backend_port',
                 'action_protocol',
@@ -294,7 +295,7 @@ export function Routing() {
                     ttl_seconds: numOrString(editForm.action_ttl_seconds),
                     strategy: editForm.action_strategy || '',
                     backend_candidates_selector: editForm.action_backend_candidates_selector || '',
-                    winner_label: editForm.action_winner_label || '',
+                    winner_label: 'redirect-winner=yes',
                 },
             };
 
@@ -368,8 +369,7 @@ export function Routing() {
             editForm.action_protocol !== undefined ||
             editForm.action_ttl_seconds !== undefined ||
             editForm.action_strategy !== undefined ||
-            editForm.action_backend_candidates_selector !== undefined ||
-            editForm.action_winner_label !== undefined
+            editForm.action_backend_candidates_selector !== undefined
         ) {
             body.action = {};
             addIfValue(body.action, 'type', editForm.action_type);
@@ -381,8 +381,10 @@ export function Routing() {
             if (ttl !== undefined) addIfValue(body.action, 'ttl_seconds', ttl);
             addIfValue(body.action, 'strategy', editForm.action_strategy);
             addIfValue(body.action, 'backend_candidates_selector', editForm.action_backend_candidates_selector);
-            addIfValue(body.action, 'winner_label', editForm.action_winner_label);
             if (!Object.keys(body.action).length) delete body.action;
+            else {
+                body.action.winner_label = selectedPolicy?.action?.winner_label || 'redirect-winner=yes';
+            }
         }
 
         if (!Object.keys(body).length) {
@@ -448,6 +450,24 @@ export function Routing() {
         }
     }, [clusterSummary, drawerMode]);
 
+    useEffect(() => {
+        if (editForm.frontend_service) {
+            setEditForm((prev: any) => ({
+                ...prev,
+                telemetry_monitor: prev.frontend_service,
+            }));
+        }
+    }, [editForm.frontend_service]);
+
+    useEffect(() => {
+        if (!applyStatus) return;
+        const t = setTimeout(() => {
+            setApplyStatus(null);
+            setApplyToastTs(null);
+        }, 4000);
+        return () => clearTimeout(t);
+    }, [applyStatus]);
+
     const formattedUpdated = useMemo(() => {
         if (!lastUpdated) return '';
         try {
@@ -508,6 +528,18 @@ export function Routing() {
         return `${k}=${v}`;
     };
 
+    const backendPortForSelector = (ns: string, selector: string) => {
+        if (!selector) return '';
+        const svc = servicesForNamespace(ns).find((s: any) => selectorFromService(s) === selector);
+        if (svc?.ports?.length) {
+            const port = svc.ports[0]?.port;
+            if (port) return port;
+        }
+        const pod = podsForNamespace(ns).find((p: any) => p.labels?.app && `app=${p.labels.app}` === selector);
+        const podPort = pod?.containers?.[0]?.ports?.[0]?.containerPort;
+        return podPort || '';
+    };
+
     return (
         <div className="page-container routing-page">
             <div className="page-header">
@@ -536,11 +568,6 @@ export function Routing() {
                 {applyError && (
                     <div className="alert error">
                         <FiAlertTriangle /> {applyError}
-                    </div>
-                )}
-                {applyStatus && (
-                    <div className="alert success">
-                        {applyStatus}
                     </div>
                 )}
 
@@ -756,10 +783,10 @@ export function Routing() {
                                 <span className="form-label">Monitor Selector</span>
                                 <input
                                     type="text"
-                                    value={editForm.telemetry_monitor || ''}
-                                    onChange={(e) =>
-                                        setEditForm((prev: any) => ({ ...prev, telemetry_monitor: e.target.value }))
-                                    }
+                                    value={editForm.frontend_service || selectedPolicy?.frontend?.service || ''}
+                                    readOnly
+                                    disabled
+                                    title="Monitor selector mirrors frontend service"
                                 />
                             </label>
                             <label className="form-field">
@@ -820,8 +847,7 @@ export function Routing() {
                             </label>
                             <label className="form-field">
                                 <span className="form-label">Backend Candidates Selector</span>
-                                <input
-                                    type="text"
+                                <select
                                     value={editForm.action_backend_candidates_selector || ''}
                                     onChange={(e) =>
                                         setEditForm((prev: any) => ({
@@ -829,16 +855,38 @@ export function Routing() {
                                             action_backend_candidates_selector: e.target.value,
                                         }))
                                     }
-                                />
+                                    disabled={clusterLoading}
+                                >
+                                    <option value="">Select backend candidates</option>
+                                    {servicesForNamespace(editForm.namespace || '').map((svc: any) => {
+                                        const sel = selectorFromService(svc);
+                                        if (!sel) return null;
+                                        return (
+                                            <option key={`${svc.namespace}-${svc.name}-sel`} value={sel}>
+                                                {svc.name} ({sel})
+                                            </option>
+                                        );
+                                    })}
+                                    {podsForNamespace(editForm.namespace || '').map((pod: any) => {
+                                        const app = pod.labels?.app;
+                                        const sel = app ? `app=${app}` : '';
+                                        if (!sel) return null;
+                                        return (
+                                            <option key={`${pod.namespace}-${pod.name}-pod`} value={sel}>
+                                                Pod {pod.name} ({sel})
+                                            </option>
+                                        );
+                                    })}
+                                </select>
                             </label>
                             <label className="form-field">
                                 <span className="form-label">Winner Label</span>
                                 <input
                                     type="text"
-                                    value={editForm.action_winner_label || ''}
-                                    onChange={(e) =>
-                                        setEditForm((prev: any) => ({ ...prev, action_winner_label: e.target.value }))
-                                    }
+                                    value="redirect-winner=yes"
+                                    readOnly
+                                    disabled
+                                    title="Set automatically"
                                 />
                             </label>
                         </div>
@@ -929,7 +977,11 @@ export function Routing() {
                                     value={editForm.frontend_service || ''}
                                     onChange={(e) => {
                                         const svcName = e.target.value;
-                                        setEditForm((prev: any) => ({ ...prev, frontend_service: svcName }));
+                                        setEditForm((prev: any) => ({
+                                            ...prev,
+                                            frontend_service: svcName,
+                                            telemetry_monitor: svcName,
+                                        }));
                                         const svc = servicesForNamespace(editForm.namespace || '').find(
                                             (s: any) => s.name === svcName
                                         );
@@ -993,11 +1045,11 @@ export function Routing() {
                                 <span className="form-label">Monitor Selector *</span>
                                 <input
                                     type="text"
-                                    value={editForm.telemetry_monitor || ''}
-                                    onChange={(e) =>
-                                        setEditForm((prev: any) => ({ ...prev, telemetry_monitor: e.target.value }))
-                                    }
+                                    value={editForm.frontend_service || ''}
+                                    readOnly
+                                    disabled
                                     required
+                                    title="Monitor selector mirrors frontend service"
                                 />
                             </label>
                             <label className="form-field">
@@ -1005,7 +1057,15 @@ export function Routing() {
                                 <select
                                     value={editForm.action_backend_selector || ''}
                                     onChange={(e) =>
-                                        setEditForm((prev: any) => ({ ...prev, action_backend_selector: e.target.value }))
+                                        setEditForm((prev: any) => {
+                                            const selector = e.target.value;
+                                            const port = backendPortForSelector(prev.namespace || '', selector);
+                                            return {
+                                                ...prev,
+                                                action_backend_selector: selector,
+                                                action_backend_port: port || prev.action_backend_port,
+                                            };
+                                        })
                                     }
                                     required
                                     disabled={clusterLoading}
@@ -1083,8 +1143,7 @@ export function Routing() {
                             </label>
                             <label className="form-field">
                                 <span className="form-label">Backend Candidates Selector</span>
-                                <input
-                                    type="text"
+                                <select
                                     value={editForm.action_backend_candidates_selector || ''}
                                     onChange={(e) =>
                                         setEditForm((prev: any) => ({
@@ -1092,16 +1151,38 @@ export function Routing() {
                                             action_backend_candidates_selector: e.target.value,
                                         }))
                                     }
-                                />
+                                    disabled={clusterLoading}
+                                >
+                                    <option value="">Select backend candidates</option>
+                                    {servicesForNamespace(editForm.namespace || '').map((svc: any) => {
+                                        const sel = selectorFromService(svc);
+                                        if (!sel) return null;
+                                        return (
+                                            <option key={`${svc.namespace}-${svc.name}-sel-create`} value={sel}>
+                                                {svc.name} ({sel})
+                                            </option>
+                                        );
+                                    })}
+                                    {podsForNamespace(editForm.namespace || '').map((pod: any) => {
+                                        const app = pod.labels?.app;
+                                        const sel = app ? `app=${app}` : '';
+                                        if (!sel) return null;
+                                        return (
+                                            <option key={`${pod.namespace}-${pod.name}-pod-create`} value={sel}>
+                                                Pod {pod.name} ({sel})
+                                            </option>
+                                        );
+                                    })}
+                                </select>
                             </label>
                             <label className="form-field">
                                 <span className="form-label">Winner Label</span>
                                 <input
                                     type="text"
-                                    value={editForm.action_winner_label || ''}
-                                    onChange={(e) =>
-                                        setEditForm((prev: any) => ({ ...prev, action_winner_label: e.target.value }))
-                                    }
+                                    value="redirect-winner=yes"
+                                    readOnly
+                                    disabled
+                                    title="Set automatically"
                                 />
                             </label>
                         </div>
@@ -1155,6 +1236,12 @@ export function Routing() {
                     </div>
                 )}
             </div>
+            {applyStatus && (
+                <div className="toast success">
+                    <div className="toast-title">{applyStatus}</div>
+                    {applyToastTs && <div className="toast-meta">{applyToastTs}</div>}
+                </div>
+            )}
             {showDeleteConfirm && (
                 <div
                     className="modal-overlay"
