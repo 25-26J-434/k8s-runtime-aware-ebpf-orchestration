@@ -53,54 +53,64 @@ func StartScalingController(k8sClient *kubernetes.Clientset) {
 }
 
 func decideReplicas(current int32, value float64, rule ScalingRule) (int32, string) {
-	minR := rule.MinReplicas
-	maxR := rule.MaxReplicas
 	step := rule.Step
 
 	// clamp defaults just in case
-	if minR < 1 {
-		minR = 1
-	}
-	if maxR < minR {
-		maxR = minR
-	}
 	if step < 1 {
 		step = 1
 	}
 
-	scaleUp := false
-	scaleDown := false
+	conditionMet := false
 
 	switch rule.Operator {
 	case ">":
-		scaleUp = value > rule.Threshold
+		conditionMet = value > rule.Threshold
 	case ">=":
-		scaleUp = value >= rule.Threshold
+		conditionMet = value >= rule.Threshold
 	case "<":
-		scaleDown = value < rule.Threshold
+		conditionMet = value < rule.Threshold
 	case "<=":
-		scaleDown = value <= rule.Threshold
+		conditionMet = value <= rule.Threshold
 	default:
 		// unknown operator -> no action
 		return current, "noop"
 	}
 
+	if !conditionMet {
+		return current, "noop"
+	}
+
+	action := rule.Action
+	if action == "" {
+		// legacy fallback based on operator direction
+		if rule.Operator == ">" || rule.Operator == ">=" {
+			action = "scale_up"
+		} else {
+			action = "scale_down"
+		}
+	}
+
 	desired := current
-	action := "noop"
-
-	if scaleUp {
+	switch action {
+	case "scale_up":
 		desired = current + step
-		action = "scale_up"
-	} else if scaleDown {
+	case "scale_down":
 		desired = current - step
-		action = "scale_down"
+	default:
+		return current, "noop"
 	}
 
-	if desired < minR {
-		desired = minR
+	if rule.MinReplicas > 0 && desired < rule.MinReplicas {
+		desired = rule.MinReplicas
 	}
-	if desired > maxR {
-		desired = maxR
+	if rule.MaxReplicas > 0 {
+		maxR := rule.MaxReplicas
+		if rule.MinReplicas > 0 && maxR < rule.MinReplicas {
+			maxR = rule.MinReplicas
+		}
+		if desired > maxR {
+			desired = maxR
+		}
 	}
 
 	return desired, action
