@@ -33,9 +33,11 @@ kubectl -n ebpf-telemetry port-forward ds/ebpf-daemon 8080:8080
 docker build -t service-a:latest examples/service-a
 docker build -t service-b:latest examples/service-b
 docker build -t service-c:latest examples/service-c
+docker build -t tcp-client:latest examples/tcp-client
 kind load docker-image service-a:latest --name ebpf-cluster
 kind load docker-image service-b:latest --name ebpf-cluster
 kind load docker-image service-c:latest --name ebpf-cluster
+kind load docker-image tcp-client:latest --name ebpf-cluster
 
 # 3) Deploy the test stack (service-a/b/c, traffic generator, tcp-client)
 kubectl apply -f k8s/test-services.yaml
