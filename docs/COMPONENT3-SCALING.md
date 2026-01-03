@@ -39,23 +39,12 @@ This component implements automatic Kubernetes workload autoscaling driven by eB
 3. The daemon **scaling controller** periodically evaluates enabled rules and updates the target **Deployment** replicas in Kubernetes.
 4. The UI polls deployments + latest metrics to render “Current Replicas / Latest Metric / Last Action”.
 
-## Why a test Deployment is required
-
-Autoscaling scales *workloads* (Kubernetes Deployments), not the eBPF daemon itself. For testing and demos, a small test Deployment is useful because it:
-
-- Behaves like a real application
-- Generates real network traffic (DNS/TCP)
-- Produces measurable eBPF metrics
-- Allows safe, repeatable scaling experiments
-
-In real usage, any production Deployment name/namespace can be used instead.
-
 ## Components
 
 - **Controller**: `daemon/pkg/scaling/controller.go`
   - Evaluation loop: every ~5s (`scalingLoopInterval`)
   - Rule refresh: every ~10s (`rulesRefreshInterval`) + change-stream notifications (if Mongo watch is available)
-  - Scaling action is clamped by `minReplicas`, `maxReplicas`, `step`
+  - Scaling action uses `action` + `step`, clamped by `minReplicas` / `maxReplicas`
 - **Rule store (MongoDB)**: `daemon/pkg/scaling/store.go`
   - Defaults: operator `">"`, `minReplicas=1`, `maxReplicas=5`, `step=1`
 - **Metric mapping**: `daemon/pkg/scaling/metrics.go`
@@ -113,7 +102,8 @@ Base port is `:8080` in the daemon.
 
 ### Status / telemetry helpers (UI cards)
 
-- `GET /api/scaling/deployments` — deployments + current replicas
+- `GET /api/scaling/namespaces` — cluster namespaces
+- `GET /api/scaling/deployments` — deployments + current replicas (optional `?namespace=...`)
 - `GET /api/scaling/metrics/latest` — latest per-deployment metrics
 
 ## Rule schema
@@ -129,6 +119,7 @@ Core fields:
 - `threshold` (number)
 - `enabled` (boolean)
 - `minReplicas` / `maxReplicas` (number)
+- `action` (string) — `scale_up` | `scale_down`
 - `step` (number) — how many replicas to change per action
 
 Status fields (written by the controller after a scale action):
@@ -149,45 +140,17 @@ If you want different units or derived signals, update the mapping in `daemon/pk
 ## UI behavior (Scaling Rules page)
 
 - Rules table lists the configured rules and enables/disables them.
+- Rules can be edited inline via the Edit action (metric, operator, threshold, action, change, enabled).
 - The metric cards show:
   - Current replicas (from `/api/scaling/deployments`)
   - Latest metric (from `/api/scaling/metrics/latest`, falling back to the rule’s `lastValue`)
   - Last action + timestamp (from rule status fields)
 - When a rule is disabled, the cards intentionally blank to `—` to avoid showing stale “active rule” data.
 
-## Test deployments
-
-### DNS test (`scale-test.yaml`)
-
-To generate predictable DNS traffic (useful for testing `dns_latency` rules), apply the included workload:
-
-- `kubectl apply -f scale-test.yaml`
-
-This creates a `default/scale-test` Deployment that continuously runs `nslookup` against `kubernetes.default.svc.cluster.local`.
-
-### RTT/TCP-ish test (`rtt-busybox-test.yaml`)
-
-To generate steady outbound HTTP traffic (useful for testing `rtt` rules, depending on your telemetry source), apply:
-
-- `kubectl apply -f rtt-busybox-test.yaml`
-
-## How to run the scaling test
-
-1. Deploy a test workload:
-   - `kubectl apply -f scale-test.yaml`
-2. Create a scaling rule in the UI (Scaling Rules page):
-   - `namespace`: `default`
-   - `deployment`: `scale-test`
-   - `metric`: `dns_latency`
-   - Choose an `operator`/`threshold` based on what you see in “Latest Metric” (pick a value slightly above/below the observed metric to force scale up/down).
-   - Set `minReplicas`, `maxReplicas`, and enable the rule.
-3. Watch the Deployment scale:
-   - `kubectl get deploy -n default scale-test -w`
-
 ## Proof of correctness (what to check)
 
 - Replica count changes automatically:
-  - `kubectl get deploy -n default scale-test -w`
+  - `kubectl get deploy -n <namespace> <deployment> -w`
 - Daemon logs show scaling decisions:
   - `kubectl logs -n ebpf-telemetry -l app=ebpf-daemon -c daemon --tail=200`
   - Look for `[Scaling]` log lines.
@@ -200,7 +163,6 @@ To generate steady outbound HTTP traffic (useful for testing `rtt` rules, depend
 
 In production:
 
-- Test Deployments are replaced with real services.
 - Rules are created/managed via the UI.
 - Scaling responds to actual network conditions; no manual scaling commands are required.
 
