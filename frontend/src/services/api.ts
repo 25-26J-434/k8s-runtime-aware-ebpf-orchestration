@@ -353,6 +353,37 @@ export const api = {
         return response.json();
     },
 
+    async updatePolicy(policyName: string, policy: any): Promise<any> {
+        const response = await fetch(`${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(policy),
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to update policy: ${response.status} ${response.statusText} - ${text}`);
+        }
+
+        return response.json();
+    },
+
+    async deletePolicy(policyName: string): Promise<void> {
+        const response = await fetch(`${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to delete policy: ${response.status} ${response.statusText} - ${text}`);
+        }
+    },
+
     async upsertPolicyRule(policyName: string, rule: any): Promise<any> {
         const response = await fetch(
             `${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}/rule`,
