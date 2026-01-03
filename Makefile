@@ -135,6 +135,12 @@ metrics: ## Get metrics from daemon
 port-forward: ## Port forward daemon API
 	kubectl -n ebpf-telemetry port-forward svc/ebpf-daemon 8080:8080
 
+port-forward-watchdog: ## Start port-forward with auto-restart watchdog (runs in background)
+	@echo "Starting port-forward watchdog..."
+	@$(SCRIPTS_DIR)/port-forward-watchdog.sh &
+	@echo "Watchdog started in background. Logs: /tmp/port-forward-watchdog.log"
+	@echo "To stop: pkill -f port-forward-watchdog"
+
 ## Component 4: Node-to-Node communication helpers
 node-comm-build: ## Build the node-to-node communication daemon only (no dashboard)
 	$(MAKE) -C $(NODE_COMM_DIR) build-daemon
