@@ -3,7 +3,6 @@ import './Page.css';
 import './Federation.css';
 import { api } from '../services/api';
 import type { CommLogEntry, CommStats } from '../types/api';
-import { FederationTopology } from './FederationTopology';
 
 type OutboundCommMode = 'BROADCAST' | 'UNICAST' | 'MULTICAST';
 
@@ -20,13 +19,12 @@ interface ClusterNode {
 
 const COMMUNICATION_MODES: Array<{
     value: OutboundCommMode;
-    icon: string;
     title: string;
     description: string;
 }> = [
-    { value: 'BROADCAST', icon: '📡', title: 'Broadcast', description: 'Notify every node simultaneously.' },
-    { value: 'UNICAST', icon: '🎯', title: 'Unicast', description: 'Deliver to a single, targeted peer.' },
-    { value: 'MULTICAST', icon: '🔀', title: 'Multicast', description: 'Fan out to a curated set of peers.' },
+    { value: 'BROADCAST', title: 'Broadcast', description: 'Notify every node simultaneously.' },
+    { value: 'UNICAST', title: 'Unicast', description: 'Deliver to a single, targeted peer.' },
+    { value: 'MULTICAST', title: 'Multicast', description: 'Fan out to a curated set of peers.' },
 ];
 
 const EVENT_OPTIONS = ['HANDSHAKE', 'SCHEDULING', 'STATE_UPDATE', 'METRIC_UPDATE', 'DISCOVERY'] as const;
@@ -418,11 +416,11 @@ export function Federation() {
                 </nav>
 
                 <main className="dashboard-main federation-main">
-                    {/* Topology Visualization */}
-                    <section id="topology" className="feature-card">
+                    {/* Topology Visualization (hidden for now) */}
+                    {/* <section id="topology" className="feature-card">
                         <h2>Federation Topology</h2>
                         <FederationTopology nodes={nodes} links={[]} />
-                    </section>
+                    </section> */}
 
                     {/* Analytics Charts */}
                     <section id="analytics" className="feature-card">
@@ -559,7 +557,7 @@ export function Federation() {
                                         >
                                             <div className="node-card__header">
                                                 <div className="node-card__identity">
-                                                    <div className="node-card__icon">🖥️</div>
+                                                    {/* <div className="node-card__icon">Icon</div> */}
                                                     <div>
                                                         <div className="node-card__name">{node.name}</div>
                                                         <div className="node-card__meta">{node.role}</div>
@@ -637,7 +635,6 @@ export function Federation() {
                                     className={`mode-card${messageType === mode.value ? ' is-active' : ''}`}
                                     onClick={() => handleModeChange(mode.value)}
                                 >
-                                    <span className="mode-card__icon">{mode.icon}</span>
                                     <span className="mode-card__title">{mode.title}</span>
                                     <span className="mode-card__help">{mode.description}</span>
                                 </button>
@@ -693,11 +690,6 @@ export function Federation() {
                                     </span>
                                 ) : (
                                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                        <span style={{ fontSize: 18 }}>
-                                            {messageType === 'BROADCAST' && '📡'}
-                                            {messageType === 'UNICAST' && '🎯'}
-                                            {messageType === 'MULTICAST' && '🔀'}
-                                        </span>
                                         {`Send ${messageType}`}
                                     </span>
                                 )}
