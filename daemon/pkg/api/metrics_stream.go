@@ -37,6 +37,7 @@ var (
 
 	clientsMu sync.RWMutex
 	clients   = make(map[*websocket.Conn]struct{})
+	clientWrites = make(map[*websocket.Conn]*sync.Mutex)
 
 	clusterMetricsMu sync.RWMutex
 	clusterMetrics   = make(map[string]UnifiedMetricsResponse)
@@ -137,6 +138,7 @@ func metricsWebSocketHandler(w http.ResponseWriter, r *http.Request) {
 func addClient(conn *websocket.Conn) {
 	clientsMu.Lock()
 	clients[conn] = struct{}{}
+	clientWrites[conn] = &sync.Mutex{}
 	clientsMu.Unlock()
 }
 
@@ -157,6 +159,19 @@ func sendClusterSnapshot(conn *websocket.Conn) error {
 		Type:  "snapshot",
 		Nodes: snapshot,
 	}
+
+	// Get the write mutex for this connection
+	clientsMu.RLock()
+	writeMu := clientWrites[conn]
+	clientsMu.RUnlock()
+
+	if writeMu == nil {
+		log.Printf("[API] No write mutex found for connection")
+		return nil
+	}
+
+	writeMu.Lock()
+	defer writeMu.Unlock()
 
 	conn.SetWriteDeadline(time.Now().Add(wsWriteTimeout))
 	return conn.WriteJSON(message)
@@ -186,6 +201,7 @@ func readPump(conn *websocket.Conn) {
 func removeClient(conn *websocket.Conn) {
 	clientsMu.Lock()
 	delete(clients, conn)
+	delete(clientWrites, conn)
 	clientsMu.Unlock()
 	conn.Close()
 }
@@ -209,8 +225,10 @@ func broadcastClusterUpdate(nodeKey string, metrics UnifiedMetricsResponse) {
 func broadcastToClients(message interface{}) {
 	clientsMu.RLock()
 	conns := make([]*websocket.Conn, 0, len(clients))
+	writers := make([]*sync.Mutex, 0, len(clients))
 	for conn := range clients {
 		conns = append(conns, conn)
+		writers = append(writers, clientWrites[conn])
 	}
 	clientsMu.RUnlock()
 
@@ -219,12 +237,21 @@ func broadcastToClients(message interface{}) {
 	}
 	// Broadcasts a message to all connected WebSocket clients.
 
-	for _, conn := range conns {
+	for i, conn := range conns {
+		writeMu := writers[i]
+		if writeMu == nil {
+			continue
+		}
+
+		writeMu.Lock()
 		conn.SetWriteDeadline(time.Now().Add(wsWriteTimeout))
 		if err := conn.WriteJSON(message); err != nil {
+			writeMu.Unlock()
 			log.Printf("[API] Failed to write to metrics websocket: %v", err)
 			removeClient(conn)
+			continue
 		}
+		writeMu.Unlock()
 	}
 }
 

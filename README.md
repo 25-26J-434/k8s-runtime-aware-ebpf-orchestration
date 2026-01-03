@@ -306,6 +306,22 @@ This script will:
 
 After the daemon is deployed:
 
+**Option 1: Port-forward with Auto-Restart Watchdog (Recommended)**
+
+```bash
+# Terminal 1: Start port-forward watchdog (auto-restarts if connection dies)
+./scripts/port-forward-watchdog.sh &
+# Or use Makefile:
+# make port-forward-watchdog
+
+# Terminal 2: Start frontend
+cd frontend
+npm install  # First time only
+npm run dev
+```
+
+**Option 2: Manual Port-Forward**
+
 ```bash
 # Terminal 1: Port forward (run in background)
 kubectl -n ebpf-telemetry port-forward svc/ebpf-daemon 8080:8080 &
@@ -317,6 +333,8 @@ npm run dev
 ```
 
 The dashboard will be available at `http://localhost:5000` (or the port shown in terminal).
+
+**Note:** The watchdog script automatically restarts the port-forward within 1 second if it disconnects, preventing connection errors in the frontend. View logs with: `tail -f /tmp/port-forward-watchdog.log`
 
 ### Quick Rebuild (Without Recreating Cluster)
 
@@ -426,26 +444,26 @@ cd ..
 7. **Send & Monitor**: Real-time logs with success/failure indicators
 
 **Dashboard Features:**
-- 📊 Live stats: Total nodes, ready nodes, messages sent
-- 🖥️ Interactive node cards with visual feedback
-- 🎨 Color-coded communication types
-- ✅ Success/failure indicators
-- 📝 Real-time message logs
+- Live stats: Total nodes, ready nodes, messages sent
+- Interactive node cards with visual feedback
+- Color-coded communication types
+- Success/failure indicators
+- Real-time message logs
 5. **Interactive node selection**:
    - Click nodes to select them (they turn green and scale up)
    - Selected nodes show a checkmark
    - Works with UNICAST (1 node) and MULTICAST (multiple nodes)
 6. **Enter payload** as JSON or plain text
-7. **Click "🚀 Send"** to broadcast the message
+7. **Click "Send"** to broadcast the message
 8. **View real-time logs** with success/failure indicators
 
 **Dashboard Features:**
-- 📊 Stats cards showing total nodes, ready nodes, messages sent, and last sent time
-- 🖥️ Interactive node cards that respond to clicks
-- 🎨 Color-coded communication types
-- ✅ Success/failure indicators in logs
-- 📝 Real-time message logging with timestamps
-- 🧹 Clear logs button
+- Stats cards showing total nodes, ready nodes, messages sent, and last sent time
+- Interactive node cards that respond to clicks
+- Color-coded communication types
+- Success/failure indicators in logs
+- Real-time message logging with timestamps
+- Clear logs button
 
 **Testing P2P Communication via CLI:**
 ```bash
@@ -547,8 +565,68 @@ make build-daemon           # Build Go daemon only
 make build-images           # Build all Docker images
 make deploy-daemon          # Deploy daemon to cluster
 make logs-daemon            # View daemon logs
-make port-forward           # Start port forwarding
+make port-forward           # Start port forwarding (foreground)
+make port-forward-watchdog  # Start port forwarding with auto-restart watchdog (background)
 ```
+
+## Port-Forward Watchdog (Auto-Restart)
+
+The port-forward connection can sometimes disconnect, causing `ECONNREFUSED` errors in the frontend. The watchdog script automatically monitors and restarts the port-forward within 1 second if it dies.
+
+### Features
+
+- **Fast Recovery**: Checks every 1 second, restarts within 1 second
+- **Health Verification**: Verifies port is actually accessible (not just process running)
+- **Smart Restart**: Waits for 3 consecutive failures before restarting (prevents flapping)
+- **Comprehensive Logging**: All events logged to `/tmp/port-forward-watchdog.log`
+- **Clean Shutdown**: Stops port-forward when watchdog exits
+
+### Usage
+
+**Start the watchdog:**
+
+```bash
+# Option 1: Direct script
+./scripts/port-forward-watchdog.sh &
+
+# Option 2: Makefile
+make port-forward-watchdog
+
+# Option 3: Run in foreground (for debugging)
+./scripts/port-forward-watchdog.sh
+```
+
+**Monitor logs:**
+
+```bash
+tail -f /tmp/port-forward-watchdog.log
+```
+
+**Stop the watchdog:**
+
+```bash
+pkill -f port-forward-watchdog
+```
+
+**Check status:**
+
+```bash
+# Check if watchdog is running
+ps aux | grep port-forward-watchdog
+
+# Check if port-forward is running
+ps aux | grep "kubectl.*port-forward.*8080"
+
+# Test API connectivity
+curl http://localhost:8080/health
+```
+
+### When to Use
+
+- **Development**: When running the frontend locally and experiencing connection drops
+- **Long Sessions**: When you need the port-forward to stay connected for extended periods
+- **Unstable Networks**: When network conditions cause frequent disconnections
+- **Automated Testing**: When you need reliable port-forward for CI/CD pipelines
 
 ## Testing Different Services
 
@@ -628,6 +706,40 @@ curl http://localhost:8080/health
 # Restart frontend
 cd frontend
 npm run dev
+```
+
+### Port-Forward Connection Issues
+
+If you're experiencing frequent disconnections (`ECONNREFUSED` errors):
+
+**Use the Auto-Restart Watchdog:**
+
+```bash
+# Start the watchdog (automatically restarts port-forward if it dies)
+./scripts/port-forward-watchdog.sh &
+
+# Or use Makefile:
+make port-forward-watchdog
+
+# View watchdog logs
+tail -f /tmp/port-forward-watchdog.log
+
+# Stop watchdog
+pkill -f port-forward-watchdog
+```
+
+**Manual Troubleshooting:**
+
+```bash
+# Check if port-forward is running
+ps aux | grep "kubectl.*port-forward.*8080"
+
+# Check if port is accessible
+curl http://localhost:8080/health
+
+# Restart port-forward manually
+pkill -f "kubectl.*port-forward.*8080"
+kubectl -n ebpf-telemetry port-forward svc/ebpf-daemon 8080:8080 > /tmp/port-forward.log 2>&1 &
 ```
 
 ## Component Integration
