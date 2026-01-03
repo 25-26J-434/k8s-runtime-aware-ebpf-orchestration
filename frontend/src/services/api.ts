@@ -406,7 +406,7 @@ export const api = {
 
     async applyPolicy(policyName: string): Promise<ApplyResponse> {
         const response = await fetch(
-            `${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}/apply`,
+            `${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}/evaluate`,
             {
                 method: 'POST',
                 headers: {

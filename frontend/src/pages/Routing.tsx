@@ -54,6 +54,9 @@ export function Routing() {
     const strategyOptions = ['best_pod', 'all'];
     const [deleteTarget, setDeleteTarget] = useState<PolicyRecord | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [applyingPolicy, setApplyingPolicy] = useState<string | null>(null);
+    const [applyError, setApplyError] = useState<string | null>(null);
+    const [applyStatus, setApplyStatus] = useState<string | null>(null);
     const defaultCreateForm = {
         policy_name: '',
         namespace: 'test-services',
@@ -204,6 +207,21 @@ export function Routing() {
         setDrawerOpen(true);
         setDrawerError(null);
         setDrawerSuccess(null);
+    };
+
+    const handleApplyPolicy = async (policy: PolicyRecord) => {
+        if (!policy.policy_name) return;
+        setApplyingPolicy(policy.policy_name);
+        setApplyError(null);
+        setApplyStatus(null);
+        try {
+            const res = await api.applyPolicy(policy.policy_name);
+            setApplyStatus(res?.message || `Applied ${policy.policy_name}`);
+        } catch (err: any) {
+            setApplyError(err?.message || `Failed to apply ${policy.policy_name}`);
+        } finally {
+            setApplyingPolicy(null);
+        }
     };
 
     const handleSave = async (event?: React.FormEvent) => {
@@ -460,6 +478,16 @@ export function Routing() {
                         <FiAlertTriangle /> {error}
                     </div>
                 )}
+                {applyError && (
+                    <div className="alert error">
+                        <FiAlertTriangle /> {applyError}
+                    </div>
+                )}
+                {applyStatus && (
+                    <div className="alert success">
+                        {applyStatus}
+                    </div>
+                )}
 
                 {!loading && !error && !policies.length && (
                     <div className="empty-state">
@@ -480,12 +508,13 @@ export function Routing() {
                                 <th>Protocol</th>
                                 <th>TTL (s)</th>
                                 <th>Actions</th>
+                                <th>POLICY ACTION</th>
                             </tr>
                         </thead>
                         <tbody>
                             {loading && (
                                 <tr>
-                                    <td colSpan={9} className="table-loading">
+                                    <td colSpan={10} className="table-loading">
                                         Loading…
                                     </td>
                                 </tr>
@@ -534,6 +563,16 @@ export function Routing() {
                                                     }}
                                                 >
                                                     <FiTrash2 />
+                                                </button>
+                                            </td>
+                                            <td className="policy-action-cell">
+                                                <button
+                                                    type="button"
+                                                    className="apply-button"
+                                                    onClick={() => handleApplyPolicy(policy)}
+                                                    disabled={applyingPolicy === policy.policy_name}
+                                                >
+                                                    {applyingPolicy === policy.policy_name ? 'Applying…' : 'Apply'}
                                                 </button>
                                             </td>
                                         </tr>
