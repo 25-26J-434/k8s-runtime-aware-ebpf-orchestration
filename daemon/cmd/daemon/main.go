@@ -4,12 +4,14 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/api"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/loader"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/plugins/routing"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scaling"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 )
 
@@ -18,6 +20,10 @@ func main() {
 	log.Println("  eBPF Daemon - Runtime-Aware Telemetry")
 	log.Println("  Component 1: Sidecar-less Orchestration")
 	log.Println("========================================")
+
+	if loadEnv() {
+		log.Println("[Main] Loaded environment from .env")
+	}
 
 	if os.Geteuid() != 0 {
 		log.Println("[WARN] Not running as root - eBPF operations may fail")
@@ -97,12 +103,16 @@ func main() {
 	}
 	k8sClient := api.GetK8sClient()
 
+	if err := scaling.InitMongo(); err != nil {
+		log.Printf("[Main] WARNING: Failed to initialize MongoDB: %v", err)
+	} else {
+		log.Println("[Main] MongoDB initialized")
+		go scaling.StartScalingController(k8sClient)
+	}
+
 	log.Println("[Main] Initializing Service Health collector...")
 	telemetry.InitServiceHealthCollector(nodeName, k8sClient)
 
-	// MongoDB-dependent features (scaling, scheduler) disabled
-	// log.Println("[Main] Starting Intelligent Scheduler...")
-	// log.Println("[Main] Starting Scaling Controller...")
 	log.Println("[Main] Initializing NAT Metadata collector...")
 	telemetry.InitNATMetadataCollector(nodeName)
 
@@ -169,4 +179,41 @@ func main() {
 	<-sig
 
 	log.Println("[Main] Received shutdown signal, cleaning up...")
+}
+
+func loadEnv() bool {
+	loaded := loadEnvFile(".env")
+	if loadEnvFile("../.env") {
+		loaded = true
+	}
+	return loaded
+}
+
+func loadEnvFile(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "export ") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		if key == "" || os.Getenv(key) != "" {
+			continue
+		}
+		val := strings.TrimSpace(parts[1])
+		val = strings.Trim(val, `"'`)
+		_ = os.Setenv(key, val)
+	}
+	return true
 }

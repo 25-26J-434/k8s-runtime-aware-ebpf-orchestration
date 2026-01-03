@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -93,6 +94,19 @@ func handleScalingRuleByID(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) != 1 {
 		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		if err := scaling.DeleteScalingRule(id); err != nil {
+			if errors.Is(err, scaling.ErrRuleNotFound) {
+				http.Error(w, "rule not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
@@ -229,6 +243,15 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 				Value:      dnsSum / float64(dnsCount),
 				Timestamp:  now,
 			})
+		} else {
+			dns := telemetry.GetDNSMetrics()
+			out = append(out, LatestMetric{
+				Namespace:  dep.Namespace,
+				Deployment: dep.Name,
+				Metric:     "dns_latency",
+				Value:      float64(dns.LastLatencyNs),
+				Timestamp:  now,
+			})
 		}
 		if rttCount > 0 {
 			out = append(out, LatestMetric{
@@ -238,6 +261,15 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 				Value:      rttSum / float64(rttCount),
 				Timestamp:  now,
 			})
+		} else {
+			rtt := telemetry.GetRTTMetrics()
+			out = append(out, LatestMetric{
+				Namespace:  dep.Namespace,
+				Deployment: dep.Name,
+				Metric:     "rtt",
+				Value:      float64(rtt.LastRTTNs),
+				Timestamp:  now,
+			})
 		}
 		if tcpCount > 0 {
 			out = append(out, LatestMetric{
@@ -245,6 +277,15 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 				Deployment: dep.Name,
 				Metric:     "tcp_retrans",
 				Value:      tcpSum / float64(tcpCount),
+				Timestamp:  now,
+			})
+		} else {
+			tcp := telemetry.GetTCPMetrics()
+			out = append(out, LatestMetric{
+				Namespace:  dep.Namespace,
+				Deployment: dep.Name,
+				Metric:     "tcp_retrans",
+				Value:      float64(tcp.Retransmissions),
 				Timestamp:  now,
 			})
 		}
