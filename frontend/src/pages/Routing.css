@@ -46,6 +46,233 @@
   color: #60a5fa;
 }
 
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0.75rem 0 0.5rem;
+  gap: 1rem;
+}
+
+.table-meta {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.policy-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 0.5rem;
+}
+
+.policy-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 8px;
+}
+
+.policy-table th {
+  text-align: left;
+  color: #a5b4fc;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 800;
+  padding: 0.35rem 0.85rem;
+  background: rgba(59, 130, 246, 0.05);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.policy-table td {
+  padding: 0.75rem 0.85rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  color: #e5e7eb;
+}
+
+.policy-table tr td:first-child {
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+}
+
+.policy-table tr td:last-child {
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+.policy-table tr:hover td {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.85rem;
+}
+
+.icon-button {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: #e5e7eb;
+  border-radius: 8px;
+  padding: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+
+.icon-button:hover {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.12);
+  transform: translateY(-1px);
+}
+
+.icon-button.danger {
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #fca5a5;
+}
+
+.icon-button.danger:hover {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.7);
+}
+
+.table-loading {
+  text-align: center;
+  color: #cbd5e1;
+  padding: 1.25rem;
+}
+
+.empty-state {
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.07);
+  padding: 0.9rem 1rem;
+  border-radius: 10px;
+  margin-bottom: 0.75rem;
+}
+
+.cell-main {
+  font-weight: 800;
+}
+
+.cell-sub {
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+.cell-sub.small {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: 40;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: -420px;
+  width: 420px;
+  height: 100vh;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(15, 18, 35, 0.95));
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.45);
+  padding: 1.5rem;
+  overflow-y: auto;
+  transition: right 0.25s ease;
+  z-index: 50;
+}
+
+.drawer.open {
+  right: 0;
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.drawer-title {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #e5e7eb;
+}
+
+.drawer-subtitle {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+}
+
+.detail-item {
+  padding: 0.85rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+}
+
+.detail-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+  margin-bottom: 0.35rem;
+  font-weight: 700;
+}
+
+.detail-value {
+  color: #e5e7eb;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.detail-pre {
+  margin: 0;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.6rem;
+  font-family: 'Menlo', 'Monaco', monospace;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  overflow-x: auto;
+  max-height: 220px;
+}
+
+.detail-details summary {
+  cursor: pointer;
+  color: #a5b4fc;
+  font-weight: 700;
+  outline: none;
+}
+
+.drawer-footer {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(180deg, transparent 0%, rgba(15, 23, 42, 0.9) 40%);
+  padding: 0.75rem 0;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
 .routing-status .status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

@@ -320,6 +320,22 @@ export const api = {
         return response.json();
     },
 
+    async getPolicies(): Promise<any[]> {
+        const response = await fetch(`${ROUTING_API_BASE}/api/policies`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to fetch policies: ${response.status} ${response.statusText} - ${text}`);
+        }
+
+        return response.json();
+    },
+
     async createPolicy(policy: any): Promise<any> {
         const response = await fetch(`${ROUTING_API_BASE}/api/policies`, {
             method: 'POST',
