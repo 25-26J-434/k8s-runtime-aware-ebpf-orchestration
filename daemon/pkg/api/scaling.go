@@ -14,6 +14,7 @@ import (
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 )
@@ -152,14 +153,47 @@ func handleScalingDeployments(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	namespace := r.URL.Query().Get("namespace")
+	node := r.URL.Query().Get("node")
 	deps, err := k8sClient.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	var pods []corev1.Pod
+	if node != "" {
+		podList, err := k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("spec.nodeName=%s", node),
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pods = podList.Items
+	}
+
 	out := make([]DeploymentInfo, 0, len(deps.Items))
 	for _, dep := range deps.Items {
+		if node != "" {
+			if len(dep.Spec.Selector.MatchLabels) == 0 {
+				continue
+			}
+			selector := labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
+			matched := false
+			for _, pod := range pods {
+				if pod.Namespace != dep.Namespace {
+					continue
+				}
+				if selector.Matches(labels.Set(pod.Labels)) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
+
 		replicas := int32(0)
 		if dep.Spec.Replicas != nil {
 			replicas = *dep.Spec.Replicas
@@ -188,16 +222,38 @@ func handleScalingNamespaces(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	namespaces, err := k8sClient.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	node := r.URL.Query().Get("node")
+
+	out := make([]string, 0)
+	if node == "" {
+		namespaces, err := k8sClient.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		out = make([]string, 0, len(namespaces.Items))
+		for _, ns := range namespaces.Items {
+			out = append(out, ns.Name)
+		}
+	} else {
+		pods, err := k8sClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("spec.nodeName=%s", node),
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		seen := make(map[string]struct{})
+		for _, pod := range pods.Items {
+			if _, ok := seen[pod.Namespace]; ok {
+				continue
+			}
+			seen[pod.Namespace] = struct{}{}
+			out = append(out, pod.Namespace)
+		}
 	}
 
-	out := make([]string, 0, len(namespaces.Items))
-	for _, ns := range namespaces.Items {
-		out = append(out, ns.Name)
-	}
 	sort.Strings(out)
 
 	writeJSON(w, out)

@@ -7,9 +7,10 @@ interface Props {
     onCancel: () => void;
     onSubmit: (rule: Partial<ScalingRule>) => Promise<void> | void;
     submitLabel?: string;
+    nodeFilter?: string | null;
 }
 
-export function ScalingRuleForm({ initial = {}, onCancel, onSubmit, submitLabel = 'Save' }: Props) {
+export function ScalingRuleForm({ initial = {}, onCancel, onSubmit, submitLabel = 'Save', nodeFilter }: Props) {
     const [namespaces, setNamespaces] = useState<string[]>([]);
     const [namespace, setNamespace] = useState(initial.namespace || 'default');
     const [deploymentOptions, setDeploymentOptions] = useState<DeploymentInfo[]>([]);
@@ -29,14 +30,14 @@ export function ScalingRuleForm({ initial = {}, onCancel, onSubmit, submitLabel 
 
     useEffect(() => {
         setError(null);
-    }, [namespace, deployment, metric, operator, threshold, step, minReplicas, maxReplicas, action, enabled]);
+    }, [nodeFilter, namespace, deployment, metric, operator, threshold, step, minReplicas, maxReplicas, action, enabled]);
 
     useEffect(() => {
         let cancelled = false;
         const loadNamespaces = async () => {
             setLoadingNamespaces(true);
             try {
-                const list = await api.getNamespaces();
+                const list = await api.getNamespaces(nodeFilter || undefined);
                 if (cancelled) return;
                 setNamespaces(list);
                 if (!initial.namespace && list.length > 0) {
@@ -53,7 +54,7 @@ export function ScalingRuleForm({ initial = {}, onCancel, onSubmit, submitLabel 
         };
         void loadNamespaces();
         return () => { cancelled = true; };
-    }, [initial.namespace]);
+    }, [initial.namespace, nodeFilter, namespace]);
 
     useEffect(() => {
         if (!namespace) {
@@ -66,7 +67,7 @@ export function ScalingRuleForm({ initial = {}, onCancel, onSubmit, submitLabel 
         const loadDeployments = async () => {
             setLoadingDeployments(true);
             try {
-                const list = await api.getDeployments(namespace);
+                const list = await api.getDeployments(namespace, nodeFilter || undefined);
                 if (cancelled) return;
                 setDeploymentOptions(list);
                 const hasCurrent = list.some((d) => d.name === deployment);
@@ -85,7 +86,12 @@ export function ScalingRuleForm({ initial = {}, onCancel, onSubmit, submitLabel 
         };
         void loadDeployments();
         return () => { cancelled = true; };
-    }, [namespace]);
+    }, [namespace, nodeFilter]);
+
+    useEffect(() => {
+        setNamespace('');
+        setDeployment('');
+    }, [nodeFilter]);
 
     const validate = () => {
         if (!namespace) return 'Namespace is required';
@@ -121,7 +127,7 @@ export function ScalingRuleForm({ initial = {}, onCancel, onSubmit, submitLabel 
                     onChange={(e) => { setNamespace(e.target.value); setDeployment(''); }}
                     disabled={loadingNamespaces || namespaces.length === 0}
                 >
-                    <option value="" disabled>Select a namespace</option>
+                    <option value="" disabled>{nodeFilter ? 'Select a namespace' : 'Select a node first'}</option>
                     {namespaces.map((ns) => (
                         <option key={ns} value={ns}>{ns}</option>
                     ))}

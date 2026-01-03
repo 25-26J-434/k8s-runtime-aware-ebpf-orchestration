@@ -1,9 +1,11 @@
 import './Page.css';
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { FiServer } from 'react-icons/fi';
 import { ScalingRulesTable } from '../components/ScalingRulesTable';
 import { ScalingRuleForm } from '../components/ScalingRuleForm';
 import { useScalingRules } from '../hooks/useScalingRules';
+import { useMetrics } from '../hooks/useMetrics';
 import type { ScalingRule } from '../types/scaling';
 
 export function ScalingRules() {
@@ -11,6 +13,10 @@ export function ScalingRules() {
     const [showForm, setShowForm] = useState(false);
     const [editingRule, setEditingRule] = useState<ScalingRule | null>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(() => {
+        return localStorage.getItem('selectedNodeKey');
+    });
+    const { availableNodes, metrics } = useMetrics(5000, selectedNodeKey);
     const location = useLocation();
 
     useEffect(() => {
@@ -22,6 +28,22 @@ export function ScalingRules() {
     useEffect(() => {
         reload();
     }, [location.pathname, reload]);
+
+    useEffect(() => {
+        if (availableNodes.length > 0 && !selectedNodeKey) {
+            setSelectedNodeKey(availableNodes[0].key);
+        }
+    }, [availableNodes, selectedNodeKey]);
+
+    useEffect(() => {
+        if (selectedNodeKey) {
+            localStorage.setItem('selectedNodeKey', selectedNodeKey);
+        }
+    }, [selectedNodeKey]);
+
+    const selectedNodeName = selectedNodeKey
+        ? availableNodes.find((node) => node.key === selectedNodeKey)?.name
+        : undefined;
 
     const handleCreate = async (rule: Partial<ScalingRule>) => {
         const created = await createRule(rule);
@@ -41,6 +63,92 @@ export function ScalingRules() {
 
     return (
         <div className="page-container">
+            {availableNodes.length > 0 && (
+                <div style={{
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 100,
+                    background: 'rgba(15, 23, 42, 0.95)',
+                    backdropFilter: 'blur(10px)',
+                    borderBottom: '1px solid rgba(71, 85, 105, 0.3)',
+                    padding: '1.25rem 2rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '2rem',
+                    flexWrap: 'wrap'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                            <FiServer style={{ color: '#60a5fa', fontSize: '1.25rem' }} />
+                            <label style={{ color: '#e2e8f0', fontSize: '0.95rem', fontWeight: 600 }}>
+                                Selected Node:
+                            </label>
+                            <select
+                                value={selectedNodeKey || ''}
+                                onChange={(e) => {
+                                    const newKey = e.target.value || null;
+                                    setSelectedNodeKey(newKey);
+                                    if (newKey) {
+                                        localStorage.setItem('selectedNodeKey', newKey);
+                                    }
+                                }}
+                                style={{
+                                    padding: '0.625rem 1.25rem',
+                                    background: 'rgba(30, 41, 59, 0.8)',
+                                    border: '2px solid rgba(59, 130, 246, 0.4)',
+                                    borderRadius: '8px',
+                                    color: '#e2e8f0',
+                                    fontSize: '0.95rem',
+                                    fontWeight: 500,
+                                    cursor: 'pointer',
+                                    minWidth: '280px',
+                                    outline: 'none',
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onFocus={(e) => {
+                                    e.target.style.borderColor = 'rgba(59, 130, 246, 0.6)';
+                                    e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                                }}
+                                onBlur={(e) => {
+                                    e.target.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+                                    e.target.style.boxShadow = 'none';
+                                }}
+                            >
+                                {availableNodes.map((node) => (
+                                    <option key={node.key} value={node.key}>
+                                        {node.name} {node.ip ? `(${node.ip})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                    {metrics?.node_name && (
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.75rem',
+                            padding: '0.5rem 1rem',
+                            background: 'rgba(30, 41, 59, 0.6)',
+                            border: '1px solid rgba(59, 130, 246, 0.2)',
+                            borderRadius: '8px',
+                            color: '#e2e8f0',
+                            fontSize: '0.85rem',
+                            fontWeight: 500
+                        }}>
+                            <FiServer style={{ color: '#60a5fa', fontSize: '1rem' }} />
+                            <div>
+                                <div style={{ opacity: 0.7, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Current Node
+                                </div>
+                                <div>
+                                    {metrics.node_name}{metrics.node_ip ? ` (${metrics.node_ip})` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
             <div className="page-header">
                 <div className="page-title-section">
                     <h1 className="page-title">Scaling Rules Management</h1>
@@ -126,6 +234,7 @@ export function ScalingRules() {
                             onCancel={() => { setShowForm(false); }}
                             onSubmit={editingRule ? handleUpdate : handleCreate}
                             submitLabel={editingRule ? 'Update' : 'Create'}
+                            nodeFilter={selectedNodeName}
                         />
                     </div>
                 </div>

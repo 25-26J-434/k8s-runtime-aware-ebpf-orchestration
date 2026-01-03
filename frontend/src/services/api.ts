@@ -276,8 +276,9 @@ export const api = {
         return response.json();
     },
 
-    async getNamespaces(): Promise<string[]> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling/namespaces`, {
+    async getNamespaces(node?: string): Promise<string[]> {
+        const query = node ? `?node=${encodeURIComponent(node)}` : '';
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/namespaces${query}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -344,9 +345,12 @@ export const api = {
         }
     },
 
-    async getDeployments(namespace?: string): Promise<DeploymentInfo[]> {
-        const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling/deployments${query}`, {
+    async getDeployments(namespace?: string, node?: string): Promise<DeploymentInfo[]> {
+        const params = new URLSearchParams();
+        if (namespace) params.set('namespace', namespace);
+        if (node) params.set('node', node);
+        const query = params.toString();
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/deployments${query ? `?${query}` : ''}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
