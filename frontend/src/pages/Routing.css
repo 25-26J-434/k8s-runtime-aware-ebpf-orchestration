@@ -146,12 +146,12 @@
   border: 1px solid rgba(59, 130, 246, 0.5);
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #0b1024;
-  border-radius: 10px;
-  padding: 0.6rem 1rem;
-  font-weight: 800;
+  border-radius: 8px;
+  padding: 0.45rem 0.85rem;
+  font-weight: 700;
   cursor: pointer;
   transition: transform 0.12s ease, box-shadow 0.12s ease;
-  min-width: 96px;
+  min-width: 88px;
 }
 
 .apply-button:hover:not(:disabled) {
