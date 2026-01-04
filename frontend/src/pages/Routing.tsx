@@ -58,10 +58,22 @@ export function Routing() {
     const [applyError, setApplyError] = useState<string | null>(null);
     const [applyStatus, setApplyStatus] = useState<string | null>(null);
     const [applyToastTs, setApplyToastTs] = useState<string | null>(null);
+    const [applyToastMessage, setApplyToastMessage] = useState<string | null>(null);
     const [clusterSummary, setClusterSummary] = useState<any>(null);
     const [clusterLoading, setClusterLoading] = useState(false);
     const [clusterError, setClusterError] = useState<string | null>(null);
     const [selectedNode, setSelectedNode] = useState<string>('');
+
+    // Auto-dismiss apply toast after a short delay
+    useEffect(() => {
+        if (!applyStatus) return;
+        const timer = setTimeout(() => {
+            setApplyStatus(null);
+            setApplyToastMessage(null);
+            setApplyToastTs(null);
+        }, 5000);
+        return () => clearTimeout(timer);
+    }, [applyStatus]);
 
     const fetchClusterSummary = async () => {
         setClusterLoading(true);
@@ -242,9 +254,12 @@ export function Routing() {
         setApplyingPolicy(policy.policy_name);
         setApplyError(null);
         setApplyStatus(null);
+        setApplyToastMessage(null);
         try {
             const res = await api.applyPolicy(policy.policy_name);
-            setApplyStatus('Evaluate executed');
+            const statusText = res.applied ? 'Redirect applied' : 'Policy evaluated';
+            setApplyStatus(statusText);
+            setApplyToastMessage(res.message || statusText);
             setApplyToastTs(new Date().toLocaleTimeString());
         } catch (err: any) {
             setApplyError(err?.message || `Failed to apply ${policy.policy_name}`);
@@ -1327,6 +1342,7 @@ export function Routing() {
             {applyStatus && (
                 <div className="toast success">
                     <div className="toast-title">{applyStatus}</div>
+                    {applyToastMessage && <div className="toast-body">{applyToastMessage}</div>}
                     {applyToastTs && <div className="toast-meta">{applyToastTs}</div>}
                 </div>
             )}
