@@ -83,6 +83,7 @@ export function Routing() {
         namespace: 'test-services',
         frontend_service: '',
         frontend_port: '',
+        action_target_namespace: '',
         telemetry_metric: metricOptions[0],
         telemetry_violation_threshold: '',
         telemetry_monitor: '',
@@ -95,6 +96,7 @@ export function Routing() {
         action_backend_candidates_selector: '',
         action_winner_label: 'redirect-winner=yes',
     };
+    const targetNamespace = editForm.action_target_namespace || editForm.namespace || '';
 
     const formatValue = (value: any) => {
         if (value === null || value === undefined) return '—';
@@ -161,6 +163,7 @@ export function Routing() {
         return {
             policy_name: policy.policy_name || '',
             namespace: policy.namespace || '',
+            action_target_namespace: (policy as any).action_target_namespace || policy.namespace || '',
             frontend_service: policy.frontend?.service || policy.frontend_service || '',
             frontend_port: policy.frontend?.port || policy.frontend_service_port || '',
             telemetry_metric: policy.telemetry?.metric || policy.metric || '',
@@ -378,11 +381,13 @@ export function Routing() {
             editForm.action_protocol !== undefined ||
             editForm.action_ttl_seconds !== undefined ||
             editForm.action_strategy !== undefined ||
+            editForm.action_target_namespace !== undefined ||
             editForm.action_backend_candidates_selector !== undefined
         ) {
             body.action = {};
             addIfValue(body.action, 'type', editForm.action_type);
             addIfValue(body.action, 'backend_selector', editForm.action_backend_selector);
+            addIfValue(body.action, 'target_namespace', editForm.action_target_namespace);
             const backendPort = numOrString(editForm.action_backend_port);
             if (backendPort !== undefined) addIfValue(body.action, 'backend_port', backendPort);
             addIfValue(body.action, 'protocol', editForm.action_protocol);
@@ -844,13 +849,34 @@ export function Routing() {
                                 />
                             </label>
                             <label className="form-field">
+                                <span className="form-label">Target Selector Namespace</span>
+                                <select
+                                    value={editForm.action_target_namespace || editForm.namespace || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({
+                                            ...prev,
+                                            action_target_namespace: e.target.value,
+                                        }))
+                                    }
+                                    disabled={clusterLoading}
+                                >
+                                    <option value="">Same as policy namespace ({editForm.namespace || 'set namespace'})</option>
+                                    {(clusterSummary?.namespaces || []).map((ns: string) => (
+                                        <option key={`target-ns-${ns}`} value={ns}>
+                                            {ns}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="form-field">
                                 <span className="form-label">Target Selector</span>
                                 <select
                                     value={editForm.action_backend_selector || ''}
                                     onChange={(e) =>
                                         setEditForm((prev: any) => {
                                             const selector = e.target.value;
-                                            const port = backendPortForSelector(prev.namespace || '', selector);
+                                            const ns = prev.action_target_namespace || prev.namespace || '';
+                                            const port = backendPortForSelector(ns, selector);
                                             return {
                                                 ...prev,
                                                 action_backend_selector: selector,
@@ -861,7 +887,7 @@ export function Routing() {
                                     disabled={clusterLoading}
                                 >
                                     <option value="">Select Target Selector</option>
-                                    {servicesForNamespace(editForm.namespace || '').map((svc: any) => {
+                                    {servicesForNamespace(editForm.action_target_namespace || editForm.namespace || '').map((svc: any) => {
                                         const sel = selectorFromService(svc);
                                         if (!sel) return null;
                                         return (
@@ -870,7 +896,7 @@ export function Routing() {
                                             </option>
                                         );
                                     })}
-                                    {podsForNamespace(editForm.namespace || '').map((pod: any) => {
+                                    {podsForNamespace(editForm.action_target_namespace || editForm.namespace || '').map((pod: any) => {
                                         const app = pod.labels?.app;
                                         const sel = app ? `app=${app}` : '';
                                         if (!sel) return null;
@@ -1136,13 +1162,33 @@ export function Routing() {
                                 />
                             </label>
                             <label className="form-field">
+                                <span className="form-label">Target Selector Namespace</span>
+                                <select
+                                    value={editForm.action_target_namespace || editForm.namespace || ''}
+                                    onChange={(e) =>
+                                        setEditForm((prev: any) => ({
+                                            ...prev,
+                                            action_target_namespace: e.target.value,
+                                        }))
+                                    }
+                                    disabled={clusterLoading}
+                                >
+                                    <option value="">Same as policy namespace ({editForm.namespace || 'set namespace'})</option>
+                                    {(clusterSummary?.namespaces || []).map((ns: string) => (
+                                        <option key={`target-ns-${ns}`} value={ns}>
+                                            {ns}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="form-field">
                                 <span className="form-label">Target Selector *</span>
                                 <select
                                     value={editForm.action_backend_selector || ''}
                                     onChange={(e) =>
                                         setEditForm((prev: any) => {
                                             const selector = e.target.value;
-                                            const port = backendPortForSelector(prev.namespace || '', selector);
+                                            const port = backendPortForSelector(targetNamespace, selector);
                                             return {
                                                 ...prev,
                                                 action_backend_selector: selector,
@@ -1154,7 +1200,7 @@ export function Routing() {
                                     disabled={clusterLoading}
                                 >
                                     <option value="">Select Target Selector</option>
-                                    {servicesForNamespace(editForm.namespace || '').map((svc: any) => {
+                                    {servicesForNamespace(targetNamespace).map((svc: any) => {
                                         const sel = selectorFromService(svc);
                                         if (!sel) return null;
                                         return (
@@ -1163,7 +1209,7 @@ export function Routing() {
                                             </option>
                                         );
                                     })}
-                                    {podsForNamespace(editForm.namespace || '').map((pod: any) => {
+                                    {podsForNamespace(targetNamespace).map((pod: any) => {
                                         const app = pod.labels?.app;
                                         const sel = app ? `app=${app}` : '';
                                         if (!sel) return null;
