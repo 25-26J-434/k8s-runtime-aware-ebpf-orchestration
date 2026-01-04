@@ -582,8 +582,8 @@ export function Routing() {
                         <thead>
                             <tr>
                                 <th>Policy</th>
-                                <th>Frontend</th>
-                                <th>Target Selector</th>
+                                <th>Traffic Entry Serivce</th>
+                                <th>Target Service</th>
                                 <th>Action</th>
                                 <th>Metric</th>
                                 <th>Threshold</th>
@@ -768,7 +768,7 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Frontend Service</span>
+                                <span className="form-label">Traffic Entry Service</span>
                                 <select
                                     value={editForm.frontend_service || ''}
                                     onChange={(e) => {
@@ -797,7 +797,7 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Frontend Port</span>
+                                <span className="form-label">Traffic Entry Port</span>
                                 <input
                                     type="text"
                                     value={editForm.frontend_port || ''}
@@ -844,7 +844,7 @@ export function Routing() {
                                 />
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Backend Selector</span>
+                                <span className="form-label">Target Selector</span>
                                 <select
                                     value={editForm.action_backend_selector || ''}
                                     onChange={(e) =>
@@ -860,7 +860,7 @@ export function Routing() {
                                     }
                                     disabled={clusterLoading}
                                 >
-                                    <option value="">Select backend selector</option>
+                                    <option value="">Select Target Selector</option>
                                     {servicesForNamespace(editForm.namespace || '').map((svc: any) => {
                                         const sel = selectorFromService(svc);
                                         if (!sel) return null;
@@ -883,7 +883,7 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Backend Port</span>
+                                <span className="form-label">Target Sector's Port</span>
                                 <input
                                     type="text"
                                     value={editForm.action_backend_port || ''}
@@ -929,7 +929,7 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Backend Candidates Selector</span>
+                                <span className="form-label">Target Candidates Selector</span>
                                 <select
                                     value={editForm.action_backend_candidates_selector || ''}
                                     onChange={(e) =>
@@ -963,7 +963,7 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Winner Label</span>
+                                <span className="form-label">Winner Pod Label</span>
                                 <input
                                     type="text"
                                     value="redirect-winner=yes"
@@ -1055,7 +1055,7 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Frontend Service *</span>
+                                <span className="form-label">Traffic Entrypoint Service *</span>
                                 <select
                                     value={editForm.frontend_service || ''}
                                     onChange={(e) => {
@@ -1085,7 +1085,7 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Frontend Port *</span>
+                                <span className="form-label">Traffic Entry Port *</span>
                                 <input
                                     type="number"
                                     value={editForm.frontend_port || ''}
@@ -1136,7 +1136,7 @@ export function Routing() {
                                 />
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Backend Selector *</span>
+                                <span className="form-label">Target Selector *</span>
                                 <select
                                     value={editForm.action_backend_selector || ''}
                                     onChange={(e) =>
@@ -1153,7 +1153,7 @@ export function Routing() {
                                     required
                                     disabled={clusterLoading}
                                 >
-                                    <option value="">Select backend selector</option>
+                                    <option value="">Select Target Selector</option>
                                     {servicesForNamespace(editForm.namespace || '').map((svc: any) => {
                                         const sel = selectorFromService(svc);
                                         if (!sel) return null;
@@ -1176,7 +1176,7 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Backend Port *</span>
+                                <span className="form-label">Target Sector's Port *</span>
                                 <input
                                     type="number"
                                     value={editForm.action_backend_port || ''}
@@ -1225,7 +1225,7 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Backend Candidates Selector</span>
+                                <span className="form-label">Target Candidates Selector</span>
                                 <select
                                     value={editForm.action_backend_candidates_selector || ''}
                                     onChange={(e) =>
@@ -1259,7 +1259,7 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
-                                <span className="form-label">Winner Label</span>
+                                <span className="form-label">Winner Pod Label</span>
                                 <input
                                     type="text"
                                     value="redirect-winner=yes"
@@ -1294,7 +1294,7 @@ export function Routing() {
                                     { label: 'Backend candidates', value: (selectedPolicy as any).backend_candidates_selector || (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).backend_candidates_selector : '') },
                                     { label: 'Action', value: selectedPolicy.action },
                                     { label: 'Strategy', value: (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).strategy : (selectedPolicy as any).strategy) },
-                                    { label: 'Winner label', value: (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).winner_label : (selectedPolicy as any).winner_label) },
+                                    { label: 'Winner Pod Label', value: (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).winner_label : (selectedPolicy as any).winner_label) },
                                     { label: 'Protocol', value: resolveProtocol(selectedPolicy) },
                                     { label: 'TTL seconds', value: resolveTtl(selectedPolicy) },
                                     { label: 'Metric', value: resolveMetric(selectedPolicy) },
