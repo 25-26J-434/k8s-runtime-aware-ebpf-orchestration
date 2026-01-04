@@ -64,17 +64,6 @@ export function Routing() {
     const [clusterError, setClusterError] = useState<string | null>(null);
     const [selectedNode, setSelectedNode] = useState<string>('');
 
-    // Auto-dismiss apply toast after a short delay
-    useEffect(() => {
-        if (!applyStatus) return;
-        const timer = setTimeout(() => {
-            setApplyStatus(null);
-            setApplyToastMessage(null);
-            setApplyToastTs(null);
-        }, 5000);
-        return () => clearTimeout(timer);
-    }, [applyStatus]);
-
     const fetchClusterSummary = async () => {
         setClusterLoading(true);
         setClusterError(null);
@@ -478,15 +467,6 @@ export function Routing() {
             }));
         }
     }, [editForm.frontend_service]);
-
-    useEffect(() => {
-        if (!applyStatus) return;
-        const t = setTimeout(() => {
-            setApplyStatus(null);
-            setApplyToastTs(null);
-        }, 4000);
-        return () => clearTimeout(t);
-    }, [applyStatus]);
 
     const formattedUpdated = useMemo(() => {
         if (!lastUpdated) return '';
@@ -1344,6 +1324,17 @@ export function Routing() {
                     <div className="toast-title">{applyStatus}</div>
                     {applyToastMessage && <div className="toast-body">{applyToastMessage}</div>}
                     {applyToastTs && <div className="toast-meta">{applyToastTs}</div>}
+                    <button
+                        className="toast-close"
+                        aria-label="Close"
+                        onClick={() => {
+                            setApplyStatus(null);
+                            setApplyToastMessage(null);
+                            setApplyToastTs(null);
+                        }}
+                    >
+                        <FiX />
+                    </button>
                 </div>
             )}
             {showDeleteConfirm && (
