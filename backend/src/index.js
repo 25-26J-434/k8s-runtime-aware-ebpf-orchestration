@@ -581,6 +581,7 @@ app.post('/api/policies/:name/evaluate', async (req, res) => {
     const backendName = backendSelector.includes('=')
         ? backendSelector.split('=')[1]
         : backendSelector || 'selected backend';
+    const frontendName = p.frontend?.service || p.frontend_service || 'frontend service';
 
     try {
         const result = await runHelperWithRule(rule);
@@ -602,8 +603,8 @@ app.post('/api/policies/:name/evaluate', async (req, res) => {
         await p.save();
         const applied = result.stdout?.toLowerCase?.().includes('redirect applied');
         const friendly = applied
-            ? `Policy applied. Hi, I am ${backendName}`
-            : 'Policy evaluated (no redirection applied)';
+            ? `Violation triggered. Redirection applied. Hi, I am ${backendName}`
+            : `Violation not triggered. No redirect. Hi, I am ${frontendName}`;
         const cleanedStdout = (result.stdout || '')
             .split('\n')
             .filter((line) => !line.toLowerCase().includes('cilium'))
@@ -616,7 +617,7 @@ app.post('/api/policies/:name/evaluate', async (req, res) => {
             ttl_seconds: p.action?.ttl_seconds ?? null,
             details: applied
                 ? [`Redirect policy applied`, `Target backend: ${backendName}`]
-                : ['No redirect applied'],
+                : ['No redirect applied', `Served by: ${frontendName}`],
             stdout: cleanedStdout,
             stderr: result.stderr,
         });
