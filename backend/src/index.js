@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const morgan = require('morgan');
 const cors = require('cors');
 const os = require('os');
+const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const util = require('util');
@@ -118,6 +119,21 @@ function resolveHelper() {
         throw new Error(`apply-local-redirect.sh not found. Checked: ${HELPER_PATHS.join(', ')}`);
     }
     return found;
+}
+
+function probeService(host, port, probePath = '/whoami') {
+    return new Promise((resolve, reject) => {
+        const req = http.get({ host, port, path: probePath, timeout: 4000 }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => (data += chunk));
+            res.on('end', () => resolve({ status: res.statusCode, body: data }));
+        });
+        req.on('error', reject);
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error('Probe timeout'));
+        });
+    });
 }
 
 async function expirePolicyDoc(p, trigger = 'manual') {
@@ -453,6 +469,25 @@ app.get('/whoami', (_req, res) => {
     res.status(200).send(`Hi, I am component2-backend (${identity})\n`);
 });
 
+// Probe any service's /whoami (or custom path) from inside the cluster.
+// Example: /api/probe/traffic-generator?port=5002&namespace=test-services&path=/whoami
+// You can override DNS by passing ?host=<ip-or-host>.
+app.get('/api/probe/:service', async (req, res) => {
+    const service = req.params.service;
+    const port = Number(req.query.port) || 5000;
+    const namespace = req.query.namespace || 'default';
+    const pathParam = req.query.path || '/whoami';
+    const hostOverride = req.query.host;
+    const host = hostOverride || `${service}.${namespace}.svc.cluster.local`;
+
+    try {
+        const result = await probeService(host, port, pathParam);
+        res.status(result.status || 200).send(result.body);
+    } catch (err) {
+        res.status(500).json({ message: err?.message || 'Probe failed' });
+    }
+});
+
 /**
  * CREATE / UPSERT policy (single collection)
  */
@@ -542,6 +577,10 @@ app.post('/api/policies/:name/evaluate', async (req, res) => {
     if (!p) return res.status(404).json({ message: 'Policy not found' });
 
     const rule = toRuleFile(p);
+    const backendSelector = p.action?.backend_selector || '';
+    const backendName = backendSelector.includes('=')
+        ? backendSelector.split('=')[1]
+        : backendSelector || 'selected backend';
 
     try {
         const result = await runHelperWithRule(rule);
@@ -561,7 +600,26 @@ app.post('/api/policies/:name/evaluate', async (req, res) => {
         });
 
         await p.save();
-        res.json({ message: 'Evaluate executed (helper decides apply/skip)', stdout: result.stdout, stderr: result.stderr });
+        const applied = result.stdout?.toLowerCase?.().includes('redirect applied');
+        const friendly = applied
+            ? `Policy applied. Hi, I am ${backendName}`
+            : 'Policy evaluated (no redirection applied)';
+        const cleanedStdout = (result.stdout || '')
+            .split('\n')
+            .filter((line) => !line.toLowerCase().includes('cilium'))
+            .join('\n')
+            .trim();
+        res.json({
+            message: friendly,
+            applied,
+            target_backend: backendName,
+            ttl_seconds: p.action?.ttl_seconds ?? null,
+            details: applied
+                ? [`Redirect policy applied`, `Target backend: ${backendName}`]
+                : ['No redirect applied'],
+            stdout: cleanedStdout,
+            stderr: result.stderr,
+        });
     } catch (err) {
         p.status = p.status || {};
         p.status.last_evaluated_at = new Date();
