@@ -1,3 +1,20 @@
+// comm.go
+//
+// Core communication subsystem for the federation/daemon.
+// Provides:
+//   - Message/event types and communication primitives
+//   - Peer discovery (Kubernetes or config)
+//   - In-memory communication log and stats
+//   - HTTP handlers for unicast, broadcast, multicast, stats, logs, health
+//   - Event-driven handler registration (used by federation features)
+//
+// Federation features (e.g., metrics streaming) subscribe to events using RegisterMessageHandler.
+// When a message is received (e.g., via /receive), it is dispatched to all registered handlers for that event type.
+
+// =========================
+// Types and Constants
+// =========================
+
 package comm
 
 import (
@@ -114,6 +131,9 @@ type Config struct {
 }
 
 var (
+	// =========================
+	// Initialization & Peer Discovery
+	// =========================
 	nodeName string
 	nodeIP   string
 
@@ -140,6 +160,7 @@ var (
 )
 
 func Init(cfg Config) func() {
+	// Init initializes the communication subsystem, discovers peers, and starts periodic refresh.
 	initOnce.Do(func() {
 		if cfg.NodeName != "" {
 			nodeName = cfg.NodeName
@@ -242,6 +263,9 @@ func RegisterHandlers(mux *http.ServeMux, wrap func(http.HandlerFunc) http.Handl
 }
 
 func dispatchMessage(msg Message) {
+	// =========================
+	// Communication Primitives
+	// =========================
 	handlersMu.RLock()
 	registered := append([]MessageHandler{}, handlers[msg.Event]...)
 	handlersMu.RUnlock()
@@ -747,6 +771,9 @@ func recordLog(entry CommLogEntry) {
 }
 
 func getLocalLogs(limit int) []CommLogEntry {
+	// =========================
+	// Log, Stats, and Utility
+	// =========================
 	logsLock.RLock()
 	defer logsLock.RUnlock()
 
@@ -921,6 +948,7 @@ func cloneLogEntries(entries []CommLogEntry) []CommLogEntry {
 }
 
 func refreshPeers(ctx context.Context) {
+	// refreshPeers periodically refreshes the list of known peers from Kubernetes or config.
 	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
 

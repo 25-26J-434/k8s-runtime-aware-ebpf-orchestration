@@ -9,6 +9,12 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	// metrics_stream.go
+	//
+	// This file implements the metrics streaming subsystem for the daemon.
+	// It provides a WebSocket endpoint for clients to subscribe to live cluster metrics updates.
+	// Metrics are collected, stored, and broadcast to all connected clients at regular intervals.
+
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
 )
 
@@ -31,6 +37,7 @@ var (
 
 	clientsMu sync.RWMutex
 	clients   = make(map[*websocket.Conn]struct{})
+	clientWrites = make(map[*websocket.Conn]*sync.Mutex)
 
 	clusterMetricsMu sync.RWMutex
 	clusterMetrics   = make(map[string]UnifiedMetricsResponse)
@@ -47,6 +54,7 @@ func initMetricsStreaming() {
 func metricsBroadcastLoop() {
 	publishLocalMetrics()
 
+	// Initializes metrics streaming: registers HTTP handler and message handler, starts broadcast loop.
 	ticker := time.NewTicker(metricsBroadcastInterval)
 	defer ticker.Stop()
 
@@ -55,6 +63,7 @@ func metricsBroadcastLoop() {
 	}
 }
 
+// Periodically collects and broadcasts local metrics to all clients.
 func publishLocalMetrics() {
 	metrics := buildUnifiedMetricsResponse("", "")
 	nodeKey := metricsNodeKey(metrics)
@@ -66,6 +75,7 @@ func publishLocalMetrics() {
 	storeClusterMetrics(nodeKey, metrics)
 	broadcastClusterUpdate(nodeKey, metrics)
 
+	// Collects local metrics, stores them, broadcasts to clients, and notifies peers via comm.BroadcastMessage.
 	comm.BroadcastMessage(comm.Message{
 		Event:   comm.EventMetricUpdate,
 		Payload: map[string]any{"metrics": metrics},
@@ -83,6 +93,8 @@ func handleRemoteMetricUpdate(msg comm.Message) {
 		log.Printf("[API] Failed to marshal remote metrics payload: %v", err)
 		return
 	}
+	// Handles incoming metric updates from other nodes (via comm subsystem).
+	// Updates local cluster metrics and broadcasts to clients.
 
 	var metrics UnifiedMetricsResponse
 	if err := json.Unmarshal(data, &metrics); err != nil {
@@ -117,6 +129,7 @@ func metricsWebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := sendClusterSnapshot(conn); err != nil {
 		log.Printf("[API] Failed to send metrics snapshot: %v", err)
+		// Handles new WebSocket client connections for metrics streaming.
 	}
 
 	go readPump(conn)
@@ -125,6 +138,7 @@ func metricsWebSocketHandler(w http.ResponseWriter, r *http.Request) {
 func addClient(conn *websocket.Conn) {
 	clientsMu.Lock()
 	clients[conn] = struct{}{}
+	clientWrites[conn] = &sync.Mutex{}
 	clientsMu.Unlock()
 }
 
@@ -133,16 +147,31 @@ func sendClusterSnapshot(conn *websocket.Conn) error {
 	snapshot := make(map[string]UnifiedMetricsResponse, len(clusterMetrics))
 	for node, metrics := range clusterMetrics {
 		snapshot[node] = metrics
+		// Adds a WebSocket client to the set of connected clients.
 	}
 	clusterMetricsMu.RUnlock()
 
 	message := struct {
 		Type  string                            `json:"type"`
 		Nodes map[string]UnifiedMetricsResponse `json:"nodes"`
+		// Sends the current cluster metrics snapshot to a single client.
 	}{
 		Type:  "snapshot",
 		Nodes: snapshot,
 	}
+
+	// Get the write mutex for this connection
+	clientsMu.RLock()
+	writeMu := clientWrites[conn]
+	clientsMu.RUnlock()
+
+	if writeMu == nil {
+		log.Printf("[API] No write mutex found for connection")
+		return nil
+	}
+
+	writeMu.Lock()
+	defer writeMu.Unlock()
 
 	conn.SetWriteDeadline(time.Now().Add(wsWriteTimeout))
 	return conn.WriteJSON(message)
@@ -159,6 +188,7 @@ func readPump(conn *websocket.Conn) {
 	})
 
 	for {
+		// Reads messages from a WebSocket client (for keepalive/ping-pong and cleanup).
 		if _, _, err := conn.ReadMessage(); err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("[API] Metrics websocket closed unexpectedly: %v", err)
@@ -171,14 +201,16 @@ func readPump(conn *websocket.Conn) {
 func removeClient(conn *websocket.Conn) {
 	clientsMu.Lock()
 	delete(clients, conn)
+	delete(clientWrites, conn)
 	clientsMu.Unlock()
 	conn.Close()
 }
 
 func broadcastClusterUpdate(nodeKey string, metrics UnifiedMetricsResponse) {
 	message := struct {
-		Type    string                 `json:"type"`
-		Node    string                 `json:"node"`
+		Type string `json:"type"`
+		Node string `json:"node"`
+		// Removes a WebSocket client from the set and closes the connection.
 		Metrics UnifiedMetricsResponse `json:"metrics"`
 	}{
 		Type:    "node_update",
@@ -186,27 +218,40 @@ func broadcastClusterUpdate(nodeKey string, metrics UnifiedMetricsResponse) {
 		Metrics: metrics,
 	}
 
+	// Broadcasts a metrics update for a single node to all connected clients.
 	broadcastToClients(message)
 }
 
 func broadcastToClients(message interface{}) {
 	clientsMu.RLock()
 	conns := make([]*websocket.Conn, 0, len(clients))
+	writers := make([]*sync.Mutex, 0, len(clients))
 	for conn := range clients {
 		conns = append(conns, conn)
+		writers = append(writers, clientWrites[conn])
 	}
 	clientsMu.RUnlock()
 
 	if len(conns) == 0 {
 		return
 	}
+	// Broadcasts a message to all connected WebSocket clients.
 
-	for _, conn := range conns {
+	for i, conn := range conns {
+		writeMu := writers[i]
+		if writeMu == nil {
+			continue
+		}
+
+		writeMu.Lock()
 		conn.SetWriteDeadline(time.Now().Add(wsWriteTimeout))
 		if err := conn.WriteJSON(message); err != nil {
+			writeMu.Unlock()
 			log.Printf("[API] Failed to write to metrics websocket: %v", err)
 			removeClient(conn)
+			continue
 		}
+		writeMu.Unlock()
 	}
 }
 
@@ -221,10 +266,12 @@ func metricsNodeKey(metrics UnifiedMetricsResponse) string {
 		return metrics.NodeName
 	}
 	if metrics.NodeIP != "" {
+		// Stores the latest metrics for a node in the cluster metrics map.
 		return metrics.NodeIP
 	}
 	if metrics.NodeName != "" {
 		return metrics.NodeName
 	}
 	return ""
+	// Returns a unique key for a node based on metrics (prefer name, fallback to IP).
 }

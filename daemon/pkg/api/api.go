@@ -18,7 +18,7 @@ import (
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if r.Method == "OPTIONS" {
@@ -128,6 +128,7 @@ func StartServer() {
 	http.HandleFunc("/api/scaling/rules", corsMiddleware(handleScalingRules))
 	http.HandleFunc("/api/scaling/rules/", corsMiddleware(handleScalingRuleByID))
 	http.HandleFunc("/api/scaling/deployments", corsMiddleware(handleScalingDeployments))
+	http.HandleFunc("/api/scaling/namespaces", corsMiddleware(handleScalingNamespaces))
 	http.HandleFunc("/api/scaling/metrics/latest", corsMiddleware(handleScalingLatestMetrics))
 
 	// WebSocket endpoints
@@ -146,6 +147,7 @@ func StartServer() {
 	log.Println("[API]   PUT /api/scaling/rules/{id}      - Scaling rules (update)")
 	log.Println("[API]   POST /api/scaling/rules/{id}/toggle - Scaling rules (toggle enabled)")
 	log.Println("[API]   GET /api/scaling/deployments     - Deployment replica info")
+	log.Println("[API]   GET /api/scaling/namespaces      - Cluster namespaces")
 	log.Println("[API]   GET /api/scaling/metrics/latest  - Latest per-deployment metrics")
 	log.Println("[API] WebSocket Endpoints:")
 	log.Println("[API]   WS /ws/metrics                   - Real-time metrics stream")
@@ -428,11 +430,9 @@ func updatePodIPMappingFromK8s() {
 	// Get node name - only map pods on this node
 	nodeName := os.Getenv("NODE_NAME")
 
-
 	ctx := context.Background()
 	var pods *corev1.PodList
 	var err error
-
 
 	if nodeName != "" {
 		// Only get pods on this node

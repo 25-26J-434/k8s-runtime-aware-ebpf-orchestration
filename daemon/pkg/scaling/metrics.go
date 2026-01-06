@@ -109,6 +109,9 @@ func GetDeploymentMetricValue(k8sClient *kubernetes.Clientset, rule ScalingRule)
 			}
 		}
 		if count == 0 {
+			if val, err := GetMetricValue("dns_latency"); err == nil {
+				return val, nil
+			}
 			return 0, fmt.Errorf("no dns metrics for deployment pods")
 		}
 		return sum / float64(count), nil
@@ -125,6 +128,9 @@ func GetDeploymentMetricValue(k8sClient *kubernetes.Clientset, rule ScalingRule)
 			}
 		}
 		if count == 0 {
+			if val, err := GetMetricValue("rtt"); err == nil {
+				return val, nil
+			}
 			return 0, fmt.Errorf("no rtt metrics for deployment pods")
 		}
 		return sum / float64(count), nil
@@ -141,6 +147,9 @@ func GetDeploymentMetricValue(k8sClient *kubernetes.Clientset, rule ScalingRule)
 			}
 		}
 		if count == 0 {
+			if val, err := GetMetricValue("tcp_retrans"); err == nil {
+				return val, nil
+			}
 			return 0, fmt.Errorf("no tcp metrics for deployment pods")
 		}
 		return sum / float64(count), nil

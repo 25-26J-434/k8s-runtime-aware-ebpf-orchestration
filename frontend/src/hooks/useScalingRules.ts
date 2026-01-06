@@ -60,7 +60,14 @@ export function useScalingRules(refreshInterval = 5000) {
         return created;
     }, [fetchAll]);
 
+    const updateRule = useCallback(async (id: string, rule: Partial<ScalingRule>) => {
+        const updated = await api.updateScalingRule(id, rule);
+        await fetchAll();
+        return updated;
+    }, [fetchAll]);
+
     const toggleRule = useCallback(async (id: string, enabled: boolean) => {
+        setRules((prev) => prev?.map((r) => (r._id === id ? { ...r, enabled } : r)) ?? prev);
         const res = await api.updateScalingRule(id, { enabled });
         await fetchAll();
         return res;
@@ -79,6 +86,7 @@ export function useScalingRules(refreshInterval = 5000) {
         loading,
         error,
         createRule,
+        updateRule,
         toggleRule,
         deleteRule,
         reload: fetchAll,

@@ -6,7 +6,6 @@ interface PodPerformance {
     key: string;
     name: string;
     namespace: string;
-    score: number;
     dnsLatency: number;
     tcpRetransmissions: number;
     tcpPacketLoss: number;
@@ -37,7 +36,7 @@ export function TopPerformers({ metrics }: TopPerformersProps = {}) {
     Object.keys(metrics.sched_latency?.pod_metrics || {}).forEach(k => allPodKeys.add(k));
     Object.keys(metrics.pods || {}).forEach(k => allPodKeys.add(k));
 
-    // Calculate performance score for each pod based on selected filter
+    // Get performance metrics for each pod
     const pods: PodPerformance[] = Array.from(allPodKeys).map((podKey) => {
         const [namespace, name] = podKey.split('/');
         const dnsMetrics = metrics.dns.pods?.[podKey];
@@ -46,7 +45,7 @@ export function TopPerformers({ metrics }: TopPerformersProps = {}) {
         const podData = metrics.pods?.[podKey];
         const diskIOMetrics = podData?.disk_io;
 
-        // Get metrics (normalize to avoid division by zero)
+        // Get metrics
         const dnsLatency = dnsMetrics?.avg_latency_us || 0;
         const tcpRetrans = tcpMetrics?.retransmissions || 0;
         const tcpLoss = tcpMetrics?.packet_loss || 0;
@@ -61,66 +60,10 @@ export function TopPerformers({ metrics }: TopPerformersProps = {}) {
         const cpuEvents = cpuSchedMetrics?.event_count || 0;
         const totalEvents = dnsEvents + tcpEvents + cpuEvents + diskIOOperations;
 
-        let score = 0;
-
-        // Calculate score based on filter
-        if (filter === 'dns') {
-            // DNS-only ranking: lower latency = better
-            score = Math.min(100, (dnsLatency / 100)); // 100μs = 1 point, 10000μs = 100 points
-        } else if (filter === 'tcp') {
-            // TCP-only ranking: combine retransmissions, packet loss, and SRTT
-            const retransRate = tcpEvents > 0 ? (tcpRetrans / tcpEvents) * 100 : 100; // Higher is worse
-            const lossRate = tcpEvents > 0 ? (tcpLoss / tcpEvents) * 100 : 100; // Higher is worse
-            const srttScore = Math.min(100, (tcpSRTT / 10000)); // 100ms = 1 point, 1000ms = 100 points
-
-            // If no TCP events, give worst score
-            if (tcpEvents === 0) {
-                score = 100;
-            } else {
-                // Average of TCP metrics (lower is better)
-                score = (retransRate * 0.4) + (lossRate * 0.3) + (srttScore * 0.3);
-            }
-        } else if (filter === 'cpu') {
-            // CPU Scheduling-only ranking: latency and starvation
-            const latencyScore = Math.min(100, (cpuSchedLatency / 100)); // 100μs = 1 point, 10000μs = 100 points
-            const starvationScore = Math.min(100, cpuStarvation * 10); // 10 starvation events = 100 points
-            
-            if (cpuEvents === 0) {
-                score = 100;
-            } else {
-                score = (latencyScore * 0.7) + (starvationScore * 0.3);
-            }
-        } else if (filter === 'disk') {
-            // Disk I/O-only ranking: latency
-            const latencyScore = Math.min(100, (diskIOLatency / 100)); // 100μs = 1 point, 10000μs = 100 points
-            
-            if (diskIOOperations === 0) {
-                score = 100;
-            } else {
-                score = latencyScore;
-            }
-        } else {
-            // All metrics: composite score
-            const dnsScore = Math.min(100, (dnsLatency / 100));
-            const retransRate = tcpEvents > 0 ? (tcpRetrans / tcpEvents) * 100 : 0;
-            const lossRate = tcpEvents > 0 ? (tcpLoss / tcpEvents) * 100 : 0;
-            const srttScore = Math.min(100, (tcpSRTT / 10000));
-            const cpuLatencyScore = Math.min(100, (cpuSchedLatency / 100));
-            const cpuStarvationScore = Math.min(100, cpuStarvation * 10);
-            const diskLatencyScore = Math.min(100, (diskIOLatency / 100));
-
-            // Weighted average: DNS 25%, TCP 25% (8.33% each), CPU 25% (17.5% latency, 7.5% starvation), Disk 25%
-            score = (dnsScore * 0.25) + 
-                    (retransRate * 0.0833) + (lossRate * 0.0833) + (srttScore * 0.0833) +
-                    (cpuLatencyScore * 0.175) + (cpuStarvationScore * 0.075) +
-                    (diskLatencyScore * 0.25);
-        }
-
         return {
             key: podKey,
             name,
             namespace,
-            score: score,
             dnsLatency,
             tcpRetransmissions: tcpRetrans,
             tcpPacketLoss: tcpLoss,
@@ -145,9 +88,53 @@ export function TopPerformers({ metrics }: TopPerformersProps = {}) {
         filteredPods = pods.filter(p => p.diskIOOperations > 0);
     }
 
-    // Sort filtered pods by score (lower is better)
-    filteredPods.sort((a, b) => a.score - b.score);
+    // Sort filtered pods by primary metric (lower is better for top performers)
+    filteredPods.sort((a, b) => {
+        if (filter === 'dns') {
+            return a.dnsLatency - b.dnsLatency;
+        } else if (filter === 'tcp') {
+            // Sort by SRTT (primary), then retransmissions
+            if (a.tcpSRTT !== b.tcpSRTT) {
+                return a.tcpSRTT - b.tcpSRTT;
+            }
+            return a.tcpRetransmissions - b.tcpRetransmissions;
+        } else if (filter === 'cpu') {
+            // Sort by scheduling latency (primary), then starvation
+            if (a.cpuSchedLatency !== b.cpuSchedLatency) {
+                return a.cpuSchedLatency - b.cpuSchedLatency;
+            }
+            return a.cpuStarvation - b.cpuStarvation;
+        } else if (filter === 'disk') {
+            return a.diskIOLatency - b.diskIOLatency;
+        } else {
+            // All: sort by DNS latency as primary metric
+            return a.dnsLatency - b.dnsLatency;
+        }
+    });
 
+    // Calculate min/max values for display
+    const getMinMaxValues = () => {
+        if (filteredPods.length === 0) return { min: 0, max: 0 };
+        
+        if (filter === 'dns') {
+            const values = filteredPods.map(p => p.dnsLatency).filter(v => v > 0);
+            return { min: Math.min(...values), max: Math.max(...values) };
+        } else if (filter === 'tcp') {
+            const values = filteredPods.map(p => p.tcpSRTT).filter(v => v > 0);
+            return { min: Math.min(...values), max: Math.max(...values) };
+        } else if (filter === 'cpu') {
+            const values = filteredPods.map(p => p.cpuSchedLatency).filter(v => v > 0);
+            return { min: Math.min(...values), max: Math.max(...values) };
+        } else if (filter === 'disk') {
+            const values = filteredPods.map(p => p.diskIOLatency).filter(v => v > 0);
+            return { min: Math.min(...values), max: Math.max(...values) };
+        } else {
+            const values = filteredPods.map(p => p.dnsLatency).filter(v => v > 0);
+            return { min: Math.min(...values), max: Math.max(...values) };
+        }
+    };
+
+    const minMax = getMinMaxValues();
     const topPerformers = filteredPods.slice(0, 5);
     const worstPerformers = [...filteredPods].reverse().slice(0, 5);
 
@@ -188,7 +175,15 @@ export function TopPerformers({ metrics }: TopPerformersProps = {}) {
 
             <div className="performers-grid">
                 <div className="performers-section">
-                    <h3>Top Performers {filter !== 'all' && `(${filter.toUpperCase()})`}</h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h3>Top Performers {filter !== 'all' && `(${filter.toUpperCase()})`}</h3>
+                        {minMax.min > 0 && minMax.min !== minMax.max && (
+                            <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>
+                                Range: {minMax.min.toFixed(1)} - {minMax.max.toFixed(1)}
+                                {filter === 'dns' ? 'μs' : filter === 'tcp' || filter === 'cpu' || filter === 'disk' ? 'ms' : 'μs'}
+                            </span>
+                        )}
+                    </div>
                     <div className="performers-list">
                         {topPerformers.length > 0 ? (
                             topPerformers.map((pod, index) => (
@@ -199,10 +194,6 @@ export function TopPerformers({ metrics }: TopPerformersProps = {}) {
                                         <div className="performer-namespace">{pod.namespace}</div>
                                     </div>
                                     <div className="performer-metrics">
-                                        <div className="performer-metric">
-                                            <span className="performer-label">Score</span>
-                                            <span className="performer-value">{pod.score.toFixed(1)}</span>
-                                        </div>
                                         <div className="performer-metric-details">
                                             {filter === 'dns' || filter === 'all' ? (
                                                 pod.dnsLatency > 0 && <span>DNS: {pod.dnsLatency.toFixed(0)}μs</span>
@@ -239,7 +230,15 @@ export function TopPerformers({ metrics }: TopPerformersProps = {}) {
                 </div>
 
                 <div className="performers-section">
-                    <h3>Needs Attention {filter !== 'all' && `(${filter.toUpperCase()})`}</h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h3>Needs Attention {filter !== 'all' && `(${filter.toUpperCase()})`}</h3>
+                        {minMax.min > 0 && minMax.min !== minMax.max && (
+                            <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>
+                                Range: {minMax.min.toFixed(1)} - {minMax.max.toFixed(1)}
+                                {filter === 'dns' ? 'μs' : filter === 'tcp' || filter === 'cpu' || filter === 'disk' ? 'ms' : 'μs'}
+                            </span>
+                        )}
+                    </div>
                     <div className="performers-list">
                         {worstPerformers.length > 0 ? (
                             worstPerformers.map((pod, index) => (
@@ -250,10 +249,6 @@ export function TopPerformers({ metrics }: TopPerformersProps = {}) {
                                         <div className="performer-namespace">{pod.namespace}</div>
                                     </div>
                                     <div className="performer-metrics">
-                                        <div className="performer-metric">
-                                            <span className="performer-label">Score</span>
-                                            <span className="performer-value">{pod.score.toFixed(1)}</span>
-                                        </div>
                                         <div className="performer-metric-details">
                                             {filter === 'dns' || filter === 'all' ? (
                                                 pod.dnsLatency > 0 && <span>DNS: {pod.dnsLatency.toFixed(0)}μs</span>

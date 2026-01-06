@@ -292,7 +292,7 @@ export const api = {
     },
 
     async getScalingRules(): Promise<ScalingRule[]> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules`, {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/rules`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' },
             cache: 'no-cache',
@@ -525,6 +525,20 @@ export const api = {
         return response.json();
     },
 
+    async getNamespaces(): Promise<string[]> {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/namespaces`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch namespaces: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
     // Node Communication APIs (Component 4)
     async getCommStats(): Promise<CommStats> {
         const response = await fetch(`${API_BASE}/api/comm/stats`, {
@@ -540,7 +554,7 @@ export const api = {
 
 
     async createScalingRule(rule: Partial<ScalingRule>): Promise<ScalingRule> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules`, {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/rules`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -554,7 +568,7 @@ export const api = {
     },
 
     async updateScalingRule(id: string, rule: Partial<ScalingRule>): Promise<ScalingRule> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules/${id}`, {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/rules/${id}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -568,7 +582,7 @@ export const api = {
     },
 
     async deleteScalingRule(id: string): Promise<void> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules/${id}`, {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/rules/${id}`, {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',
@@ -579,8 +593,9 @@ export const api = {
         }
     },
 
-    async getDeployments(): Promise<DeploymentInfo[]> {
-        const response = await fetch(`${API_BASE}/api/scaling/deployments`, {
+    async getDeployments(namespace?: string): Promise<DeploymentInfo[]> {
+        const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/deployments${query}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -649,4 +664,4 @@ export const api = {
         const data = await response.json();
         return Array.isArray(data?.logs) ? (data.logs as CommLogEntry[]) : [];
     },
-};
+}

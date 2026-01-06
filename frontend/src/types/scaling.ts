@@ -1,5 +1,6 @@
 export type MetricType = 'dns_latency' | 'rtt' | 'tcp_retrans';
 export type OperatorType = '>' | '<';
+export type ScalingAction = 'scale_up' | 'scale_down';
 
 export interface ScalingRule {
     _id: string;
@@ -12,6 +13,7 @@ export interface ScalingRule {
     minReplicas: number;
     maxReplicas: number;
     step: number;
+    action?: ScalingAction;
     lastAction?: string;
     lastActionAt?: string;
     lastValue?: number;
