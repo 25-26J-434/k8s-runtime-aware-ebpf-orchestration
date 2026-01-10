@@ -6,8 +6,10 @@ import type {
     CommStats,
     CommLogEntry,
 } from '../types/api';
+import type { ScalingRule, LatestMetric, DeploymentInfo } from '../types/scaling';
 
 export const API_BASE = '';  // Proxy handles routing
+const SCALING_API_BASE = (import.meta as any).env?.VITE_SCALING_API_BASE || API_BASE;
 
 // Transform unified metrics to expected format
 export function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
@@ -153,6 +155,25 @@ export const api = {
         return data.services || [];
     },
 
+    // Disk I/O endpoints
+    async getDiskIOMetrics() {
+        const response = await fetch(`${API_BASE}/api/disk/metrics`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O metrics');
+        return response.json();
+    },
+    
+    async getDiskIOPods() {
+        const response = await fetch(`${API_BASE}/api/disk/pods`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O pod metrics');
+        return response.json();
+    },
+    
+    async getDiskIOContainers() {
+        const response = await fetch(`${API_BASE}/api/disk/containers`);
+        if (!response.ok) throw new Error('Failed to fetch disk I/O container metrics');
+        return response.json();
+    },
+    
     async getPodDNSMetrics() {
         const response = await fetch(`${API_BASE}/api/dns/pods`);
         if (!response.ok) throw new Error('Failed to fetch pod DNS metrics');
@@ -243,9 +264,74 @@ export const api = {
         return response.json();
     },
 
+    async getScalingRules(): Promise<ScalingRule[]> {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch scaling rules: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
     // Node Communication APIs (Component 4)
     async getCommStats(): Promise<CommStats> {
         const response = await fetch(`${API_BASE}/api/comm/stats`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch communication stats: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+
+    async createScalingRule(rule: Partial<ScalingRule>): Promise<ScalingRule> {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rule),
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to create scaling rule: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async updateScalingRule(id: string, rule: Partial<ScalingRule>): Promise<ScalingRule> {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(rule),
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to update scaling rule: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async deleteScalingRule(id: string): Promise<void> {
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling-rules/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to delete scaling rule: ${response.status} ${response.statusText}`);
+        }
+    },
+
+    async getDeployments(): Promise<DeploymentInfo[]> {
+        const response = await fetch(`${API_BASE}/api/scaling/deployments`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -253,7 +339,21 @@ export const api = {
             cache: 'no-cache',
         });
         if (!response.ok) {
-            throw new Error(`Failed to fetch communication stats: ${response.status} ${response.statusText}`);
+            throw new Error(`Failed to fetch deployments: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async getLatestMetrics(): Promise<LatestMetric[]> {
+        const response = await fetch(`${API_BASE}/api/scaling/metrics/latest`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch latest metrics: ${response.status} ${response.statusText}`);
         }
         return response.json();
     },
@@ -300,4 +400,4 @@ export const api = {
         const data = await response.json();
         return Array.isArray(data?.logs) ? (data.logs as CommLogEntry[]) : [];
     },
-};
+}

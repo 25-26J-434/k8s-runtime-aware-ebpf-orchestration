@@ -48,29 +48,13 @@ export function SchedLatencyDashboard() {
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [sortField, setSortField] = useState<'avg' | 'max' | 'starvation'>('avg');
 
-    const fetchData = async () => {
-        try {
-            const data = await api.getSchedLatencyMetrics(20);
-            setNodeMetrics(data.node_metrics);
-            setPodMetrics(data.pod_metrics || {});
-            setRecentRecords(data.recent_records || []);
-            setError(null);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to fetch scheduling latency metrics');
-        } finally {
-            setLoading(false);
-        }
-    };
-
+    // Remove API polling - metrics received via props from parent
     useEffect(() => {
-        fetchData();
+        setLoading(false);
     }, []);
 
     useEffect(() => {
-        if (!autoRefresh) return;
-        
-        const interval = setInterval(fetchData, 5000);
-        return () => clearInterval(interval);
+        // Auto-refresh removed - WebSocket provides real-time data
     }, [autoRefresh]);
 
     const formatLatency = (us: number | undefined): string => {

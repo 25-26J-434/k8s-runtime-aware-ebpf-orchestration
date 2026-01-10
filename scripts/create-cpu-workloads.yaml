@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpu-workload-1
+  namespace: default
+  labels:
+    app: cpu-workload
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cpu-workload-1
+  template:
+    metadata:
+      labels:
+        app: cpu-workload-1
+    spec:
+      containers:
+      - name: cpu-stress
+        image: busybox:latest
+        command: ['sh', '-c']
+        args:
+        - |
+          while true; do
+            # Generate CPU load using arithmetic operations
+            i=0
+            while [ $i -lt 10000 ]; do
+              i=$((i+1))
+            done
+            sleep 0.1
+          done
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
+          limits:
+            cpu: "500m"
+            memory: "128Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpu-workload-2
+  namespace: default
+  labels:
+    app: cpu-workload
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cpu-workload-2
+  template:
+    metadata:
+      labels:
+        app: cpu-workload-2
+    spec:
+      containers:
+      - name: cpu-worker
+        image: alpine:latest
+        command: ['sh', '-c']
+        args:
+        - |
+          while true; do
+            # Create CPU activity
+            for i in $(seq 1 5000); do
+              echo $i > /dev/null
+            done
+            sleep 0.05
+          done
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "64Mi"
+          limits:
+            cpu: "1000m"
+            memory: "128Mi"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cpu-job-1
+  namespace: default
+spec:
+  completions: 1
+  parallelism: 1
+  template:
+    metadata:
+      labels:
+        app: cpu-job
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: cpu-job-container
+        image: busybox:latest
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Running CPU-intensive task..."
+          for i in $(seq 1 100000); do
+            result=$((i * i))
+          done
+          echo "CPU task completed"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
+          limits:
+            cpu: "500m"
+            memory: "128Mi"
+
+

@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
-import { FiHome, FiGitBranch, FiGrid, FiClock, FiGlobe, FiChevronRight, FiBarChart2, FiActivity, FiZap, FiServer, FiCpu, FiRadio, FiPackage, FiDownload, FiSettings, FiRefreshCw } from 'react-icons/fi';
+import { FiHome, FiGitBranch, FiGrid, FiClock, FiGlobe, FiChevronRight, FiBarChart2, FiActivity, FiZap, FiServer, FiCpu, FiRadio, FiPackage, FiDownload, FiSettings, FiRefreshCw, FiTrendingUp } from 'react-icons/fi';
 import './Navigation.css';
 
 export function Navigation() {
@@ -11,17 +11,16 @@ export function Navigation() {
     const isActive = (path: string) => location.pathname === path;
 
     const dashboardSubItems = [
-        { id: 'overview', label: 'Overview', icon: FiBarChart2 },
         { id: 'health', label: 'System Health', icon: FiActivity },
-        { id: 'performance', label: 'Performance', icon: FiZap },
         { id: 'node-metrics', label: 'Node Metrics', icon: FiServer },
-        { id: 'system', label: 'System Resources', icon: FiCpu },
-        { id: 'network', label: 'Network Stats', icon: FiGlobe },
-        { id: 'tcp-events', label: 'TCP Events', icon: FiRadio },
+        { id: 'system', label: 'Node System Metrics', icon: FiCpu },
+        { id: 'dns', label: 'DNS Metrics', icon: FiGlobe },
+        { id: 'tcp', label: 'TCP Metrics', icon: FiRadio },
+        { id: 'disk-io', label: 'Disk I/O', icon: FiDownload },
+        { id: 'cpu-scheduling', label: 'CPU Scheduling', icon: FiClock },
+        { id: 'performance', label: 'Performance', icon: FiZap },
         { id: 'pod-metrics', label: 'Pod Metrics', icon: FiPackage },
-        { id: 'packets', label: 'Packet Distribution', icon: FiDownload },
         { id: 'services', label: 'Service Health', icon: FiSettings },
-        { id: 'nat', label: 'NAT Metadata', icon: FiRefreshCw },
     ];
 
     const scrollToSection = (sectionId: string) => {
@@ -84,20 +83,22 @@ export function Navigation() {
                     {/* Dashboard Submenu */}
                     <div className="submenu" style={submenuStyle}>
                         <div className="submenu-header">Dashboard Sections</div>
-                        {dashboardSubItems.map((item) => {
-                            const Icon = item.icon;
-                            return (
-                                <button
-                                    key={item.id}
-                                    onClick={() => scrollToSection(item.id)}
-                                    className="submenu-item"
-                                    title={item.label}
-                                >
-                                    <Icon className="submenu-icon" />
-                                    <span className="submenu-text">{item.label}</span>
-                                </button>
-                            );
-                        })}
+                        <div className="submenu-items-container">
+                            {dashboardSubItems.map((item) => {
+                                const Icon = item.icon;
+                                return (
+                                    <button
+                                        key={item.id}
+                                        onClick={() => scrollToSection(item.id)}
+                                        className="submenu-item"
+                                        title={item.label}
+                                    >
+                                        <Icon className="submenu-icon" />
+                                        <span className="submenu-text">{item.label}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
                 </div>
                 
@@ -127,6 +128,15 @@ export function Navigation() {
                     <FiClock className="nav-icon" />
                     <span className="nav-link-text">Scheduling</span>
                 </Link>
+
+                <Link 
+                    to="/scaling" 
+                    className={`side-nav-link ${isActive('/scaling') ? 'active' : ''}`}
+                    title="Autoscaling Rules"
+                >
+                    <FiTrendingUp className="nav-icon" />
+                    <span className="nav-link-text">Scaling</span>
+                </Link>
                 
                 <Link 
                     to="/federation" 
@@ -147,4 +157,3 @@ export function Navigation() {
         </nav>
     );
 }
-

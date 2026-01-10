@@ -1,10 +1,15 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api } from '../services/api';
-import { metricsWebSocket } from '../services/websocket';
 import type { MetricsResponse, UnifiedMetricsResponse } from '../types/api';
 
-// Unified transformUnifiedMetrics function (from develop)
+// Module-level singleton to track cluster metrics WebSocket connection
+// This prevents multiple connections even when React StrictMode remounts components
+const clusterMetricsWebSocketSingleton = {
+    ws: null as WebSocket | null,
+    messageHandlers: new Set<(message: any) => void>(),
+    isConnecting: false,
+};
+
+// Transform unified metrics to expected format
 function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
     const node = data.node || {};
     const pods = data.pods || {};
@@ -38,6 +43,43 @@ function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse 
             };
         }
     });
+
+    
+    // Extract scheduling latency metrics
+    const schedNode = node.sched_latency || {};
+    const schedPods: Record<string, any> = {};
+    Object.entries(pods).forEach(([podKey, podMetrics]) => {
+        if (podMetrics.sched_latency) {
+            schedPods[podKey] = podMetrics.sched_latency;
+        }
+    });
+
+    // Extract disk I/O metrics
+    const diskIONode = node.disk_io || {};
+    const diskIOPods: Record<string, any> = {};
+    Object.entries(pods).forEach(([podKey, podMetrics]) => {
+        if (podMetrics.disk_io) {
+            diskIOPods[podKey] = podMetrics.disk_io;
+        }
+    });
+
+    // Extract container-level disk I/O
+    const diskIOContainers: Record<string, any> = {};
+    const containers = data.containers || {};
+    Object.entries(containers).forEach(([containerKey, containerMetrics]: [string, any]) => {
+        if (containerMetrics.disk_io) {
+            diskIOContainers[containerKey] = containerMetrics.disk_io;
+        }
+    });
+
+
+    // Build node_system object with disk_io
+    const nodeSystem: any = node.node_system || {};
+    if (diskIONode && Object.keys(diskIONode).length > 0) {
+        nodeSystem.disk_io = diskIONode;
+    }
+
+
     return {
         timestamp: data.timestamp,
         node_name: data.node_name,
@@ -89,270 +131,244 @@ function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse 
                 return tcpPods;
             })(),
         },
-        node_system: node.node_system || undefined,
+        node_system: Object.keys(nodeSystem).length > 0 ? nodeSystem : undefined,
         packet_distribution: node.packet_distribution || undefined,
         service_health: node.service_health || undefined,
         nat_metadata: node.nat_metadata || undefined,
+        sched_latency: schedNode && Object.keys(schedNode).length > 0 ? {
+            node_metrics: schedNode,
+            pod_metrics: schedPods,
+        } : undefined,
         pods: data.pods,
         containers: data.containers || {},
     };
 }
 
-
-function resolveWebSocketUrl(path: string): string {
-    if (typeof window === 'undefined') {
-        return '';
-    }
-    const trimmedPath = path.startsWith('/') ? path : `/${path}`;
-    const API_BASE = (window as any).API_BASE || '';
-    if (API_BASE && /^https?:\/\//.test(API_BASE)) {
-        const baseUrl = new URL(API_BASE);
-        baseUrl.pathname = `${baseUrl.pathname.replace(/\/$/, '')}${trimmedPath}`;
-        baseUrl.protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-        return baseUrl.toString();
-    }
-    const origin = window.location.origin;
-    const url = new URL(`${API_BASE}${trimmedPath}`, origin);
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    return url.toString();
-}
-
-export function useMetrics(refreshInterval = 3000) {
+export function useMetrics(_refreshInterval = 3000, selectedNodeKey?: string | null) {
     const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
+    const [availableNodes, setAvailableNodes] = useState<Array<{key: string, name: string, ip: string}>>([]);
+    const [totalPodsAcrossAllNodes, setTotalPodsAcrossAllNodes] = useState<number>(0);
 
-    const handleMetricsUpdate = useCallback((data: UnifiedMetricsResponse) => {
+    const clusterMetricsRef = useRef<Record<string, UnifiedMetricsResponse>>({});
+    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const selectedNodeKeyRef = useRef<string | null | undefined>(selectedNodeKey);
+
+    // Update available nodes list and calculate total pods across all nodes
+    const updateAvailableNodes = useCallback(() => {
+        const nodes = clusterMetricsRef.current;
+        const nodeList = Object.entries(nodes).map(([key, data]) => ({
+            key,
+            name: data.node_name || key,
+            ip: data.node_ip || ''
+        }));
+        setAvailableNodes(nodeList);
+        
+        // Calculate total pods across all nodes (deduplicate by pod key)
+        const allPodsSet = new Set<string>();
+        Object.values(nodes).forEach((nodeMetrics) => {
+            if (nodeMetrics.pods) {
+                Object.keys(nodeMetrics.pods).forEach((podKey) => {
+                    allPodsSet.add(podKey);
+                });
+            }
+        });
+        setTotalPodsAcrossAllNodes(allPodsSet.size);
+    }, []);
+
+    // Update metrics for selected node
+    const updateSelectedNodeMetrics = useCallback((nodeKey?: string | null) => {
+        const nodes = clusterMetricsRef.current;
+        if (Object.keys(nodes).length === 0) {
+            return;
+        }
+
+        // Determine which node to select
+        let selected: UnifiedMetricsResponse | null = null;
+        
+        if (nodeKey && nodes[nodeKey]) {
+            // Use explicitly selected node
+            selected = nodes[nodeKey];
+        } else if (Object.keys(nodes).length > 0) {
+            // Fallback to first available node
+            const firstKey = Object.keys(nodes)[0];
+            selected = nodes[firstKey];
+        }
+
+        if (!selected) {
+            return;
+        }
+
         try {
-            const transformed = transformUnifiedMetrics(data);
+            const transformed = transformUnifiedMetrics(selected);
             setMetrics(transformed);
-            setError(null);
             setLoading(false);
+            setError(null);
         } catch (err) {
-            console.error('[useMetrics] Error transforming metrics:', err);
-            setError(err as Error);
+            console.error('[useMetrics] Error transforming cluster metrics:', err);
         }
     }, []);
-    const latestMetricsRef = useRef<MetricsResponse | null>(null);
-    const clusterMetricsRef = useRef<Record<string, UnifiedMetricsResponse>>({});
-    const wsRef = useRef<WebSocket | null>(null);
-    const reconnectTimerRef = useRef<number | null>(null);
+
+    // Update ref when selectedNodeKey changes
+    useEffect(() => {
+        selectedNodeKeyRef.current = selectedNodeKey;
+    }, [selectedNodeKey]);
+
+    // Handle cluster-wide metrics from /api/metrics/ws
+    const handleClusterMetricsMessage = useCallback((message: any) => {
+        if (!message || typeof message !== 'object') {
+            return;
+        }
+
+        // Handle snapshot - initial cluster state
+        if (message.type === 'snapshot' && message.nodes && typeof message.nodes === 'object') {
+            clusterMetricsRef.current = message.nodes as Record<string, UnifiedMetricsResponse>;
+            updateAvailableNodes();
+            updateSelectedNodeMetrics(selectedNodeKeyRef.current);
+            return;
+        }
+
+        // Handle node_update - individual node metrics update
+        if (message.type === 'node_update' && message.node && message.metrics) {
+            clusterMetricsRef.current = {
+                ...clusterMetricsRef.current,
+                [message.node]: message.metrics as UnifiedMetricsResponse,
+            };
+            updateAvailableNodes();
+            updateSelectedNodeMetrics(selectedNodeKeyRef.current);
+        }
+    }, [updateAvailableNodes, updateSelectedNodeMetrics]);
 
     useEffect(() => {
-        let mounted = true;
-        let fallbackInterval: ReturnType<typeof setInterval> | null = null;
+        // Add this handler to the singleton's message handlers
+        clusterMetricsWebSocketSingleton.messageHandlers.add(handleClusterMetricsMessage);
 
-        // Try WebSocket connection first
-        metricsWebSocket.connect();
-        metricsWebSocket.subscribe('metrics', handleMetricsUpdate);
-
-        // Fallback to REST API if WebSocket fails
-        const checkConnectionAndFallback = async () => {
-            if (!metricsWebSocket.isConnected() && mounted) {
-                try {
-                    const data = await api.getMetrics();
-                    if (mounted) {
-                        setMetrics(data);
-                        setError(null);
-                        setLoading(false);
-                    }
-                } catch (err) {
-                    if (mounted) {
-                        setError(err as Error);
-                        setLoading(false);
-                    }
-                }
-            }
-        };
-
-        // Check connection status periodically and fallback if needed
-        fallbackInterval = setInterval(checkConnectionAndFallback, refreshInterval);
-        
-        // Initial fallback check after a short delay
-        setTimeout(checkConnectionAndFallback, 1000);
-        let lastErrorLog = 0;
-        const ERROR_LOG_INTERVAL = 30000; // Only log errors every 30 seconds
-
-        const fetchMetrics = async () => {
-            try {
-                const data = await api.getMetrics();
-                if (mounted) {
-                    setMetrics(data);
-                    latestMetricsRef.current = data;
-                    setError(null);
-                    lastErrorLog = 0; // Reset error logging on successful fetch
-                }
-            } catch (err: any) {
-                // Only set error if component is still mounted
-                if (mounted) {
-                    setError(err as Error);
-
-                    // Throttle error logging
-                    const now = Date.now();
-                    if (now - lastErrorLog > ERROR_LOG_INTERVAL) {
-                        console.error('Failed to fetch metrics:', err.message || err);
-                        lastErrorLog = now;
-                    }
-                }
-            } finally {
-                if (mounted) {
-                    setLoading(false);
-                }
-            }
-        };
-
-        fetchMetrics();
-        const interval = setInterval(fetchMetrics, refreshInterval);
-
-        const connectWebSocket = () => {
-            if (!mounted || typeof window === 'undefined') {
+        // Connect to cluster-wide metrics WebSocket (/api/metrics/ws) using singleton
+        const connectClusterWebSocket = () => {
+            if (typeof window === 'undefined') {
                 return;
             }
 
+            // Don't create a new connection if one already exists and is connecting/connected
+            if (clusterMetricsWebSocketSingleton.ws && (
+                clusterMetricsWebSocketSingleton.ws.readyState === WebSocket.CONNECTING ||
+                clusterMetricsWebSocketSingleton.ws.readyState === WebSocket.OPEN
+            )) {
+                return;
+            }
+
+            // Prevent multiple simultaneous connection attempts
+            if (clusterMetricsWebSocketSingleton.isConnecting) {
+                return;
+            }
+
+            clusterMetricsWebSocketSingleton.isConnecting = true;
+
             try {
-                const wsUrl = resolveWebSocketUrl('/api/metrics/ws');
-                if (!wsUrl) {
-                    return;
-                }
+                // Use relative URL so Vite proxy handles it
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const host = window.location.host;
+                const wsUrl = `${protocol}//${host}/api/metrics/ws`;
 
                 const ws = new WebSocket(wsUrl);
-                wsRef.current = ws;
+                clusterMetricsWebSocketSingleton.ws = ws;
 
                 ws.onopen = () => {
-                    if (!mounted) {
-                        return;
-                    }
-                    setError(null);
+                    clusterMetricsWebSocketSingleton.isConnecting = false;
                 };
 
                 ws.onerror = (event) => {
-                    if (!mounted) {
-                        return;
-                    }
-                    const wsError = new Error('WebSocket connection error');
-                    setError(wsError);
+                    clusterMetricsWebSocketSingleton.isConnecting = false;
+                    console.error('[useMetrics] Cluster WebSocket error:', event);
                     safeCloseWebSocket();
                 };
 
                 ws.onclose = () => {
-                    if (!mounted) {
-                        return;
-                    }
+                    console.log('[useMetrics] Cluster WebSocket closed, will reconnect...');
+                    clusterMetricsWebSocketSingleton.ws = null;
                     scheduleReconnect();
                 };
 
                 ws.onmessage = (event) => {
-                    if (!mounted) {
-                        return;
-                    }
                     try {
+                        // Skip empty messages
+                        if (!event.data || event.data.trim() === '') {
+                            return;
+                        }
                         const payload = JSON.parse(event.data);
-                        handleMetricsMessage(payload);
+                        // Notify all registered handlers
+                        clusterMetricsWebSocketSingleton.messageHandlers.forEach(handler => {
+                            try {
+                                handler(payload);
+                            } catch (err) {
+                                console.error('[useMetrics] Error in message handler:', err);
+                            }
+                        });
                     } catch (parseErr) {
-                        console.error('Failed to parse metrics WebSocket message:', parseErr);
+                        // Only log if it's not an empty message error
+                        if (event.data && event.data.trim() !== '') {
+                            console.error('[useMetrics] Failed to parse cluster metrics message:', parseErr, 'Data:', event.data.substring(0, 100));
+                        }
                     }
                 };
             } catch (err) {
-                console.error('Failed to establish metrics WebSocket connection:', err);
+                clusterMetricsWebSocketSingleton.isConnecting = false;
+                console.error('[useMetrics] Failed to connect to cluster WebSocket:', err);
                 scheduleReconnect();
             }
         };
 
         const scheduleReconnect = () => {
-            if (!mounted || reconnectTimerRef.current !== null) {
+            if (reconnectTimerRef.current !== null) {
                 return;
             }
-            reconnectTimerRef.current = window.setTimeout(() => {
+            // Clear any existing connection before reconnecting
+            safeCloseWebSocket();
+            reconnectTimerRef.current = setTimeout(() => {
                 reconnectTimerRef.current = null;
-                connectWebSocket();
+                connectClusterWebSocket();
             }, 5000);
         };
 
         const safeCloseWebSocket = () => {
-            if (wsRef.current) {
+            if (clusterMetricsWebSocketSingleton.ws) {
                 try {
-                    wsRef.current.close();
+                    clusterMetricsWebSocketSingleton.ws.close();
                 } catch (closeErr) {
-                    console.warn('Error closing metrics WebSocket:', closeErr);
+                    console.warn('[useMetrics] Error closing cluster WebSocket:', closeErr);
                 }
-                wsRef.current = null;
+                clusterMetricsWebSocketSingleton.ws = null;
             }
         };
 
-        const handleMetricsMessage = (message: any) => {
-            if (!message || typeof message !== 'object') {
-                return;
-            }
+        // Connect to cluster WebSocket (singleton will prevent duplicates)
+        connectClusterWebSocket();
 
-            if (message.type === 'snapshot' && message.nodes && typeof message.nodes === 'object') {
-                clusterMetricsRef.current = message.nodes as Record<string, UnifiedMetricsResponse>;
-                updateSelectedNodeMetrics();
-                return;
-            }
-
-            if (message.type === 'node_update' && message.node && message.metrics) {
-                clusterMetricsRef.current = {
-                    ...clusterMetricsRef.current,
-                    [message.node]: message.metrics as UnifiedMetricsResponse,
-                };
-                updateSelectedNodeMetrics();
-            }
-        };
-
-        const updateSelectedNodeMetrics = () => {
-            const nodes = clusterMetricsRef.current;
-            const nodeEntries = Object.values(nodes || {});
-            if (nodeEntries.length === 0) {
-                return;
-            }
-
-            const currentNodeName = latestMetricsRef.current?.node_name;
-            const currentNodeIP = latestMetricsRef.current?.node_ip;
-
-            const preferred = nodeEntries.find((entry) =>
-                (currentNodeName && entry.node_name === currentNodeName) ||
-                (currentNodeIP && entry.node_ip === currentNodeIP)
-            );
-
-            const fallback = nodeEntries.find((entry) => entry.node_name && entry.node_name !== 'unknown') || nodeEntries[0];
-            const selected = preferred || fallback;
-
-            if (!selected) {
-                return;
-            }
-
-            const transformed = transformUnifiedMetrics(selected);
-            latestMetricsRef.current = transformed;
-            setMetrics(transformed);
-            setLoading(false);
-            setError(null);
-        };
-
-        connectWebSocket();
+        // NO REST API FALLBACK - WebSocket only for real-time metrics
 
         return () => {
-            mounted = false;
-            metricsWebSocket.unsubscribe('metrics', handleMetricsUpdate);
+            // Remove this handler from the singleton
+            clusterMetricsWebSocketSingleton.messageHandlers.delete(handleClusterMetricsMessage);
             
-            if (fallbackInterval) {
-                clearInterval(fallbackInterval);
+            // Don't close the WebSocket here - let other instances use it
+            // Only close if no handlers remain
+            if (clusterMetricsWebSocketSingleton.messageHandlers.size === 0) {
+                safeCloseWebSocket();
             }
-            clearInterval(interval);
+            
             if (reconnectTimerRef.current !== null) {
-                window.clearTimeout(reconnectTimerRef.current);
+                clearTimeout(reconnectTimerRef.current);
                 reconnectTimerRef.current = null;
             }
-            if (wsRef.current) {
-                try {
-                    wsRef.current.close();
-                } catch (closeErr) {
-                    console.warn('Error closing metrics WebSocket:', closeErr);
-                }
-                wsRef.current = null;
-            }
         };
-    }, [refreshInterval, handleMetricsUpdate]);
+    }, [handleClusterMetricsMessage]);
 
-    return { metrics, loading, error };
+    // Update metrics when selectedNodeKey changes
+    useEffect(() => {
+        updateSelectedNodeMetrics(selectedNodeKey);
+    }, [selectedNodeKey, updateSelectedNodeMetrics]);
+
+    return { metrics, loading, error, availableNodes, totalPodsAcrossAllNodes };
 }
 

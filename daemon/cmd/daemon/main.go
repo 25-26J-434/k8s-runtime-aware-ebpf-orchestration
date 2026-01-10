@@ -81,6 +81,9 @@ func main() {
 	log.Println("[Main] Initializing TCP Metrics collector...")
 	telemetry.InitTCPMetricsCollector(nodeName)
 
+	log.Println("[Main] Initializing Scheduling Latency collector...")
+	telemetry.InitSchedLatencyCollector(nodeName)
+
 	log.Println("[Main] Initializing Node System collector...")
 	telemetry.InitNodeSystemCollector(nodeName)
 
@@ -93,10 +96,13 @@ func main() {
 		log.Println("[Main] Container-level metrics will not be available")
 	}
 	k8sClient := api.GetK8sClient()
-	
+
 	log.Println("[Main] Initializing Service Health collector...")
 	telemetry.InitServiceHealthCollector(nodeName, k8sClient)
 
+	// MongoDB-dependent features (scaling, scheduler) disabled
+	// log.Println("[Main] Starting Intelligent Scheduler...")
+	// log.Println("[Main] Starting Scaling Controller...")
 	log.Println("[Main] Initializing NAT Metadata collector...")
 	telemetry.InitNATMetadataCollector(nodeName)
 
@@ -111,6 +117,7 @@ func main() {
 	telemetry.SetContainerMapper(containerMapper)
 	telemetry.SetTCPContainerMapper(containerMapper)
 	telemetry.SetSchedContainerMapper(containerMapper)
+	telemetry.SetDiskIOContainerMapper(containerMapper)
 	log.Println("[Main] Container Mapper initialized successfully")
 
 	if err := loader.AttachDNSProbes(); err != nil {
@@ -119,10 +126,27 @@ func main() {
 
 	defer loader.Close()
 
+	// Load and start Disk I/O eBPF
+	log.Println("[Main] Loading Disk I/O eBPF...")
+	diskIOSpec, err := loader.LoadDiskIOBPF()
+	if err != nil {
+		log.Printf("[Main] WARNING: Failed to load Disk I/O BPF: %v", err)
+		log.Println("[Main] Continuing without Disk I/O collection...")
+	} else {
+		if err := telemetry.LoadDiskIOBPF(diskIOSpec); err != nil {
+			log.Printf("[Main] WARNING: Failed to initialize Disk I/O: %v", err)
+		} else if err := telemetry.AttachDiskIOProbes(); err != nil {
+			log.Printf("[Main] WARNING: Failed to attach Disk I/O probes: %v", err)
+		} else {
+			log.Println("[Main] Disk I/O eBPF loaded and attached successfully")
+		}
+	}
+
 	go telemetry.StartDNSLatencyCollector()
 	go telemetry.StartRTTCollector()
 	go telemetry.StartTCPMetricsCollector()
 	go telemetry.StartSchedLatencyCollector()
+	go telemetry.StartDiskIOCollector()
 
 	// Start the sample latency-based router (Component 2) so routing decisions can
 	// consume telemetry directly in-process.

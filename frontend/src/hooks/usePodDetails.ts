@@ -63,7 +63,7 @@ export function usePodDetails(refreshInterval: number = 5000) {
 
   useEffect(() => {
     let mounted = true;
-    let fallbackInterval: NodeJS.Timeout | null = null;
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
 
     // Import WebSocket service
     import('../services/websocket').then(({ podDetailsWebSocket }) => {
@@ -85,7 +85,7 @@ export function usePodDetails(refreshInterval: number = 5000) {
       const checkConnectionAndFallback = async () => {
         if (!podDetailsWebSocket.isConnected() && mounted) {
           try {
-            const response = await fetch('http://localhost:8080/api/pod/details');
+            const response = await fetch('/api/pod/details');
             if (!response.ok) {
               throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -104,11 +104,12 @@ export function usePodDetails(refreshInterval: number = 5000) {
         }
       };
 
-      // Check connection status periodically and fallback if needed
-      fallbackInterval = setInterval(checkConnectionAndFallback, refreshInterval);
+      // Check connection status periodically and fallback if needed (only if WebSocket disconnected)
+      // Use longer interval to avoid constant polling
+      fallbackInterval = setInterval(checkConnectionAndFallback, 30000); // Check every 30 seconds
       
-      // Initial fallback check after a short delay
-      setTimeout(checkConnectionAndFallback, 1000);
+      // Initial fallback check after a longer delay (give WebSocket time to connect)
+      setTimeout(checkConnectionAndFallback, 5000);
 
       // Store the cleanup function
       return () => {
@@ -131,5 +132,4 @@ export function usePodDetails(refreshInterval: number = 5000) {
 
   return { data, loading, error };
 }
-
 

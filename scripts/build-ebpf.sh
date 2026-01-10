@@ -245,6 +245,22 @@ if [ -f "$COMPONENT_DIR/sched_latency.c" ]; then
     fi
 fi
 
+# Build Disk I/O eBPF program (if exists)
+if [ -f "$COMPONENT_DIR/disk_io.c" ]; then
+    echo "[BUILD] Compiling disk_io.c..."
+    clang $CLANG_FLAGS \
+        -c "$COMPONENT_DIR/disk_io.c" \
+        -o "$COMPONENT_DIR/disk_io.o" 2>&1 || {
+        echo "[WARN] Disk I/O program compilation failed"
+        echo "[WARN] Continuing without disk I/O..."
+    }
+    
+    if [ -f "$COMPONENT_DIR/disk_io.o" ]; then
+        cp "$COMPONENT_DIR/disk_io.o" "$OUTPUT_DIR/disk_io.o"
+        echo "[OK] Copied disk_io.o to $OUTPUT_DIR"
+    fi
+fi
+
 # Verify the compiled objects
 echo ""
 echo "[VERIFY] Checking compiled eBPF objects..."

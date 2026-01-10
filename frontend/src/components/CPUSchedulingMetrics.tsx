@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
-import { api } from '../services/api';
+import type { MetricsResponse } from '../types/api';
 import './CPUSchedulingMetrics.css';
 
 interface SchedMetrics {
     total_events: number;
     avg_runqueue_latency_us: number;
     max_runqueue_latency_us: number;
+    min_runqueue_latency_us: number;
+    p50_runqueue_latency_us: number;
     p95_runqueue_latency_us: number;
+    p99_runqueue_latency_us: number;
+    avg_cpu_time_us: number;
     cpu_starvation_count: number;
 }
 
@@ -18,39 +22,58 @@ interface PodSchedMetrics {
     cpu_starvation_count: number;
 }
 
-export function CPUSchedulingMetrics() {
+interface CPUSchedulingMetricsProps {
+    metrics?: MetricsResponse | null;
+}
+
+export function CPUSchedulingMetrics({ metrics }: CPUSchedulingMetricsProps = {}) {
     const [nodeMetrics, setNodeMetrics] = useState<SchedMetrics | null>(null);
     const [topPods, setTopPods] = useState<PodSchedMetrics[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const data = await api.getSchedLatencyMetrics(10);
-                setNodeMetrics(data.node_metrics);
-                
-                // Get top 5 pods with highest latency
-                if (data.pod_metrics) {
-                    const pods = Object.values(data.pod_metrics) as PodSchedMetrics[];
-                    const sorted = pods
-                        .filter((p: PodSchedMetrics) => p.avg_runqueue_latency_us > 0)
-                        .sort((a: PodSchedMetrics, b: PodSchedMetrics) => 
-                            b.avg_runqueue_latency_us - a.avg_runqueue_latency_us
-                        )
-                        .slice(0, 5);
-                    setTopPods(sorted);
-                }
-                setLoading(false);
-            } catch (err) {
-                console.error('Failed to fetch scheduling metrics:', err);
-                setLoading(false);
-            }
-        };
+        if (!metrics) {
+            setLoading(true);
+            return;
+        }
 
-        fetchData();
-        const interval = setInterval(fetchData, 5000);
-        return () => clearInterval(interval);
-    }, []);
+        // Extract scheduling latency from WebSocket metrics
+        const schedData = (metrics as any).sched_latency;
+        
+        if (schedData && schedData.node_metrics) {
+            const nodeData = schedData.node_metrics;
+            
+            setNodeMetrics({
+                total_events: nodeData.total_events || 0,
+                avg_runqueue_latency_us: nodeData.avg_runqueue_latency_us || 0,
+                max_runqueue_latency_us: nodeData.max_runqueue_latency_us || 0,
+                min_runqueue_latency_us: nodeData.min_runqueue_latency_us || 0,
+                p50_runqueue_latency_us: nodeData.p50_runqueue_latency_us || 0,
+                p95_runqueue_latency_us: nodeData.p95_runqueue_latency_us || 0,
+                p99_runqueue_latency_us: nodeData.p99_runqueue_latency_us || 0,
+                avg_cpu_time_us: nodeData.avg_cpu_time_us || 0,
+                cpu_starvation_count: nodeData.cpu_starvation_count || 0,
+            });
+
+            // Extract pod metrics
+            if (schedData.pod_metrics && Object.keys(schedData.pod_metrics).length > 0) {
+                const pods = Object.values(schedData.pod_metrics) as PodSchedMetrics[];
+                const sorted = pods
+                    .filter((p: PodSchedMetrics) => p.avg_runqueue_latency_us > 0)
+                    .sort((a: PodSchedMetrics, b: PodSchedMetrics) => 
+                        b.avg_runqueue_latency_us - a.avg_runqueue_latency_us
+                    )
+                    .slice(0, 5);
+                setTopPods(sorted);
+            } else {
+                setTopPods([]);
+            }
+            
+            setLoading(false);
+        } else {
+            setLoading(false);
+        }
+    }, [metrics]);
 
     const formatLatency = (us: number | undefined): string => {
         if (!us || isNaN(us)) return '0 μs';
@@ -111,6 +134,54 @@ export function CPUSchedulingMetrics() {
                             {formatLatency(nodeMetrics.max_runqueue_latency_us)}
                         </div>
                         <div className="sched-card-subtitle">Peak delay</div>
+                    </div>
+                </div>
+
+                <div className="sched-card">
+                    <div className="sched-card-content">
+                        <div className="sched-card-label">Min Latency</div>
+                        <div className="sched-card-value" style={{ 
+                            color: '#10b981'
+                        }}>
+                            {formatLatency(nodeMetrics.min_runqueue_latency_us)}
+                        </div>
+                        <div className="sched-card-subtitle">Minimum delay</div>
+                    </div>
+                </div>
+
+                <div className="sched-card">
+                    <div className="sched-card-content">
+                        <div className="sched-card-label">P50 (Median)</div>
+                        <div className="sched-card-value" style={{ 
+                            color: getLatencyColor(nodeMetrics.p50_runqueue_latency_us) 
+                        }}>
+                            {formatLatency(nodeMetrics.p50_runqueue_latency_us)}
+                        </div>
+                        <div className="sched-card-subtitle">50th percentile</div>
+                    </div>
+                </div>
+
+                <div className="sched-card">
+                    <div className="sched-card-content">
+                        <div className="sched-card-label">P99</div>
+                        <div className="sched-card-value" style={{ 
+                            color: getLatencyColor(nodeMetrics.p99_runqueue_latency_us) 
+                        }}>
+                            {formatLatency(nodeMetrics.p99_runqueue_latency_us)}
+                        </div>
+                        <div className="sched-card-subtitle">99th percentile</div>
+                    </div>
+                </div>
+
+                <div className="sched-card">
+                    <div className="sched-card-content">
+                        <div className="sched-card-label">Avg CPU Time</div>
+                        <div className="sched-card-value" style={{ 
+                            color: '#60a5fa'
+                        }}>
+                            {formatLatency(nodeMetrics.avg_cpu_time_us)}
+                        </div>
+                        <div className="sched-card-subtitle">Average execution time</div>
                     </div>
                 </div>
 
@@ -181,15 +252,6 @@ export function CPUSchedulingMetrics() {
                 </div>
             )}
 
-            {/* Info Footer */}
-            <div className="sched-info-footer">
-                <div className="info-item">
-                    <strong>Run Queue Latency:</strong> Time processes wait in CPU queue before being scheduled
-                </div>
-                <div className="info-item">
-                    <strong>Source:</strong> eBPF tracepoints on <code>sched:sched_wakeup</code> and <code>sched:sched_switch</code>
-                </div>
-            </div>
         </div>
     );
 }

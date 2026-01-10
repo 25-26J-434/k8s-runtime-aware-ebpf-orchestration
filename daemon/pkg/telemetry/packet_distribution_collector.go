@@ -9,21 +9,21 @@ import (
 
 // PacketDistributionMetrics holds packet distribution metrics across pods
 type PacketDistributionMetrics struct {
-	TotalPackets    uint64            `json:"total_packets"`
-	PacketsByPod    map[string]uint64  `json:"packets_by_pod"`
+	TotalPackets      uint64            `json:"total_packets"`
+	PacketsByPod      map[string]uint64 `json:"packets_by_pod"`
 	PacketsByProtocol map[string]uint64 `json:"packets_by_protocol"`
-	BytesByPod      map[string]uint64  `json:"bytes_by_pod"`
+	BytesByPod        map[string]uint64 `json:"bytes_by_pod"`
 }
 
 // PodPacketStats holds per-pod packet statistics
 type PodPacketStats struct {
-	PodName       string
-	Namespace     string
-	PacketCount   uint64
-	ByteCount     uint64
-	TCPPackets    uint64
-	UDPPackets    uint64
-	ICMPPackets   uint64
+	PodName     string
+	Namespace   string
+	PacketCount uint64
+	ByteCount   uint64
+	TCPPackets  uint64
+	UDPPackets  uint64
+	ICMPPackets uint64
 }
 
 var packetDistributionMetrics PacketDistributionMetrics
@@ -187,4 +187,3 @@ func GetPacketDistributionMetrics() PacketDistributionMetrics {
 	defer packetMetricsMutex.RUnlock()
 	return packetDistributionMetrics
 }
-

@@ -18,7 +18,7 @@ import (
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if r.Method == "OPTIONS" {
@@ -116,7 +116,19 @@ func StartServer() {
 	http.HandleFunc("/api/sched/metrics", corsMiddleware(handleSchedLatencyMetrics))
 	http.HandleFunc("/api/sched/pods", corsMiddleware(handleSchedLatencyPods))
 	http.HandleFunc("/api/sched/containers", corsMiddleware(handleSchedLatencyContainers))
+
+	// Disk I/O metrics endpoints
+	http.HandleFunc("/api/disk/metrics", corsMiddleware(handleDiskIOMetrics))
+	http.HandleFunc("/api/disk/pods", corsMiddleware(handleDiskIOPods))
+	http.HandleFunc("/api/disk/containers", corsMiddleware(handleDiskIOContainers))
+	http.HandleFunc("/api/disk/all", corsMiddleware(handleDiskIOAll))
 	http.HandleFunc("/api/sched/records", corsMiddleware(handleSchedLatencyRecords))
+
+	// Scaling endpoints
+	http.HandleFunc("/api/scaling/rules", corsMiddleware(handleScalingRules))
+	http.HandleFunc("/api/scaling/rules/", corsMiddleware(handleScalingRuleByID))
+	http.HandleFunc("/api/scaling/deployments", corsMiddleware(handleScalingDeployments))
+	http.HandleFunc("/api/scaling/metrics/latest", corsMiddleware(handleScalingLatestMetrics))
 
 	// WebSocket endpoints
 	http.HandleFunc("/ws/metrics", corsMiddleware(handleWebSocketMetrics))
@@ -124,6 +136,21 @@ func StartServer() {
 	http.HandleFunc("/ws/pod-details", corsMiddleware(handleWebSocketPodDetails))
 
 	log.Println("[API] Starting HTTP server on :8080")
+	log.Println("[API]   GET /api/connections/topology    - Real TCP connections")
+	log.Println("[API]   GET /api/connections/pod         - Pod-specific connections")
+	log.Println("[API]   POST /api/pod/action             - Perform pod actions")
+	log.Println("[API]   POST /api/pod/ebpf-action        - eBPF-based pod actions")
+	log.Println("[API]   GET /api/pod/details             - Pod details")
+	log.Println("[API]   GET /api/scaling/rules           - Scaling rules (list)")
+	log.Println("[API]   POST /api/scaling/rules          - Scaling rules (create)")
+	log.Println("[API]   PUT /api/scaling/rules/{id}      - Scaling rules (update)")
+	log.Println("[API]   POST /api/scaling/rules/{id}/toggle - Scaling rules (toggle enabled)")
+	log.Println("[API]   GET /api/scaling/deployments     - Deployment replica info")
+	log.Println("[API]   GET /api/scaling/metrics/latest  - Latest per-deployment metrics")
+	log.Println("[API] WebSocket Endpoints:")
+	log.Println("[API]   WS /ws/metrics                   - Real-time metrics stream")
+	log.Println("[API]   WS /ws/topology                  - Real-time topology stream")
+	log.Println("[API]   WS /ws/pod-details               - Real-time pod details stream")
 	log.Println("[API] Endpoints:")
 	log.Println("[API]   GET /health                  - Health check")
 	log.Println("[API]   GET /ready                   - Readiness check")

@@ -15,23 +15,23 @@ import (
 
 // ServiceHealthMetrics holds service endpoint health information
 type ServiceHealthMetrics struct {
-	TotalServices     int                        `json:"total_services"`
-	HealthyServices   int                        `json:"healthy_services"`
-	UnhealthyServices int                        `json:"unhealthy_services"`
-	ServiceDetails    map[string]ServiceHealth   `json:"service_details"`
+	TotalServices     int                      `json:"total_services"`
+	HealthyServices   int                      `json:"healthy_services"`
+	UnhealthyServices int                      `json:"unhealthy_services"`
+	ServiceDetails    map[string]ServiceHealth `json:"service_details"`
 }
 
 // ServiceHealth holds health status for a service
 type ServiceHealth struct {
-	Name          string                 `json:"name"`
-	Namespace     string                 `json:"namespace"`
-	ClusterIP     string                 `json:"cluster_ip"`
-	Type          string                 `json:"type"`
-	Status        string                 `json:"status"` // "healthy", "degraded", "unhealthy"
-	TotalEndpoints int                   `json:"total_endpoints"`
-	ReadyEndpoints int                   `json:"ready_endpoints"`
+	Name           string                    `json:"name"`
+	Namespace      string                    `json:"namespace"`
+	ClusterIP      string                    `json:"cluster_ip"`
+	Type           string                    `json:"type"`
+	Status         string                    `json:"status"` // "healthy", "degraded", "unhealthy"
+	TotalEndpoints int                       `json:"total_endpoints"`
+	ReadyEndpoints int                       `json:"ready_endpoints"`
 	EndpointHealth map[string]EndpointHealth `json:"endpoint_health"`
-	LastCheck     time.Time              `json:"last_check"`
+	LastCheck      time.Time                 `json:"last_check"`
 }
 
 // EndpointHealth holds health status for an endpoint
@@ -138,7 +138,7 @@ func collectServiceHealth(k8sClient *kubernetes.Clientset) {
 	}
 
 	ctx := context.Background()
-	
+
 	// Get all services
 	services, err := k8sClient.CoreV1().Services("").List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -171,14 +171,14 @@ func collectServiceHealth(k8sClient *kubernetes.Clientset) {
 	for _, svc := range services.Items {
 		svcKey := fmt.Sprintf("%s/%s", svc.Namespace, svc.Name)
 		endpointKey := fmt.Sprintf("%s/%s", svc.Namespace, svc.Name)
-		
+
 		svcHealth := ServiceHealth{
-			Name:          svc.Name,
-			Namespace:     svc.Namespace,
-			ClusterIP:     svc.Spec.ClusterIP,
-			Type:          string(svc.Spec.Type),
+			Name:           svc.Name,
+			Namespace:      svc.Namespace,
+			ClusterIP:      svc.Spec.ClusterIP,
+			Type:           string(svc.Spec.Type),
 			EndpointHealth: make(map[string]EndpointHealth),
-			LastCheck:     time.Now(),
+			LastCheck:      time.Now(),
 		}
 
 		// Get endpoint information
@@ -259,15 +259,15 @@ func collectServiceHealth(k8sClient *kubernetes.Clientset) {
 func checkHTTPHealth(ip string, port int) (bool, float64) {
 	start := time.Now()
 	url := fmt.Sprintf("http://%s:%d/health", ip, port)
-	
+
 	resp, err := http.Get(url)
 	latency := float64(time.Since(start).Nanoseconds()) / 1e6 // Convert to milliseconds
-	
+
 	if err != nil {
 		return false, latency
 	}
 	defer resp.Body.Close()
-	
+
 	return resp.StatusCode >= 200 && resp.StatusCode < 400, latency
 }
 
@@ -290,4 +290,3 @@ func GetServiceHealthMetrics() ServiceHealthMetrics {
 	defer serviceHealthMutex.RUnlock()
 	return serviceHealthMetrics
 }
-
