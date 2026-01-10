@@ -2239,10 +2239,22 @@ kubectl delete pod -l run=test
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Author
+## Authors
 
-**Gunawardana D.D.I. (IT22312426)**
-- BSc. (Hons) in Information Technology Specializing in Software Engineering
+**Samarasinghe P. P. (IT 220 36 384)**
+- Email: it22036384@my.sliit.lk
+- Sri Lanka Institute of Information Technology
+
+**Gunawardana D. D. I. (IT22312426)**
+- Email: it22312426@my.sliit.lk
+- Sri Lanka Institute of Information Technology
+
+**Aponso G. I. A. (IT22603586)**
+- Email: it22603586@my.sliit.lk
+- Sri Lanka Institute of Information Technology
+
+**Sashmitha G. C. K. (IT22109262)**
+- Email: it22109262@my.sliit.lk
 - Sri Lanka Institute of Information Technology
 
 ---
