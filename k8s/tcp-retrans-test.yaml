@@ -1,0 +1,81 @@
+---
+# Simple TCP retransmission test using nc (netcat)
+# This creates a TCP server and client that will generate retransmissions
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tcp-retrans-test
+---
+# TCP Server pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tcp-server
+  namespace: tcp-retrans-test
+  labels:
+    app: tcp-server
+spec:
+  containers:
+    - name: server
+      image: nicolaka/netshoot:latest
+      command:
+        - /bin/bash
+        - -c
+        - |
+          # Start a simple TCP server that accepts connections but drops packets randomly
+          while true; do
+            # Listen on port 9999 and accept connections
+            nc -l -p 9999 -k &
+            sleep 60
+          done
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+---
+# TCP Client pod that will generate retransmissions
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tcp-client
+  namespace: tcp-retrans-test
+  labels:
+    app: tcp-client
+spec:
+  containers:
+    - name: client
+      image: nicolaka/netshoot:latest
+      command:
+        - /bin/bash
+        - -c
+        - |
+          # Wait for server to be ready
+          sleep 10
+          
+          # Install iptables if not available
+          apt-get update -qq && apt-get install -y -qq iptables 2>/dev/null || true
+          
+          # Drop 30% of outgoing packets to force retransmissions
+          iptables -A OUTPUT -p tcp --dport 9999 -m statistic --mode random --probability 0.3 -j DROP 2>/dev/null || true
+          
+          # Continuously send data to server (will trigger retransmissions)
+          while true; do
+            # Send data to server - packet drops will cause retransmissions
+            echo "Test data $(date +%s)" | nc -w 2 tcp-server.tcp-retrans-test.svc.cluster.local 9999 2>/dev/null || true
+            sleep 0.5
+          done
+      securityContext:
+        capabilities:
+          add:
+            - NET_ADMIN  # Required for iptables
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+

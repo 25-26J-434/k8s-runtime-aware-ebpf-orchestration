@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rtt-busybox-test
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: rtt-busybox-test
+  template:
+    metadata:
+      labels:
+        app: rtt-busybox-test
+    spec:
+      containers:
+        - name: tcp-ping
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              while true; do
+                wget -qO- https://example.com > /dev/null
+                sleep 1
+              done

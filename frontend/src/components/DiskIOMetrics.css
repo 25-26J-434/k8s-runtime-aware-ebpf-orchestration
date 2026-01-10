@@ -1,0 +1,143 @@
+/* Disk I/O cards - Using default dark stat-card style (no overrides needed) */
+
+.disk-io-card {
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(71, 85, 105, 0.5);
+  border-radius: 12px;
+  padding: 24px;
+  color: white;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+}
+
+.disk-io-card h3 {
+  margin: 0 0 20px 0;
+  font-size: 24px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.disk-io-card.compact {
+  padding: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.disk-io-card.compact h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.disk-io-summary {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.io-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.io-stat .label {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.io-stat .value {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.disk-io-section {
+  margin-bottom: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.disk-io-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metric-label {
+  font-size: 13px;
+  opacity: 0.85;
+  font-weight: 500;
+}
+
+.metric-value {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.disk-io-summary-bar {
+  display: flex;
+  justify-content: space-around;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-label {
+  font-size: 13px;
+  opacity: 0.9;
+  text-align: center;
+}
+
+.summary-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.summary-value.large {
+  font-size: 28px;
+}
+
+.no-data {
+  text-align: center;
+  padding: 40px;
+  opacity: 0.7;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .disk-io-summary-bar {
+    flex-direction: column;
+  }
+}
+

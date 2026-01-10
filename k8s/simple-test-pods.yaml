@@ -1,0 +1,103 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dns-test
+---
+# Pod A - Continuously queries service-b
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-a
+  namespace: dns-test
+  labels:
+    app: pod-a
+spec:
+  containers:
+  - name: dns-client
+    image: busybox:latest
+    command:
+    - /bin/sh
+    - -c
+    - |
+      echo "Pod A starting DNS queries..."
+      while true; do
+        nslookup kubernetes.default.svc.cluster.local
+        nslookup pod-b.dns-test.svc.cluster.local
+        sleep 2
+      done
+  restartPolicy: Always
+---
+# Pod B - Continuously queries service-a
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-b
+  namespace: dns-test
+  labels:
+    app: pod-b
+spec:
+  containers:
+  - name: dns-client
+    image: busybox:latest
+    command:
+    - /bin/sh
+    - -c
+    - |
+      echo "Pod B starting DNS queries..."
+      while true; do
+        nslookup kubernetes.default.svc.cluster.local
+        nslookup pod-a.dns-test.svc.cluster.local
+        sleep 3
+      done
+  restartPolicy: Always
+---
+# Pod C - Queries different services
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-c
+  namespace: dns-test
+  labels:
+    app: pod-c
+spec:
+  containers:
+  - name: dns-client
+    image: busybox:latest
+    command:
+    - /bin/sh
+    - -c
+    - |
+      echo "Pod C starting DNS queries..."
+      while true; do
+        nslookup kube-dns.kube-system.svc.cluster.local
+        nslookup kubernetes.default.svc.cluster.local
+        sleep 4
+      done
+  restartPolicy: Always
+---
+# Service for pod-a
+apiVersion: v1
+kind: Service
+metadata:
+  name: pod-a
+  namespace: dns-test
+spec:
+  selector:
+    app: pod-a
+  ports:
+  - port: 80
+    targetPort: 80
+---
+# Service for pod-b
+apiVersion: v1
+kind: Service
+metadata:
+  name: pod-b
+  namespace: dns-test
+spec:
+  selector:
+    app: pod-b
+  ports:
+  - port: 80
+    targetPort: 80
