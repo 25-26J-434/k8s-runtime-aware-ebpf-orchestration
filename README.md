@@ -8,65 +8,135 @@ This project implements a sidecar-less service mesh architecture for Kubernetes 
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Kubernetes Cluster                               │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                     Orchestration Layer                            │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────┐  │  │
-│  │  │  Intelligent │  │  Latency-   │  │   Multi-    │  │  React   │  │  │
-│  │  │   Traffic    │  │   Aware     │  │  Cluster    │  │Dashboard │  │  │
-│  │  │   Routing    │  │ Scheduling  │  │Coordination │  │   (UI)   │  │  │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └────┬─────┘  │  │
-│  │         │                │                │               │        │  │
-│  │         └────────────────┴────────────────┴───────────────┘        │  │
-│  │                              │                                      │  │
-│  │                    ┌─────────▼─────────┐                           │  │
-│  │                    │  REST API Server  │◄──── HTTP/JSON            │  │
-│  │                    │  Port: 8080       │      Interface            │  │
-│  │                    └─────────┬─────────┘                           │  │
-│  └──────────────────────────────┼─────────────────────────────────────┘  │
-│                                 │                                        │
-│  ┌──────────────────────────────┼─────────────────────────────────────┐  │
-│  │                     Node (DaemonSet)                                │  │
-│  │                              │                                      │  │
-│  │  ┌───────────────────────────▼───────────────────────────────────┐ │  │
-│  │  │                    eBPF Daemon (Go)                           │ │  │
-│  │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐             │ │  │
-│  │  │  │    DNS      │ │    RTT      │ │  Metrics    │             │ │  │
-│  │  │  │  Collector  │ │  Collector  │ │ Aggregator  │             │ │  │
-│  │  │  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘             │ │  │
-│  │  └─────────┼───────────────┼───────────────┼─────────────────────┘ │  │
-│  │            │               │               │                       │  │
-│  │            │    Ring Buffer Read (continuous)                      │  │
-│  │            └───────────────┴───────────────┘                       │  │
-│  │                            │                                        │  │
-│  │  ┌─────────────────────────▼───────────────────────────────────┐   │  │
-│  │  │                    Linux Kernel                              │   │  │
-│  │  │                                                              │   │  │
-│  │  │  eBPF Programs (C) - Attached to Kernel Functions           │   │  │
-│  │  │  ┌─────────────────┐ ┌─────────────────┐                    │   │  │
-│  │  │  │ kprobe/         │ │ kprobe/         │                    │   │  │
-│  │  │  │ udp_sendmsg     │ │ udp_recvmsg     │                    │   │  │
-│  │  │  │ (DNS Request)   │ │ (DNS Response)  │                    │   │  │
-│  │  │  └────────┬────────┘ └────────┬────────┘                    │   │  │
-│  │  │           │                   │                              │   │  │
-│  │  │           │  Timestamp (ns)   │  Timestamp (ns)              │   │  │
-│  │  │           │  Calculate Δt = Response - Request               │   │  │
-│  │  │           └───────────────────┘                              │   │  │
-│  │  │                     │                                        │   │  │
-│  │  │           ┌─────────▼─────────┐                              │   │  │
-│  │  │           │   Ring Buffer     │                              │   │  │
-│  │  │           │   (dns_events)    │                              │   │  │
-│  │  │           │  - latency_ns     │                              │   │  │
-│  │  │           │  - timestamp_ns   │                              │   │  │
-│  │  │           │  - source_ip      │                              │   │  │
-│  │  │           │  - pid            │                              │   │  │
-│  │  │           └───────────────────┘                              │   │  │
-│  │  └──────────────────────────────────────────────────────────────┘   │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+This system implements a sidecar-less orchestration framework for Kubernetes that leverages eBPF (Extended Berkeley Packet Filter) to provide runtime-aware telemetry collection and intelligent traffic management without the overhead of traditional sidecar proxies. The architecture is built around a pluggable, extensible design that enables dynamic component integration and runtime adaptation.
+
+### High-Level System Architecture
+
+![KernelEye High-Level Architecture](./images/high-level-architecture.png)
+
+The high-level architecture diagram illustrates the complete system design, emphasizing extensibility and modularity:
+
+**Management Web UI (Frontend Layer)**
+- Provides a unified web interface for system management and monitoring
+- Enables configuration of routing rules, scheduling policies, and cluster-wide settings
+- Displays real-time metrics, topology information, and system health status
+- Supports interactive rule creation and policy enforcement through an intuitive dashboard
+- Communicates with backend services via RESTful APIs and WebSocket connections for real-time updates
+
+**Kernel Metric Adaptive Routing Management**
+- Implements intelligent traffic routing based on real-time network metrics
+- Consumes telemetry data from eBPF collectors to make routing decisions
+- Dynamically adjusts traffic paths based on latency, packet loss, and network conditions
+- Integrates with Kubernetes service mesh and load balancing mechanisms
+
+**Kernel Metric Adaptive Scheduling**
+- Provides latency-aware pod scheduling capabilities
+- Utilizes network and system performance metrics to optimize pod placement
+- Scores nodes based on runtime telemetry rather than static configurations
+- Enables workload distribution that minimizes latency and maximizes resource utilization
+
+**Multi-Cluster Coordination**
+- Facilitates communication and coordination across multiple Kubernetes clusters
+- Enables federated metrics aggregation and cross-cluster decision making
+- Supports distributed policy enforcement and state synchronization
+- Provides a foundation for multi-cluster service mesh implementations
+
+**Sidecar-less Base Feature Provider**
+- Core system component that delivers essential orchestration capabilities without sidecar overhead
+- Integrates directly with the Linux kernel via eBPF programs
+- Provides unified telemetry collection and action execution framework
+- Serves as the foundation for all extensible components
+
+**Extensible Architecture with Unified SPI Interface**
+- Demonstrates the pluggable architecture design pattern central to this system
+- The Unified SPI (Service Provider Interface) provides a standardized contract for all components
+- Enables dynamic plugin discovery and registration at runtime
+- Allows new functionality to be added without modifying core system code
+- Supports hot-plugging of components for zero-downtime updates
+
+**Custom Plugins**
+- Represents the extensibility mechanism for third-party and user-defined functionality
+- Plugins implement the Unified SPI Interface to integrate seamlessly with the core system
+- Can add new metric collectors, routing algorithms, scheduling strategies, or communication protocols
+- Examples include specialized collectors for application-specific metrics, custom routing policies, or integration with external monitoring systems
+
+### Cluster Node Logical View
+
+![Cluster Node Logical View](./images/cluster-node-logical-view.png)
+
+The logical view diagram depicts the runtime architecture within a single Kubernetes cluster node, showing the interaction between user space and kernel space components:
+
+**User Space Components**
+
+*Containers and Pods*
+- Application workloads running in isolated container environments
+- Standard Kubernetes pods that require no modification or instrumentation
+- Applications benefit from transparent telemetry collection without code changes
+
+*KernelEye DaemonSet*
+- Runs as a DaemonSet pod on each node in the cluster
+- Acts as the central coordination point for telemetry collection and orchestration actions
+- Communicates with eBPF programs in kernel space via ring buffers and maps
+- Aggregates metrics, enriches data with Kubernetes metadata, and exposes APIs for consumption
+- Handles inter-node communication for cluster-wide coordination
+
+*Inter Node Telemetry and Action Communication*
+- Enables peer-to-peer communication between nodes in the cluster
+- Facilitates sharing of telemetry data and coordination of orchestration actions
+- Supports broadcast, unicast, and multicast messaging patterns
+- Enables distributed decision-making without centralized coordination overhead
+
+**Kernel Space Components**
+
+*eBPF Programs*
+- Instrument the Linux kernel to collect telemetry and execute actions at the kernel level
+- Attach to various kernel hooks and tracepoints to observe system behavior
+- Execute with minimal overhead, providing high-performance data collection
+- Run in a secure, sandboxed environment verified by the kernel's verifier
+
+*eBPF Program Types and Attachment Points*
+- **XDP (eXpress Data Path)**: Ultra-fast packet processing at the network driver level, enabling line-rate packet filtering and manipulation
+- **TC (Traffic Control)**: Network traffic shaping and filtering at the network stack level, allowing bandwidth limiting and packet classification
+- **Kprobes**: Dynamic tracing of kernel functions, enabling observation of system calls and internal kernel operations
+- **Socket Filter**: Filtering and monitoring of network socket operations, providing visibility into application-level network behavior
+- **Cgroup Ingress/Egress**: Resource tracking and control at the cgroup level, enabling per-container and per-pod resource monitoring
+
+**External Integration Points**
+
+*Sidecar-less Orchestration*
+- Integration with external orchestration systems that consume telemetry and execute actions
+- Enables coordination with cluster autoscalers, service mesh control planes, and other orchestration tools
+- Provides APIs for programmatic access to metrics and control actions
+
+*Adaptive Scheduling*
+- External scheduling systems that leverage node-level metrics for intelligent workload placement
+- Receives aggregated telemetry data to make scheduling decisions based on real-time conditions
+- Enables dynamic scheduling policies that adapt to changing cluster conditions
+
+*Adaptive Routing*
+- External routing systems that utilize network metrics for traffic steering decisions
+- Consumes real-time latency and performance data to optimize request routing
+- Enables traffic policies that respond to network conditions automatically
+
+### System Architecture Principles
+
+**Pluggable Interface Design**
+The system implements a Service Provider Interface (SPI) pattern that allows components to be dynamically discovered and integrated. All collectors, routing algorithms, scheduling strategies, and communication protocols implement a common interface, enabling runtime composition of functionality.
+
+**Zero Application Impact**
+All telemetry collection occurs at the kernel level via eBPF, requiring no modification to application code. Applications run unmodified while the system transparently observes their behavior through kernel instrumentation.
+
+**Sidecar-less Architecture**
+Unlike traditional service mesh implementations that inject sidecar containers into each pod, this system uses kernel-level instrumentation and a single DaemonSet per node, eliminating per-pod resource overhead and network complexity.
+
+**Real-time Processing**
+Telemetry data flows directly from kernel space to user space via efficient ring buffers, enabling sub-second latency for metrics collection and decision-making. This real-time capability enables immediate response to changing conditions.
+
+**Bi-directional Capability**
+The system not only collects telemetry (read operations) but also executes actions at the kernel level (write operations), enabling true bidirectional communication with the kernel for both observation and control.
+
+**Scalability and Performance**
+The kernel-level implementation provides minimal CPU and memory overhead, allowing the system to scale to large clusters with thousands of pods while maintaining high performance. The efficient eBPF data structures and direct kernel integration eliminate the need for intermediate processing layers.
 
 ## How It Works: eBPF Data Collection Pipeline
 
@@ -166,41 +236,739 @@ const { metrics } = useMetrics(3000);
 - Cluster topology information
 ```
 
-## Components
+## System Components
 
-### Component 1: eBPF Daemon Layer (This Repository) **IMPLEMENTED**
-- **Purpose:** Sidecar-less telemetry collection
-- **Technology:** eBPF (C) + Go + Kubernetes DaemonSet
-- **Features:**
-  - DNS latency measurement via kprobe on `udp_sendmsg`/`udp_recvmsg`
-  - TCP RTT measurement via kprobe on `tcp_connect`/`tcp_finish_connect`
-  - Per-pod and node-level metrics aggregation
-  - REST API (JSON + Prometheus formats)
-  - Kubernetes API integration for pod discovery
-  - React dashboard with real-time graphs
+The system is composed of four main components that work together to provide comprehensive runtime-aware orchestration for Kubernetes clusters. Each component addresses a specific aspect of cluster management while leveraging the telemetry data collected by Component 1.
 
-### Component 2: Intelligent Traffic Routing (Planned)
-- Dynamic traffic routing based on real-time telemetry
-- When a rule says **redirect** (e.g., high latency), apply a Cilium `CiliumLocalRedirectPolicy` to steer the frontend Service to a safe backend; see `k8s/component-2/README-routing.md` + `apply-local-redirect.sh`. Ensure Cilium is installed with `--set localRedirectPolicy=true` (Helm) so the CRD exists.
+### Component 1: eBPF Daemon Layer (Implemented)
 
-### Component 3: Latency-Aware Scheduling (Planned)
-- Pod scheduling decisions based on network performance metrics
 
-### Component 4: Node-to-Node Communication (Demo Included)
-- Peer-to-peer daemon for BROADCAST/UNICAST/MULTICAST control messages
-- Lives in `component-4-node-communication/` with its own Makefile
-- Dashboard is optional; default build deploys daemon only
+**Purpose:** Provides sidecar-less telemetry collection at the kernel level using eBPF instrumentation, eliminating the overhead and complexity of traditional sidecar-based service mesh architectures.
 
-## Node-to-Node Communication Quickstart (Component 4)
+**Technology Stack:**
+- eBPF programs written in C for kernel-level instrumentation
+- Go daemon for userspace telemetry collection and aggregation
+- Kubernetes DaemonSet for deployment across cluster nodes
+- REST API for exposing metrics to other components
+- React dashboard for real-time visualization
 
-1. `make kind-setup` — brings up a 3-node kind cluster using `k8s/kind-config.yaml` (host networking + eBPF mounts).
-2. `make node-comm-docker` — builds the P2P daemon image (`p2p-node:v3`).
-3. `make node-comm-deploy` — applies `peers-configmap.yaml` and the DaemonSet from `component-4-node-communication/` to `kube-system`.
-4. `make node-comm-logs` — follow logs; send test POSTs to `/broadcast`, `/unicast`, or `/multicast` on port 8080 of any node IP.
+**Key Features:**
+- DNS latency measurement via kprobe instrumentation on `udp_sendmsg` and `udp_recvmsg` kernel functions
+- TCP RTT (Round-Trip Time) measurement via kprobe on `tcp_connect` and `tcp_finish_connect`
+- TCP metrics collection including retransmissions, packet loss, and connection state transitions
+- CPU scheduling latency monitoring via tracepoints
+- Disk I/O metrics collection at the container level
+- Node system metrics including CPU, memory, and network statistics
+- Per-pod and node-level metrics aggregation with real-time updates
+- REST API supporting both JSON and Prometheus formats
+- WebSocket support for real-time metric streaming
+- Kubernetes API integration for automatic pod discovery and IP-to-pod mapping
+- Container-level metric correlation via PID namespace tracking
+- React dashboard with real-time graphs and topology visualization
 
-Notes:
-- Update `component-4-node-communication/peers-configmap.yaml` if your node IPs differ (defaults match a 3-node kind network: 172.18.0.2/3/4).
-- The dashboard in `component-4-node-communication/client` is optional and not built by default; use `make -C component-4-node-communication build-dashboard` if you need it later.
+**Metrics Collected:**
+- DNS latency (nanosecond precision)
+- TCP RTT and connection metrics
+- TCP retransmissions and packet loss
+- CPU scheduling latency
+- Disk I/O operations and latency
+- Socket counts (TCP/UDP)
+- Packet distribution statistics
+- Service health indicators
+- NAT metadata
+
+### Component 2: Intelligent Traffic Routing (Implemented)
+
+
+
+**Purpose:** Enables dynamic traffic routing based on real-time telemetry data, automatically redirecting traffic to optimal backends when network conditions degrade.
+
+**Technology Stack:**
+- Cilium LocalRedirectPolicy (LRP) for traffic steering
+- Go-based routing plugin integrated with Component 1
+- Rule-based routing policies with threshold evaluation
+- Latency-based pod selection algorithm
+
+**Key Features:**
+- Real-time latency monitoring and threshold evaluation
+- Automatic traffic redirection when metrics exceed configured thresholds
+- Integration with Cilium CNI for kernel-level traffic steering
+- Support for multiple backend selection strategies
+- Best-pod selection based on lowest latency metrics
+- Time-to-live (TTL) based policy expiration
+- Configurable routing rules via JSON policies
+- Frontend integration for rule management through UI
+
+**How It Works:**
+1. Monitors DNS and RTT metrics from Component 1 in real-time
+2. Evaluates configured routing rules against current metric values
+3. When thresholds are violated, applies Cilium LocalRedirectPolicy
+4. Redirects traffic from frontend service to selected backend pods
+5. Automatically removes policies after TTL expiration
+6. Re-evaluates and reapplies as conditions change
+
+**Routing Decision Logic:**
+- Compares current metric values against violation thresholds
+- Selects optimal backend pods based on latency metrics
+- Applies label selectors to target specific pod sets
+- Supports multiple backend candidates with winner selection
+- Handles policy lifecycle management automatically
+
+### Component 3: Runtime-Aware Autoscaling (Implemented)
+
+**Status:** Fully Implemented with MongoDB Integration
+
+**Purpose:** Implements automatic Kubernetes workload autoscaling driven by eBPF telemetry metrics instead of traditional CPU/memory-based scaling, enabling more responsive and network-aware scaling decisions.
+
+**Technology Stack:**
+- MongoDB for rule storage and persistence
+- Go-based scaling controller integrated with Component 1
+- Kubernetes Deployment API for replica management
+- REST API for rule CRUD operations
+- React frontend for rule configuration
+
+**Key Features:**
+- Telemetry-driven autoscaling using DNS latency, RTT, TCP metrics, and scheduling latency
+- Rule-based scaling policies with flexible operators (greater than, less than, equals)
+- Configurable scaling steps and replica limits (min/max)
+- Real-time metric evaluation with sub-5-second polling intervals
+- MongoDB-backed rule persistence with change stream notifications
+- Support for per-deployment scaling rules
+- Multiple metric type support (DNS, RTT, TCP, scheduling latency)
+- Frontend dashboard for rule management and visualization
+- Deployment metrics tracking with last action history
+
+**How It Works:**
+1. Frontend creates/updates scaling rules via REST API
+2. Rules are persisted in MongoDB with enabled/disabled status
+3. Scaling controller runs continuous evaluation loop (every 5 seconds)
+4. Controller fetches enabled rules and evaluates against latest metrics
+5. When rule conditions match, controller calls Kubernetes API to scale deployment
+6. Scaling actions respect min/max replica constraints and step sizes
+7. Frontend displays current replicas, latest metrics, and scaling history
+
+**Scaling Rule Structure:**
+- Target deployment selection via namespace and deployment name
+- Metric type selection (DNS latency, RTT, TCP metrics, etc.)
+- Threshold values and comparison operators
+- Scaling action (scale up, scale down) with step size
+- Min and max replica constraints
+- Enabled/disabled toggle for rule activation
+
+**Supported Metrics for Scaling:**
+- DNS average latency (dns_avg_latency_us)
+- RTT average latency (rtt_avg_rtt_us)
+- TCP smoothed RTT (tcp_srtt_us)
+- TCP retransmission rate (tcp_retrans_rate)
+- CPU scheduling latency (sched_avg_runqueue_latency_us)
+- TCP packet loss rate (tcp_packet_loss_rate)
+
+### Component 4: Node-to-Node Communication (Implemented)
+
+
+**Purpose:** Enables peer-to-peer communication between cluster nodes for distributed coordination, federated decision-making, and inter-node telemetry sharing without requiring a centralized control plane.
+
+**Technology Stack:**
+- Go-based peer-to-peer daemon
+- REST API for communication primitives
+- Kubernetes DaemonSet deployment
+- WebSocket support for real-time updates
+- React dashboard for interactive control
+
+**Key Features:**
+- BROADCAST messaging to all nodes in the cluster
+- UNICAST messaging to specific target nodes
+- MULTICAST messaging to groups of nodes
+- Multiple event types (HANDSHAKE, SCHEDULING, STATE_UPDATE, METRIC_UPDATE, DISCOVERY)
+- Node discovery and health tracking
+- Real-time communication logs and statistics
+- RESTful API for programmatic access
+- Interactive frontend dashboard for manual testing
+- Support for single-node and multi-node cluster configurations
+
+**Communication Primitives:**
+- **BROADCAST:** Send message to all nodes simultaneously
+- **UNICAST:** Send message to a single target node
+- **MULTICAST:** Send message to multiple selected nodes
+
+**Event Types:**
+- **HANDSHAKE:** Initial node discovery and connection establishment
+- **SCHEDULING:** Coordination messages for scheduling decisions
+- **STATE_UPDATE:** Node state changes and health updates
+- **METRIC_UPDATE:** Sharing of telemetry data between nodes
+- **DISCOVERY:** Cluster topology and node discovery messages
+
+**How It Works:**
+1. DaemonSet pod runs on each node with node IP configuration
+2. Nodes maintain peer list via ConfigMap or discovery mechanism
+3. REST API endpoints accept messages with event types and payloads
+4. Messages are routed to target nodes based on communication type
+5. Receiving nodes process messages and log actions
+6. Frontend dashboard provides interactive interface for testing
+7. Statistics and logs are exposed via API for monitoring
+
+**Use Cases:**
+- Coordinating eBPF program updates across nodes
+- Sharing local metrics aggregations between nodes
+- Implementing distributed consensus for routing decisions
+- Cross-node health checks and status updates
+- State synchronization across the cluster
+- Multi-cluster federation coordination
+
+## Component Setup and Running Guide
+
+This section provides detailed instructions for setting up and running each component of the system. Components can be deployed independently or together as a complete system.
+
+### Component 1: eBPF Daemon Layer Setup
+
+Component 1 is the foundation of the system and must be deployed first. It provides telemetry data for all other components.
+
+#### Prerequisites
+- Kubernetes cluster (Kind, Minikube, or production cluster)
+- Linux kernel >= 5.4 with BTF support
+- Root access for eBPF operations
+- Clang, LLVM, and libbpf-dev installed
+
+#### Complete Setup (Automated)
+
+**Option 1: One-Command Setup**
+```bash
+# Complete automated setup: creates cluster, builds, and deploys
+./rebuild-cluster-and-daemon.sh
+```
+
+**Option 2: Step-by-Step Manual Setup**
+```bash
+# 1. Create Kind cluster with eBPF support
+kind create cluster --name ebpf-cluster --config k8s/kind-config.yaml
+
+# 2. Build eBPF programs
+make build-ebpf
+# Or manually:
+cd ebpf/component-1-daemon
+clang -O2 -g -target bpf -D__TARGET_ARCH_x86 \
+  -I../common \
+  -c dns_latency.c -o dns_latency.o
+cd ../..
+
+# 3. Build Go daemon
+make build-daemon
+# Or manually:
+cd daemon
+go build -o ebpf-daemon ./cmd/daemon
+cd ..
+
+# 4. Build Docker image
+docker build -t ebpf-daemon:latest daemon/
+
+# 5. Load image into Kind cluster
+kind load docker-image ebpf-daemon:latest --name ebpf-cluster
+
+# 6. Deploy to Kubernetes
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/daemonset.yaml
+
+# 7. Verify deployment
+kubectl get pods -n ebpf-telemetry
+kubectl logs -n ebpf-telemetry -l app=ebpf-daemon
+```
+
+#### Running Component 1
+
+**Start Frontend Dashboard:**
+```bash
+# Terminal 1: Port-forward API (optional: use watchdog)
+./scripts/port-forward-watchdog.sh &
+# Or manually:
+kubectl -n ebpf-telemetry port-forward svc/ebpf-daemon 8080:8080 &
+
+# Terminal 2: Start React frontend
+cd frontend
+npm install  # First time only
+npm run dev
+```
+
+**Access Dashboard:**
+- Frontend: http://localhost:5000
+- API Health: http://localhost:8080/health
+- API Metrics: http://localhost:8080/api/metrics
+
+**Test Metrics Collection:**
+```bash
+# Deploy test pods that generate DNS traffic
+kubectl apply -f k8s/simple-test-pods.yaml
+
+# Verify metrics are being collected
+curl http://localhost:8080/api/metrics | jq '.node.dns_latency'
+
+# Check pod-level metrics
+curl http://localhost:8080/api/dns/pods | jq '.pods'
+```
+
+#### Component 1 Verification
+
+**Verify eBPF Programs Loaded:**
+```bash
+# Check daemon logs for successful eBPF loading
+kubectl logs -n ebpf-telemetry -l app=ebpf-daemon | grep "eBPF"
+
+# Verify programs in kernel (from inside pod)
+kubectl exec -n ebpf-telemetry -it $(kubectl get pod -n ebpf-telemetry -l app=ebpf-daemon -o name) -- \
+  ls -la /sys/fs/bpf
+```
+
+**Verify Metrics Collection:**
+```bash
+# Check API endpoints
+curl http://localhost:8080/health  # Should return "OK"
+curl http://localhost:8080/api/metrics  # Should return JSON metrics
+curl http://localhost:8080/api/cluster/topology  # Should return cluster structure
+```
+
+### Component 2: Intelligent Traffic Routing Setup
+
+Component 2 requires Component 1 to be running and provides dynamic traffic routing based on telemetry data.
+
+#### Prerequisites
+- Component 1 deployed and running
+- Cilium CNI installed with LocalRedirectPolicy enabled
+- Test services deployed for routing experiments
+
+#### Cilium Installation with LocalRedirectPolicy
+
+```bash
+# Install Cilium using Helm with LocalRedirectPolicy enabled
+helm repo add cilium https://helm.cilium.io/
+helm repo update
+
+# Install Cilium with required features
+helm install cilium cilium/cilium \
+  --namespace kube-system \
+  --set localRedirectPolicy=true \
+  --set k8sServiceHost=kind-control-plane \
+  --set k8sServicePort=6443
+
+# Wait for Cilium to be ready
+kubectl wait --for=condition=ready pod -l k8s-app=cilium -n kube-system --timeout=300s
+
+# Verify LocalRedirectPolicy CRD is available
+kubectl api-resources | grep LocalRedirect
+```
+
+#### Setup Component 2
+
+**Step 1: Deploy Test Services**
+```bash
+# Build test service images
+docker build -t service-a:latest examples/service-a/
+docker build -t service-b:latest examples/service-b/
+docker build -t service-c:latest examples/service-c/
+
+# Load images into Kind cluster
+kind load docker-image service-a:latest service-b:latest service-c:latest --name ebpf-cluster
+
+# Deploy test services
+kubectl apply -f k8s/test-services.yaml
+
+# Verify services are running
+kubectl get pods -n test-services
+kubectl get svc -n test-services
+```
+
+**Step 2: Configure Port Forward for Telemetry API**
+```bash
+# Ensure Component 1 API is accessible
+kubectl -n ebpf-telemetry port-forward svc/ebpf-daemon 8080:8080
+```
+
+**Step 3: Review Routing Rule Configuration**
+```bash
+# Examine example routing rule
+cat k8s/component-2/redirect-rule.example.json
+```
+
+**Step 4: Apply Routing Rule**
+```bash
+# Run the routing helper script
+./k8s/component-2/apply-local-redirect.sh
+
+# Or with custom rule file
+./k8s/component-2/apply-local-redirect.sh /path/to/custom-rule.json
+```
+
+#### Running Component 2
+
+**Verify Routing Policy:**
+```bash
+# Check if LocalRedirectPolicy was created
+kubectl -n test-services get ciliumlocalredirectpolicy
+
+# Describe the policy
+kubectl -n test-services describe ciliumlocalredirectpolicy redirect-service-a-to-b
+```
+
+**Test Traffic Redirection:**
+```bash
+# Run test client from within cluster
+kubectl -n test-services run curl-test --rm -it --restart=Never \
+  --image=curlimages/curl -- \
+  sh -c "while true; do curl -s service-a:5000; sleep 2; done"
+
+# Check backend logs to see traffic destination
+kubectl logs -n test-services -l app=service-b -f
+```
+
+**Monitor Routing Decisions:**
+```bash
+# Check telemetry metrics to see what triggered routing
+curl http://localhost:8080/api/metrics | jq '.node.rtt'
+curl http://localhost:8080/api/dns/pods | jq '.pods'
+
+# Monitor routing script logs
+tail -f /tmp/routing-helper.log  # If logging enabled
+```
+
+#### Component 2 Verification
+
+**Verify Policy Application:**
+```bash
+# Check policy status
+kubectl -n test-services get ciliumlocalredirectpolicy -o yaml
+
+# Verify traffic is being redirected (check backend pod logs)
+kubectl logs -n test-services -l app=service-b --tail=50
+```
+
+### Component 3: Runtime-Aware Autoscaling Setup
+
+Component 3 requires Component 1 to be running and MongoDB for rule storage. It provides telemetry-driven autoscaling.
+
+#### Prerequisites
+- Component 1 deployed and running
+- MongoDB deployed (can use provided MongoDB deployment)
+- Deployment with pods to scale
+
+#### MongoDB Setup
+
+**Option 1: Deploy MongoDB in Cluster**
+```bash
+# Deploy MongoDB using provided manifest
+kubectl apply -f k8s/mongo.yaml
+
+# Wait for MongoDB to be ready
+kubectl wait --for=condition=ready pod -l app=mongo -n rules-db --timeout=300s
+
+# Verify MongoDB connection
+kubectl exec -n rules-db -it $(kubectl get pod -n rules-db -l app=mongo -o name) -- \
+  mongosh --eval "db.adminCommand('ping')"
+```
+
+**Option 2: Use External MongoDB**
+```bash
+# Set environment variable in daemon deployment
+kubectl set env deployment/ebpf-daemon -n ebpf-telemetry \
+  MONGO_URI=mongodb://external-mongo-host:27017
+```
+
+#### Configure Component 3
+
+**Update Daemon Configuration:**
+```bash
+# Verify MongoDB environment variables in daemon
+kubectl get deployment ebpf-daemon -n ebpf-telemetry -o yaml | grep MONGO
+
+# Update if needed (default values should work with cluster MongoDB)
+kubectl set env deployment/ebpf-daemon -n ebpf-telemetry \
+  MONGO_URI=mongodb://mongo.rules-db.svc.cluster.local:27017 \
+  MONGO_DB=rulesdb \
+  MONGO_COLLECTION=scaling_rules
+```
+
+**Restart Daemon to Enable Scaling Controller:**
+```bash
+# Component 3 is already integrated in Component 1 daemon
+# Just ensure daemon is running with MongoDB connection
+kubectl rollout restart deployment/ebpf-daemon -n ebpf-telemetry
+
+# Verify scaling controller started
+kubectl logs -n ebpf-telemetry -l app=ebpf-daemon | grep -i "scaling\|mongo"
+```
+
+#### Running Component 3
+
+**Create Scaling Rule via API:**
+```bash
+# Create a scaling rule
+curl -X POST http://localhost:8080/api/scaling/rules \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "scale-on-high-dns-latency",
+    "namespace": "default",
+    "deployment": "my-app",
+    "metric": "dns_avg_latency_us",
+    "operator": ">",
+    "threshold": 100.0,
+    "action": "scale_up",
+    "step": 1,
+    "minReplicas": 1,
+    "maxReplicas": 10,
+    "enabled": true
+  }'
+```
+
+**Create Scaling Rule via Frontend:**
+1. Access frontend dashboard: http://localhost:5000
+2. Navigate to "Scaling" tab
+3. Click "Create New Rule"
+4. Fill in rule parameters:
+   - Deployment namespace and name
+   - Metric type (DNS latency, RTT, TCP, etc.)
+   - Threshold value and operator
+   - Scaling action and step size
+   - Min and max replicas
+5. Click "Save" to create rule
+
+**Monitor Scaling Actions:**
+```bash
+# List all scaling rules
+curl http://localhost:8080/api/scaling/rules | jq
+
+# Get latest metrics for a deployment
+curl http://localhost:8080/api/scaling/metrics/latest | jq
+
+# Check deployment replicas
+kubectl get deployment my-app -n default -o jsonpath='{.spec.replicas}'
+kubectl get deployment my-app -n default -o jsonpath='{.status.replicas}'
+```
+
+#### Component 3 Verification
+
+**Verify Scaling Controller:**
+```bash
+# Check controller logs
+kubectl logs -n ebpf-telemetry -l app=ebpf-daemon | grep -i scaling
+
+# Verify rules are loaded from MongoDB
+kubectl exec -n rules-db -it $(kubectl get pod -n rules-db -l app=mongo -o name) -- \
+  mongosh rulesdb --eval "db.scaling_rules.find().pretty()"
+```
+
+**Test Scaling:**
+```bash
+# Deploy a test application
+kubectl create deployment test-app --image=nginx:latest -n default
+kubectl expose deployment test-app --port=80 -n default
+
+# Create a scaling rule for the deployment
+curl -X POST http://localhost:8080/api/scaling/rules \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "test-scaling",
+    "namespace": "default",
+    "deployment": "test-app",
+    "metric": "dns_avg_latency_us",
+    "operator": ">",
+    "threshold": 50.0,
+    "action": "scale_up",
+    "step": 1,
+    "minReplicas": 1,
+    "maxReplicas": 5,
+    "enabled": true
+  }'
+
+# Watch deployment replicas change
+watch -n 2 'kubectl get deployment test-app -n default'
+```
+
+### Component 4: Node-to-Node Communication Setup
+
+Component 4 enables peer-to-peer communication between cluster nodes and can work independently or with Component 1.
+
+#### Prerequisites
+- Multi-node Kubernetes cluster (or single-node for testing)
+- Node IPs configured correctly
+- Network connectivity between nodes
+
+#### Setup Component 4
+
+**Step 1: Create Multi-Node Cluster (if needed)**
+```bash
+# Create 3-node Kind cluster
+kind create cluster --name ebpf-cluster --config k8s/kind-config.yaml
+
+# Verify all nodes are ready
+kubectl get nodes -o wide
+```
+
+**Step 2: Build Component 4 Daemon**
+```bash
+cd component-4-node-communication
+
+# Build Docker image
+docker build -t p2p-node:v3 .
+
+# Load image into Kind cluster
+kind load docker-image p2p-node:v3 --name ebpf-cluster
+
+cd ..
+```
+
+**Step 3: Configure Node Peers**
+```bash
+# Get node IPs
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}'
+
+# Update peers ConfigMap if needed
+# Edit component-4-node-communication/peers-configmap.yaml
+# Update node IPs to match your cluster
+```
+
+**Step 4: Deploy Component 4**
+```bash
+cd component-4-node-communication
+
+# Deploy peers ConfigMap
+kubectl apply -f peers-configmap.yaml
+
+# Deploy DaemonSet
+kubectl apply -f daemonset.yaml
+
+# Verify deployment (should have one pod per node)
+kubectl get pods -n kube-system -l app=p2p-node -o wide
+
+cd ..
+```
+
+#### Running Component 4
+
+**Test BROADCAST Communication:**
+```bash
+# Get a node IP
+NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+
+# Send broadcast message to all nodes
+curl -X POST http://$NODE_IP:8080/broadcast \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "HANDSHAKE",
+    "payload": {"message": "Hello from broadcast test"},
+    "action": "NONE"
+  }'
+
+# Check logs on all nodes
+kubectl logs -n kube-system -l app=p2p-node -f
+```
+
+**Test UNICAST Communication:**
+```bash
+# Get target node IP
+TARGET_IP=$(kubectl get nodes -o jsonpath='{.items[1].status.addresses[?(@.type=="InternalIP")].address}')
+
+# Send unicast message to specific node
+curl -X POST http://$NODE_IP:8080/unicast \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "STATE_UPDATE",
+    "targets": ["'$TARGET_IP'"],
+    "payload": {"status": "active", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"},
+    "action": "UPDATE_STATE"
+  }'
+
+# Verify message received on target node
+kubectl logs -n kube-system -l app=p2p-node --tail=20 | grep "$TARGET_IP"
+```
+
+**Test MULTICAST Communication:**
+```bash
+# Get multiple node IPs
+NODE_IP_1=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+NODE_IP_2=$(kubectl get nodes -o jsonpath='{.items[1].status.addresses[?(@.type=="InternalIP")].address}')
+
+# Send multicast message to selected nodes
+curl -X POST http://$NODE_IP_1:8080/multicast \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "METRIC_UPDATE",
+    "targets": ["'$NODE_IP_1'", "'$NODE_IP_2'"],
+    "payload": {"metrics": {"cpu": 50, "memory": 60}},
+    "action": "NONE"
+  }'
+```
+
+**Using Component 4 Dashboard:**
+1. Ensure Component 1 is running with port-forward
+2. Access frontend: http://localhost:5000
+3. Navigate to "Federation" tab
+4. View all nodes in the cluster
+5. Select communication type (BROADCAST, UNICAST, MULTICAST)
+6. Select target nodes (for UNICAST/MULTICAST)
+7. Choose event type and enter payload
+8. Click "Send" to send message
+9. View real-time logs and statistics
+
+#### Component 4 Verification
+
+**Verify Daemon Deployment:**
+```bash
+# Check pods are running on all nodes
+kubectl get pods -n kube-system -l app=p2p-node -o wide
+
+# Verify pod logs show successful startup
+kubectl logs -n kube-system -l app=p2p-node --tail=50 | grep -i "started\|ready"
+```
+
+**Verify Communication:**
+```bash
+# Check communication stats endpoint (if available)
+curl http://$NODE_IP:8080/api/comm/stats | jq
+
+# Verify messages are being logged
+kubectl logs -n kube-system -l app=p2p-node | grep -i "received\|sent"
+```
+
+### Complete System Setup (All Components)
+
+To run all components together:
+
+**Step 1: Deploy Component 1 (Foundation)**
+```bash
+./rebuild-cluster-and-daemon.sh
+```
+
+**Step 2: Deploy MongoDB for Component 3**
+```bash
+kubectl apply -f k8s/mongo.yaml
+kubectl wait --for=condition=ready pod -l app=mongo -n rules-db --timeout=300s
+```
+
+**Step 3: Install Cilium for Component 2 (if using)**
+```bash
+helm install cilium cilium/cilium --namespace kube-system \
+  --set localRedirectPolicy=true
+```
+
+**Step 4: Deploy Component 4**
+```bash
+cd component-4-node-communication
+docker build -t p2p-node:v3 .
+kind load docker-image p2p-node:v3 --name ebpf-cluster
+kubectl apply -f peers-configmap.yaml
+kubectl apply -f daemonset.yaml
+cd ..
+```
+
+**Step 5: Start Frontend Dashboard**
+```bash
+./scripts/port-forward-watchdog.sh &
+cd frontend && npm install && npm run dev
+```
+
+**Step 6: Access All Features**
+- Dashboard: http://localhost:5000
+- Component 1 Metrics: Dashboard tab
+- Component 2 Routing: Routing tab (requires Cilium)
+- Component 3 Scaling: Scaling tab
+- Component 4 Communication: Federation tab
 
 ## Prerequisites
 
