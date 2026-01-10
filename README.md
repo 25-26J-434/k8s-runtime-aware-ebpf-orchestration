@@ -6,6 +6,94 @@
 
 This project implements a sidecar-less service mesh architecture for Kubernetes using eBPF (Extended Berkeley Packet Filter) to provide runtime telemetry collection without the overhead of traditional sidecar proxies.
 
+## Table of Contents
+
+- [Architecture Overview](#architecture-overview)
+  - [High-Level System Architecture](#high-level-system-architecture)
+  - [Cluster Node Logical View](#cluster-node-logical-view)
+  - [System Architecture Principles](#system-architecture-principles)
+- [How It Works: eBPF Data Collection Pipeline](#how-it-works-ebpf-data-collection-pipeline)
+  - [Kernel-Level Instrumentation (Zero Application Changes)](#1-kernel-level-instrumentation-zero-application-changes)
+  - [Userspace Collection (Go Daemon)](#2-userspace-collection-go-daemon)
+  - [REST API Exposure (HTTP/JSON)](#3-rest-api-exposure-httpjson)
+  - [Frontend Visualization (React Dashboard)](#4-frontend-visualization-react-dashboard)
+- [System Components](#system-components)
+  - [Component 1: eBPF Daemon Layer](#component-1-ebpf-daemon-layer-implemented)
+  - [Component 2: Intelligent Traffic Routing](#component-2-intelligent-traffic-routing-implemented)
+  - [Component 3: Runtime-Aware Autoscaling](#component-3-runtime-aware-autoscaling-implemented)
+  - [Component 4: Node-to-Node Communication](#component-4-node-to-node-communication-implemented)
+- [Component Setup and Running Guide](#component-setup-and-running-guide)
+  - [Component 1: eBPF Daemon Layer Setup](#component-1-ebpf-daemon-layer-setup)
+    - [Prerequisites](#prerequisites-1)
+    - [Complete Setup (Automated)](#complete-setup-automated)
+    - [Running Component 1](#running-component-1)
+    - [Component 1 Verification](#component-1-verification)
+  - [Component 2: Intelligent Traffic Routing Setup](#component-2-intelligent-traffic-routing-setup)
+    - [Cilium Installation](#cilium-installation-with-localredirectpolicy)
+    - [Setup Component 2](#setup-component-2)
+    - [Running Component 2](#running-component-2)
+    - [Component 2 Verification](#component-2-verification)
+  - [Component 3: Runtime-Aware Autoscaling Setup](#component-3-runtime-aware-autoscaling-setup)
+    - [MongoDB Setup](#mongodb-setup)
+    - [Configure Component 3](#configure-component-3)
+    - [Running Component 3](#running-component-3)
+    - [Component 3 Verification](#component-3-verification)
+  - [Component 4: Node-to-Node Communication Setup](#component-4-node-to-node-communication-setup)
+    - [Setup Component 4](#setup-component-4)
+    - [Running Component 4](#running-component-4)
+    - [Component 4 Verification](#component-4-verification)
+  - [Complete System Setup (All Components)](#complete-system-setup-all-components)
+- [Prerequisites](#prerequisites)
+  - [System Requirements](#system-requirements)
+  - [Required Tools](#required-tools)
+- [Quick Start Guide](#quick-start-guide)
+  - [Complete Setup (One Command)](#complete-setup-one-command)
+  - [Start Frontend Dashboard](#start-frontend-dashboard)
+  - [Quick Rebuild (Without Recreating Cluster)](#quick-rebuild-without-recreating-cluster)
+  - [Deploy Sample Services (DNS Traffic Generators)](#step-4-deploy-sample-services-dns-traffic-generators)
+  - [Deploy Node-to-Node Communication (Component 4 - Optional)](#step-7-deploy-node-to-node-communication-component-4---optional)
+  - [Verify Everything is Working](#step-8-verify-everything-is-working)
+- [Using Make Commands (Alternative)](#using-make-commands-alternative)
+- [Port-Forward Watchdog (Auto-Restart)](#port-forward-watchdog-auto-restart)
+- [Testing Different Services](#testing-different-services)
+- [Troubleshooting](#troubleshooting)
+  - [Daemon Not Starting](#daemon-not-starting)
+  - [No Metrics Showing](#no-metrics-showing)
+  - [Dashboard Not Loading](#dashboard-not-loading)
+  - [Port-Forward Connection Issues](#port-forward-connection-issues)
+- [Component Integration](#component-integration)
+  - [For Internal Components: Direct Function Calls](#for-internal-components-direct-function-calls-recommended)
+  - [For External Tools: HTTP API Endpoints](#for-external-tools-http-api-endpoints)
+  - [Sample API Responses](#sample-api-responses)
+    - [Node-Level Metrics](#1-node-level-metrics-get-metricsjson)
+    - [Per-Pod DNS Metrics](#2-per-pod-dns-metrics-get-apidnspods)
+    - [Cluster Topology](#3-cluster-topology-get-apiclustertopology)
+- [Using This Data in Other Components](#using-this-data-in-other-components)
+  - [Example 1: Intelligent Traffic Routing](#example-1-intelligent-traffic-routing)
+  - [Example 2: Latency-Aware Scheduling](#example-2-latency-aware-scheduling)
+  - [Example 3: Multi-Cluster Federation](#example-3-multi-cluster-federation)
+- [Key Advantages for Component Developers](#key-advantages-for-component-developers)
+- [Project Structure](#project-structure)
+- [Development](#development)
+  - [Building Individual Components](#building-individual-components)
+  - [Debugging](#debugging)
+  - [Adding New Telemetry](#adding-new-telemetry)
+- [Metrics Collected](#metrics-collected)
+  - [DNS Latency](#dns-latency)
+  - [TCP RTT (Round-Trip Time)](#tcp-rtt-round-trip-time)
+- [Data Flow: From Kernel to Dashboard](#data-flow-from-kernel-to-dashboard)
+- [Data Types and Precision](#data-types-and-precision)
+- [Roadmap](#roadmap)
+- [Cleanup](#cleanup)
+  - [Stop Everything and Clean Up](#stop-everything-and-clean-up)
+  - [Quick Cleanup Command](#quick-cleanup-command)
+- [Monitoring and Debugging](#monitoring-and-debugging)
+  - [View Live Metrics](#view-live-metrics)
+  - [Performance Testing](#performance-testing)
+- [References](#references)
+- [License](#license)
+- [Author](#author)
+
 ## Architecture Overview
 
 This system implements a sidecar-less orchestration framework for Kubernetes that leverages eBPF (Extended Berkeley Packet Filter) to provide runtime-aware telemetry collection and intelligent traffic management without the overhead of traditional sidecar proxies. The architecture is built around a pluggable, extensible design that enables dynamic component integration and runtime adaptation.
@@ -251,6 +339,79 @@ The system is composed of four main components that work together to provide com
 - Kubernetes DaemonSet for deployment across cluster nodes
 - REST API for exposing metrics to other components
 - React dashboard for real-time visualization
+
+**Internal Architecture: Unified SPI Interface**
+
+![Unified SPI Interface Architecture](./images/Unified%20SPI%20Interface.png)
+
+Component 1 implements a pluggable architecture using a Unified Service Provider Interface (SPI) that enables extensibility and modularity. The architecture diagram illustrates the three-layer design that spans from user space through the eBPF layer into kernel space.
+
+**User Space Layer:**
+- **Plugins**: The topmost layer consists of multiple plugin instances that implement specific functionality. Plugins can be dynamically added to extend system capabilities without modifying core code. Each plugin implements the Unified SPI Interface contract.
+- **Core Component**: The central coordination layer that manages all system operations:
+  - **Execution Engine**: Controls the lifecycle of all plugins, including initialization, startup, shutdown, and hot-reloading. It orchestrates plugin execution and manages dependencies between plugins.
+  - **Base Plugins**: Fundamental plugins that provide core system functionality, such as DNS latency collection, RTT measurement, TCP metrics gathering, and scheduling latency monitoring.
+  - **Plugin Registry**: A centralized registry that tracks all registered plugins, enabling dynamic discovery and lookup. Plugins register themselves at runtime using the registry pattern, allowing the system to discover available functionality without hardcoded dependencies.
+- **Common High Level Interface (SPI)**: The standardized interface that all plugins must implement. This interface defines the contract for plugin interaction, including methods for initialization, metric collection, subscription management, and lifecycle control. The SPI abstraction enables the core system to interact with plugins uniformly, regardless of their specific implementation.
+
+**eBPF Layer (Interface Between User and Kernel Space):**
+- **Verifier**: A critical security component that validates eBPF programs before they are loaded into the kernel. The verifier ensures programs are safe, terminate properly, do not access unauthorized memory, and follow kernel safety rules. This prevents malicious or buggy programs from crashing or compromising the kernel.
+- **eBPF Runtime**: The execution environment where verified eBPF programs run. This runtime provides the infrastructure for program loading, JIT compilation, and execution within the kernel context while maintaining isolation and safety guarantees.
+- **eBPF Maps**: Shared data structures that enable communication between eBPF programs running in the kernel and user-space applications. Maps also facilitate data sharing between different eBPF programs. Types include ring buffers for event streaming, hash maps for key-value storage, and array maps for indexed data access.
+
+**Kernel Space Layer:**
+The kernel space contains various hook points where eBPF programs can attach to observe or modify system behavior:
+
+- **Networking Hooks**: Enable network-level instrumentation and control:
+  - XDP (eXpress Data Path): Ultra-fast packet processing at the network driver level
+  - TC (Traffic Control): Network traffic shaping and filtering at the network stack
+  - Socket Filter: Filtering and monitoring of socket operations
+  - Socket Lookup: Custom socket lookup and routing decisions
+  - Cgroup Ingress/Egress: Per-container and per-pod network control
+  - TCP Congestion Control: Custom congestion control algorithms
+  - Socket Operations: Monitoring and modifying socket-level operations
+
+- **Tracing Hooks**: Provide visibility into system and application behavior:
+  - Tracepoints: Static kernel instrumentation points with stable API
+  - Kprobes: Dynamic kernel function tracing (used for DNS latency measurement)
+  - Fentry/Fexit: Function entry and exit tracing with minimal overhead
+  - Uprobes: User-space function tracing
+  - USDT (User Statically Defined Tracing): Application-defined trace points
+
+- **Security Hooks**: Enable security policy enforcement and monitoring:
+  - LSM (Linux Security Modules): Security policy enforcement at kernel level
+  - Seccomp: System call filtering and sandboxing
+
+- **Storage and File System Hooks**: Enable file system and storage monitoring:
+  - XRP (eXpress Resource Path): Fast path for file system operations
+  - eBPF for FUSE: File system in user space extensions
+
+- **Scheduling Hooks**: Provide process scheduling visibility and control:
+  - SCHED-EXT: Extensible scheduling framework for custom scheduling policies
+
+- **Testing and Reliability Hooks**:
+  - Fault Injection: Ability to inject faults for resilience testing
+
+- **Runtime Feature Hooks**: Extend kernel functionality dynamically:
+  - Freplace: Function replacement for hot-patching
+  - Iterators: Efficient data structure iteration
+  - Timer: Kernel timer integration for periodic tasks
+
+**How the Architecture Enables Extensibility:**
+
+1. **Plugin Development**: New functionality can be added by creating a plugin that implements the Unified SPI Interface. The plugin defines its metric type, implements collection methods, and registers itself with the Plugin Registry.
+
+2. **Dynamic Registration**: Plugins register themselves at runtime through the Plugin Registry. The Execution Engine discovers registered plugins and manages their lifecycle without requiring core system changes.
+
+3. **Interface Abstraction**: The Common High Level Interface (SPI) provides a uniform contract for all plugins. This abstraction allows the core system to interact with different plugin implementations through the same interface, enabling polymorphism and runtime substitution.
+
+4. **Kernel Hook Selection**: When implementing a new metric collector, developers choose appropriate kernel hooks based on the type of observation needed. For example, DNS latency uses Kprobes on UDP functions, while network packet filtering uses XDP or TC hooks.
+
+5. **Data Flow**: Telemetry data flows from kernel hooks through eBPF programs, into eBPF Maps (such as ring buffers), to user-space collectors, through the Plugin Registry, and finally to consumers via REST API or real-time subscriptions.
+
+6. **Hot-Plugging**: The architecture supports adding or removing plugins at runtime without stopping the system. The Execution Engine handles plugin lifecycle transitions gracefully, ensuring continuous operation.
+
+This architecture demonstrates how Component 1 achieves its design goals: extensibility through plugins, safety through eBPF verification, efficiency through kernel-level instrumentation, and flexibility through a unified interface that accommodates diverse telemetry collection needs.
 
 **Key Features:**
 - DNS latency measurement via kprobe instrumentation on `udp_sendmsg` and `udp_recvmsg` kernel functions
