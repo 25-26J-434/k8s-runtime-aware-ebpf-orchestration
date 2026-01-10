@@ -8,9 +8,9 @@ The extensible telemetry API provides a unified interface to query metrics from 
 
 ### 1. Unified Metrics API
 
-**Endpoint:** `GET /api/metrics`
+**Endpoint:**`GET /api/metrics`
 
-**Description:** Returns metrics from all registered collectors with optional filtering.
+**Description:**Returns metrics from all registered collectors with optional filtering.
 
 **Query Parameters:**
 - `type` (optional): Filter by metric type (`dns_latency`, `rtt`, `socket_count`, etc.)
@@ -36,48 +36,48 @@ curl http://localhost:8080/api/metrics?type=dns_latency&level=pod
 
 ```json
 {
-  "timestamp": "2025-12-08T15:00:00Z",
-  "node": {
-    "dns_latency": {
-      "total_events": 1000,
-      "avg_latency_ns": 150000,
-      "min_latency_ns": 5000,
-      "max_latency_ns": 500000
-    },
-    "rtt": {
-      "total_events": 500,
-      "avg_rtt_ns": 200000
-    }
-  },
-  "pods": {
-    "default/pod-a": {
-      "dns_latency": {
-        "total_events": 100,
-        "avg_latency_ns": 145000
-      },
-      "rtt": {
-        "total_events": 50,
-        "avg_rtt_ns": 195000
-      }
-    }
-  }
+ "timestamp": "2025-12-08T15:00:00Z",
+ "node": {
+ "dns_latency": {
+ "total_events": 1000,
+ "avg_latency_ns": 150000,
+ "min_latency_ns": 5000,
+ "max_latency_ns": 500000
+ },
+ "rtt": {
+ "total_events": 500,
+ "avg_rtt_ns": 200000
+ }
+ },
+ "pods": {
+ "default/pod-a": {
+ "dns_latency": {
+ "total_events": 100,
+ "avg_latency_ns": 145000
+ },
+ "rtt": {
+ "total_events": 50,
+ "avg_rtt_ns": 195000
+ }
+ }
+ }
 }
 ```
 
 ### 2. Legacy Endpoints (Backward Compatible)
 
 #### JSON Metrics
-**Endpoint:** `GET /metrics/json`
+**Endpoint:**`GET /metrics/json`
 
 Returns DNS and RTT metrics in the original format.
 
 #### Prometheus Metrics
-**Endpoint:** `GET /metrics`
+**Endpoint:**`GET /metrics`
 
 Returns metrics in Prometheus format.
 
 #### Per-Pod DNS Metrics
-**Endpoint:** `GET /api/dns/pods`
+**Endpoint:**`GET /api/dns/pods`
 
 Returns detailed DNS metrics for each pod.
 
@@ -87,26 +87,26 @@ Returns detailed DNS metrics for each pod.
 
 ```go
 import (
-    "github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
+ "github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 )
 
 func getAverageDNSLatency(podName string) (float64, error) {
-    // Get DNS collector from registry
-    collector, ok := telemetry.GlobalRegistry.Get(telemetry.MetricTypeDNS)
-    if !ok {
-        return 0, fmt.Errorf("DNS collector not found")
-    }
-    
-    // Get pod metrics
-    podMetrics := collector.GetPodMetrics()
-    
-    // Find specific pod
-    if metric, ok := podMetrics[podName]; ok {
-        value := metric.Value.(telemetry.DNSMetricValue)
-        return value.AvgLatencyNs, nil
-    }
-    
-    return 0, fmt.Errorf("pod not found")
+ // Get DNS collector from registry
+ collector, ok := telemetry.GlobalRegistry.Get(telemetry.MetricTypeDNS)
+ if !ok {
+ return 0, fmt.Errorf("DNS collector not found")
+ }
+ 
+ // Get pod metrics
+ podMetrics := collector.GetPodMetrics()
+ 
+ // Find specific pod
+ if metric, ok := podMetrics[podName]; ok {
+ value := metric.Value.(telemetry.DNSMetricValue)
+ return value.AvgLatencyNs, nil
+ }
+ 
+ return 0, fmt.Errorf("pod not found")
 }
 ```
 
@@ -114,18 +114,18 @@ func getAverageDNSLatency(podName string) (float64, error) {
 
 ```go
 func watchDNSMetrics() {
-    collector, _ := telemetry.GlobalRegistry.Get(telemetry.MetricTypeDNS)
-    updates := collector.Subscribe()
-    
-    for metric := range updates {
-        podMetric := metric.(telemetry.PodMetric)
-        value := podMetric.Value.(telemetry.DNSMetricValue)
-        
-        log.Printf("Pod %s/%s: DNS latency = %.2fμs",
-            podMetric.Namespace,
-            podMetric.PodName,
-            value.AvgLatencyNs/1000)
-    }
+ collector, _ := telemetry.GlobalRegistry.Get(telemetry.MetricTypeDNS)
+ updates := collector.Subscribe()
+ 
+ for metric := range updates {
+ podMetric := metric.(telemetry.PodMetric)
+ value := podMetric.Value.(telemetry.DNSMetricValue)
+ 
+ log.Printf("Pod %s/%s: DNS latency = %.2fμs",
+ podMetric.Namespace,
+ podMetric.PodName,
+ value.AvgLatencyNs/1000)
+ }
 }
 ```
 
@@ -133,17 +133,17 @@ func watchDNSMetrics() {
 
 ```go
 func getAllPodMetrics(podKey string) map[telemetry.MetricType]interface{} {
-    allPodMetrics := telemetry.GlobalRegistry.GetAllPodMetrics()
-    
-    if metrics, ok := allPodMetrics[podKey]; ok {
-        result := make(map[telemetry.MetricType]interface{})
-        for metricType, metric := range metrics {
-            result[metricType] = metric.Value
-        }
-        return result
-    }
-    
-    return nil
+ allPodMetrics := telemetry.GlobalRegistry.GetAllPodMetrics()
+ 
+ if metrics, ok := allPodMetrics[podKey]; ok {
+ result := make(map[telemetry.MetricType]interface{})
+ for metricType, metric := range metrics {
+ result[metricType] = metric.Value
+ }
+ return result
+ }
+ 
+ return nil
 }
 ```
 
@@ -154,32 +154,32 @@ To add a new metric type (e.g., socket counts):
 1. **Define the metric type in `types.go`:**
 ```go
 const (
-    MetricTypeSocketCount MetricType = "socket_count"
+ MetricTypeSocketCount MetricType = "socket_count"
 )
 
 type SocketCountMetricValue struct {
-    TCPSockets   uint64 `json:"tcp_sockets"`
-    UDPSockets   uint64 `json:"udp_sockets"`
-    TotalSockets uint64 `json:"total_sockets"`
+ TCPSockets uint64 `json:"tcp_sockets"`
+ UDPSockets uint64 `json:"udp_sockets"`
+ TotalSockets uint64 `json:"total_sockets"`
 }
 ```
 
 2. **Implement the Collector interface:**
 ```go
 type SocketCountCollector struct {
-    // ... implementation
+ // ... implementation
 }
 
 func (c *SocketCountCollector) GetType() MetricType {
-    return MetricTypeSocketCount
+ return MetricTypeSocketCount
 }
 
 func (c *SocketCountCollector) GetNodeMetrics() NodeMetric {
-    // ... return node-level socket counts
+ // ... return node-level socket counts
 }
 
 func (c *SocketCountCollector) GetPodMetrics() map[string]PodMetric {
-    // ... return pod-level socket counts
+ // ... return pod-level socket counts
 }
 ```
 
@@ -207,8 +207,8 @@ Coming soon:
 
 ## Best Practices
 
-1. **Use the unified API** (`/api/metrics`) for new integrations
-2. **Filter by type and level** to reduce response size
-3. **Subscribe to updates** for real-time monitoring
-4. **Use the registry** for programmatic access within the daemon
-5. **Keep backward compatibility** when adding new metric types
+1. **Use the unified API**(`/api/metrics`) for new integrations
+2. **Filter by type and level**to reduce response size
+3. **Subscribe to updates**for real-time monitoring
+4. **Use the registry**for programmatic access within the daemon
+5. **Keep backward compatibility**when adding new metric types

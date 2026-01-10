@@ -8,47 +8,47 @@ This component implements automatic Kubernetes workload autoscaling driven by eB
 
 ```text
 ┌──────────────┐
-│ Application  │   (e.g. nginx, busybox)
+│ Application │ (e.g. nginx, busybox)
 └──────┬───────┘
-       │ network traffic
-       ▼
+ │ network traffic
+ ▼
 ┌────────────────────────┐
-│ eBPF Telemetry Daemon  │  ← Component 1
+│ eBPF Telemetry Daemon │ ← Component 1
 │ (DNS, RTT, TCP metrics)│
 └──────────┬─────────────┘
-           │ in-memory metrics
-           ▼
+ │ in-memory metrics
+ ▼
 ┌────────────────────────┐
-│ Scaling Controller     │  ← Component 3
-│ - Reads rules (Mongo)  │
-│ - Evaluates metrics    │
-│ - Calls K8s Scale API  │
+│ Scaling Controller │ ← Component 3
+│ - Reads rules (Mongo) │
+│ - Evaluates metrics │
+│ - Calls K8s Scale API │
 └──────────┬─────────────┘
-           │
-           ▼
+ │
+ ▼
 ┌────────────────────────┐
-│ Kubernetes Deployment  │
-│ (replicas ↑ / ↓)       │
+│ Kubernetes Deployment │
+│ (replicas ↑ / ↓) │
 └────────────────────────┘
 ```
 
 ### Flow
 
-1. The **frontend** (Scaling Rules page) creates/updates rules via the daemon REST API.
-2. Rules are persisted in **MongoDB** (`rulesdb.scaling_rules` by default).
-3. The daemon **scaling controller** periodically evaluates enabled rules and updates the target **Deployment** replicas in Kubernetes.
+1. The **frontend**(Scaling Rules page) creates/updates rules via the daemon REST API.
+2. Rules are persisted in **MongoDB**(`rulesdb.scaling_rules` by default).
+3. The daemon **scaling controller**periodically evaluates enabled rules and updates the target **Deployment**replicas in Kubernetes.
 4. The UI polls deployments + latest metrics to render “Current Replicas / Latest Metric / Last Action”.
 
 ## Components
 
 - **Controller**: `daemon/pkg/scaling/controller.go`
-  - Evaluation loop: every ~5s (`scalingLoopInterval`)
-  - Rule refresh: every ~10s (`rulesRefreshInterval`) + change-stream notifications (if Mongo watch is available)
-  - Scaling action uses `action` + `step`, clamped by `minReplicas` / `maxReplicas`
+ - Evaluation loop: every ~5s (`scalingLoopInterval`)
+ - Rule refresh: every ~10s (`rulesRefreshInterval`) + change-stream notifications (if Mongo watch is available)
+ - Scaling action uses `action` + `step`, clamped by `minReplicas` / `maxReplicas`
 - **Rule store (MongoDB)**: `daemon/pkg/scaling/store.go`
-  - Defaults: operator `">"`, `minReplicas=1`, `maxReplicas=5`, `step=1`
+ - Defaults: operator `">"`, `minReplicas=1`, `maxReplicas=5`, `step=1`
 - **Metric mapping**: `daemon/pkg/scaling/metrics.go`
-  - Fetches pod-level metrics for the deployment selector; falls back to node-level metrics if needed
+ - Fetches pod-level metrics for the deployment selector; falls back to node-level metrics if needed
 - **REST API**: `daemon/pkg/api/scaling.go` (registered in `daemon/pkg/api/api.go`)
 
 ## How autoscaling works (step-by-step)
@@ -56,14 +56,14 @@ This component implements automatic Kubernetes workload autoscaling driven by eB
 1. An application runs inside Kubernetes and generates network activity.
 2. The eBPF daemon collects metrics at kernel level.
 3. The scaling controller runs continuously:
-   - Fetches enabled rules from MongoDB
-   - Reads the latest metric values
-   - Evaluates rule conditions
+ - Fetches enabled rules from MongoDB
+ - Reads the latest metric values
+ - Evaluates rule conditions
 4. If a rule matches, the controller updates the Kubernetes Deployment replica count.
 5. The UI reflects:
-   - Current replicas
-   - Latest metric
-   - Last scaling action
+ - Current replicas
+ - Latest metric
+ - Last scaling action
 
 ## Is this real-time?
 
@@ -131,9 +131,9 @@ Status fields (written by the controller after a scale action):
 
 ## Metric units
 
-- `dns_latency`: **nanoseconds** (latest DNS latency)
-- `rtt`: **nanoseconds** (latest RTT)
-- `tcp_retrans`: **count** (retransmissions)
+- `dns_latency`: **nanoseconds**(latest DNS latency)
+- `rtt`: **nanoseconds**(latest RTT)
+- `tcp_retrans`: **count**(retransmissions)
 
 If you want different units or derived signals, update the mapping in `daemon/pkg/scaling/metrics.go`.
 
@@ -142,22 +142,22 @@ If you want different units or derived signals, update the mapping in `daemon/pk
 - Rules table lists the configured rules and enables/disables them.
 - Rules can be edited inline via the Edit action (metric, operator, threshold, action, change, enabled).
 - The metric cards show:
-  - Current replicas (from `/api/scaling/deployments`)
-  - Latest metric (from `/api/scaling/metrics/latest`, falling back to the rule’s `lastValue`)
-  - Last action + timestamp (from rule status fields)
+ - Current replicas (from `/api/scaling/deployments`)
+ - Latest metric (from `/api/scaling/metrics/latest`, falling back to the rule’s `lastValue`)
+ - Last action + timestamp (from rule status fields)
 - When a rule is disabled, the cards intentionally blank to `—` to avoid showing stale “active rule” data.
 
 ## Proof of correctness (what to check)
 
 - Replica count changes automatically:
-  - `kubectl get deploy -n <namespace> <deployment> -w`
+ - `kubectl get deploy -n <namespace> <deployment> -w`
 - Daemon logs show scaling decisions:
-  - `kubectl logs -n ebpf-telemetry -l app=ebpf-daemon -c daemon --tail=200`
-  - Look for `[Scaling]` log lines.
+ - `kubectl logs -n ebpf-telemetry -l app=ebpf-daemon -c daemon --tail=200`
+ - Look for `[Scaling]` log lines.
 - UI updates:
-  - “Current Replicas” changes
-  - “Last Action” shows `scale_up` / `scale_down`
-  - “Latest Metric” shows the current metric value used for decisions
+ - “Current Replicas” changes
+ - “Last Action” shows `scale_up` / `scale_down`
+ - “Latest Metric” shows the current metric value used for decisions
 
 ## Real-world usage
 
@@ -173,8 +173,8 @@ In production:
 - Telemetry may not have produced pod-level metrics yet for the selected deployment.
 - The deployment selector may not match pods (empty or unexpected `matchLabels`).
 - Check what the daemon is returning:
-  - `GET /api/scaling/metrics/latest`
-  - `GET /api/scaling/rules` (inspect `lastValue`, `lastAction*`)
+ - `GET /api/scaling/metrics/latest`
+ - `GET /api/scaling/rules` (inspect `lastValue`, `lastAction*`)
 
 ### Scaling happens but UI doesn’t update
 

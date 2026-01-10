@@ -16,20 +16,20 @@ This document explains every file in the project, what it does, what should be c
 
 ```
 k8s-runtime-aware-ebpf-orchestration/
-├── ebpf/                    # eBPF C source code (kernel programs)
-├── daemon/                  # Go daemon application
-├── frontend/                # React/TypeScript dashboard
-├── k8s/                     # Kubernetes manifests
-├── examples/                # Example test services
-├── scripts/                 # Build scripts
-└── bin/                     # Compiled binaries (GENERATED - don't commit)
+├── ebpf/ # eBPF C source code (kernel programs)
+├── daemon/ # Go daemon application
+├── frontend/ # React/TypeScript dashboard
+├── k8s/ # Kubernetes manifests
+├── examples/ # Example test services
+├── scripts/ # Build scripts
+└── bin/ # Compiled binaries (GENERATED - don't commit)
 ```
 
 ---
 
 ## What to Commit to Git
 
-###  Source Code Files (ALWAYS commit)
+### Source Code Files (ALWAYS commit)
 - **eBPF C source**: `ebpf/**/*.c`, `ebpf/**/*.h`
 - **Go source**: `daemon/**/*.go`
 - **TypeScript/React**: `frontend/src/**/*.tsx`, `frontend/src/**/*.ts`, `frontend/src/**/*.css`
@@ -107,11 +107,11 @@ k8s-runtime-aware-ebpf-orchestration/
 - `make deploy-all`: Deploys to Kubernetes
 - `make clean`: Removes build artifacts
 
-**Commit**:  Yes
+**Commit**: Yes
 
 #### `README.md`
 **Purpose**: Main project documentation
-**Commit**:  Yes
+**Commit**: Yes
 
 #### `ARCHITECTURE.md`
 **Purpose**: System architecture documentation
@@ -144,7 +144,7 @@ k8s-runtime-aware-ebpf-orchestration/
 
 #### `setup-kind-cluster.sh`
 **Purpose**: Sets up Kind Kubernetes cluster
-**Commit**:  Yes
+**Commit**: Yes
 
 ---
 
@@ -158,7 +158,7 @@ k8s-runtime-aware-ebpf-orchestration/
 - `maps.h`: eBPF map definitions (ring buffers, etc.)
 - `rtt.h`: RTT event structures
 
-**Commit**:  Yes (source code)
+**Commit**: Yes (source code)
 
 #### `ebpf/component-1-daemon/`
 **Purpose**: eBPF programs for the daemon
@@ -194,7 +194,7 @@ k8s-runtime-aware-ebpf-orchestration/
 - `go.mod`: Dependency list
 - `go.sum`: Dependency checksums (for security)
 
-**Commit**:  Yes (both)
+**Commit**: Yes (both)
 
 #### `daemon/Dockerfile`
 **Purpose**: Docker image definition for daemon
@@ -214,7 +214,7 @@ k8s-runtime-aware-ebpf-orchestration/
 - `k8s_client.go`: Kubernetes client for pod discovery
 - `unified_metrics.go`: Unified metrics endpoint that aggregates all collectors
 
-**Commit**:  Yes
+**Commit**: Yes
 
 #### `daemon/pkg/loader/`
 **Purpose**: eBPF program loader
@@ -225,7 +225,7 @@ k8s-runtime-aware-ebpf-orchestration/
 - `bpf/*.o`: Compiled eBPF objects (embedded in Go binary)
 
 **Commit**: Yes (Go files)
-** Special**: `bpf/*.o` files ARE committed (they're embedded in the binary)
+**Special**: `bpf/*.o` files ARE committed (they're embedded in the binary)
 
 #### `daemon/pkg/telemetry/`
 **Purpose**: Metric collectors
@@ -249,7 +249,7 @@ k8s-runtime-aware-ebpf-orchestration/
 - `base_plugin.go`: Base plugin interface
 - `routing/latency_router.go`: Example routing component
 
-**Commit**:  Yes
+**Commit**: Yes
 
 ---
 
@@ -283,7 +283,7 @@ k8s-runtime-aware-ebpf-orchestration/
 - `Dashboard.tsx`: Main dashboard with all metrics
 - `Routing.tsx`, `Scheduling.tsx`, `Federation.tsx`: Placeholder pages
 
-**Commit**:  Yes
+**Commit**: Yes
 
 #### `frontend/src/components/`
 **Purpose**: Reusable React components
@@ -308,11 +308,11 @@ k8s-runtime-aware-ebpf-orchestration/
 - `useMetrics.ts`: Fetches metrics from API
 - `useClusterInfo.ts`: Fetches cluster topology
 
-**Commit**:  Yes
+**Commit**: Yes
 
 #### `frontend/src/services/api.ts`
 **Purpose**: API client functions
-**Commit**:  Yes
+**Commit**: Yes
 
 #### `frontend/src/types/api.ts`
 **Purpose**: TypeScript type definitions for API
@@ -321,12 +321,12 @@ k8s-runtime-aware-ebpf-orchestration/
 #### `frontend/dist/`
 **Purpose**: Production build output
 **Generated**: By `npm run build`
-**Commit**:  No (in .gitignore)
+**Commit**: No (in .gitignore)
 
 #### `frontend/node_modules/`
 **Purpose**: npm dependencies
 **Generated**: By `npm install`
-**Commit**:  No (in .gitignore)
+**Commit**: No (in .gitignore)
 
 ---
 
@@ -342,7 +342,7 @@ k8s-runtime-aware-ebpf-orchestration/
 - `test-services.yaml`: Test services (service-a, service-b, tcp-client)
 - `simple-test-pods.yaml`: Simple test pods
 
-**Commit**:  Yes
+**Commit**: Yes
 
 ---
 
@@ -377,53 +377,53 @@ Each has:
 ### First Time Setup
 
 1. **Clone the repository**
-   ```bash
-   git clone <repo-url>
-   cd k8s-runtime-aware-ebpf-orchestration
-   ```
+ ```bash
+ git clone <repo-url>
+ cd k8s-runtime-aware-ebpf-orchestration
+ ```
 
 2. **Install dependencies**
-   ```bash
-   # Go dependencies (auto-downloaded on build)
-   cd daemon && go mod download
-   
-   # Frontend dependencies
-   cd ../frontend && npm install
-   ```
+ ```bash
+ # Go dependencies (auto-downloaded on build)
+ cd daemon && go mod download
+ 
+ # Frontend dependencies
+ cd ../frontend && npm install
+ ```
 
 3. **Build eBPF programs**
-   ```bash
-   ./scripts/build-ebpf.sh
-   ```
-   This generates: `daemon/pkg/loader/bpf/*.o`
+ ```bash
+ ./scripts/build-ebpf.sh
+ ```
+ This generates: `daemon/pkg/loader/bpf/*.o`
 
 4. **Build Go daemon**
-   ```bash
-   cd daemon && go build -o ebpf-daemon ./cmd/daemon
-   ```
-   This generates: `daemon/ebpf-daemon`
+ ```bash
+ cd daemon && go build -o ebpf-daemon ./cmd/daemon
+ ```
+ This generates: `daemon/ebpf-daemon`
 
 5. **Build Docker image**
-   ```bash
-   docker build -t ebpf-daemon:latest daemon/
-   ```
+ ```bash
+ docker build -t ebpf-daemon:latest daemon/
+ ```
 
 6. **Setup Kind cluster**
-   ```bash
-   ./setup-kind-cluster.sh
-   ```
+ ```bash
+ ./setup-kind-cluster.sh
+ ```
 
 7. **Load image and deploy**
-   ```bash
-   kind load docker-image ebpf-daemon:latest --name ebpf-cluster
-   kubectl apply -f k8s/namespace.yaml
-   kubectl apply -f k8s/daemonset.yaml
-   ```
+ ```bash
+ kind load docker-image ebpf-daemon:latest --name ebpf-cluster
+ kubectl apply -f k8s/namespace.yaml
+ kubectl apply -f k8s/daemonset.yaml
+ ```
 
 8. **Start frontend**
-   ```bash
-   cd frontend && npm run dev
-   ```
+ ```bash
+ cd frontend && npm run dev
+ ```
 
 ### Daily Development Workflow
 
@@ -501,7 +501,7 @@ cd frontend && npm run dev
 
 ## Summary Checklist
 
-###  Commit to Git
+### Commit to Git
 - All `.c`, `.h` files (eBPF source)
 - All `.go` files (Go source)
 - All `.tsx`, `.ts`, `.css` files (Frontend source)
