@@ -39,7 +39,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"policy_name\": \"policy_1\",\n  \"namespace\": \"test-services\",\n  \"frontend\": {\n    \"service\": \"tcp-client\",\n    \"port\": 5002\n  },\n  \"telemetry\": {\n    \"metric\": \"rtt_us\",\n    \"violation_threshold\": 2500,\n    \"monitor_pod_contains\": \"tcp-client\"\n  },\n  \"action\": {\n    \"type\": \"redirect\",\n    \"backend_selector\": \"app=service-c\",\n    \"backend_port\": 5003,\n    \"protocol\": \"TCP\",\n    \"ttl_seconds\": 300,\n    \"strategy\": \"best_pod\",\n    \"backend_candidates_selector\": \"app=service-c\",\n    \"winner_label\": \"redirect-winner=yes\"\n  }\n}"
+							"raw": "{\n  \"policy_name\": \"redirect-service-a-to-c\",\n  \"namespace\": \"test-services\",\n  \"frontend\": {\n    \"service\": \"service-a\",\n    \"port\": 5000\n  },\n  \"telemetry\": {\n    \"metric\": \"dns_us\",\n    \"violation_threshold\": 1000,\n    \"monitor_pod_contains\": \"service-a\"\n  },\n  \"action\": {\n    \"type\": \"redirect\",\n    \"backend_selector\": \"app=service-c\",\n    \"backend_port\": 5003,\n    \"protocol\": \"TCP\",\n    \"ttl_seconds\": 300,\n    \"strategy\": \"best_pod\",\n    \"backend_candidates_selector\": \"app=service-c\",\n    \"winner_label\": \"redirect-winner=yes\"\n  }\n}"
 						},
 						"url": {
 							"raw": "{{BASE_URL}}/api/policies",
@@ -67,7 +67,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"policy_name\": \"redirect-service-client-to-c\",\n  \"namespace\": \"test-services\",\n  \"frontend\": {\n    \"service\": \"tcp-client\",\n    \"port\": 5002\n  },\n  \"telemetry\": {\n    \"metric\": \"dns_us\",\n    \"violation_threshold\": 250,\n    \"monitor_pod_contains\": \"tcp-client\"\n  },\n  \"action\": {\n    \"type\": \"redirect\",\n    \"backend_selector\": \"app=service-c\",\n    \"backend_port\": 5003,\n    \"protocol\": \"TCP\",\n    \"ttl_seconds\": 300,\n    \"strategy\": \"best_pod\",\n    \"backend_candidates_selector\": \"app=service-c\",\n    \"winner_label\": \"redirect-winner=yes\"\n  }\n}"
+							"raw": "{\n  \"frontend\": {\n    \"service\": \"service-a\",\n    \"port\": 5000\n  },\n  \"telemetry\": {\n    \"metric\": \"dns_us\",\n    \"violation_threshold\": 1000,\n    \"monitor_pod_contains\": \"service-a\"\n  },\n  \"action\": {\n    \"type\": \"redirect\",\n    \"backend_selector\": \"app=service-c\",\n    \"backend_port\": 5003,\n    \"protocol\": \"TCP\",\n    \"ttl_seconds\": 300,\n    \"strategy\": \"best_pod\",\n    \"backend_candidates_selector\": \"app=service-c\",\n    \"winner_label\": \"redirect-winner=yes\"\n  }\n}"
 						},
 						"url": {
 							"raw": "{{BASE_URL}}/api/policies/{{POLICY_NAME}}",
@@ -120,7 +120,7 @@
 								"evaluate"
 							]
 						},
-						"description": "Runs apply-local-redirect.sh with the stored rule and records status/history."
+						"description": "Evaluate telemetry and apply the Cilium LRP directly from the Go daemon."
 					},
 					"response": []
 				},
@@ -141,7 +141,7 @@
 								"expire"
 							]
 						},
-						"description": "Deletes the LocalRedirectPolicy via the helper and marks the policy as expired."
+						"description": "Deletes the LocalRedirectPolicy from the cluster and marks the policy as expired."
 					},
 					"response": []
 				},
@@ -161,7 +161,7 @@
 								"{{POLICY_NAME}}"
 							]
 						},
-						"description": "Removes the policy document and best-effort deletes the LRP via helper."
+						"description": "Removes the policy document and best-effort deletes the LRP."
 					},
 					"response": []
 				}
@@ -198,6 +198,40 @@
 						"whoami"
 					]
 				}
+			},
+			"response": []
+		},
+		{
+			"name": "Probe Service",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{BASE_URL}}/api/probe/service-a?port=5000&namespace=test-services&path=/whoami",
+					"host": [
+						"{{BASE_URL}}"
+					],
+					"path": [
+						"api",
+						"probe",
+						"service-a"
+					],
+					"query": [
+						{
+							"key": "port",
+							"value": "5000"
+						},
+						{
+							"key": "namespace",
+							"value": "test-services"
+						},
+						{
+							"key": "path",
+							"value": "/whoami"
+						}
+					]
+				},
+				"description": "In-cluster probe of a service's /whoami (or custom path) from the daemon."
 			},
 			"response": []
 		},
@@ -248,7 +282,7 @@
 	"variable": [
 		{
 			"key": "BASE_URL",
-			"value": "http://localhost:4000"
+			"value": "http://localhost:8080"
 		},
 		{
 			"key": "POLICY_NAME",

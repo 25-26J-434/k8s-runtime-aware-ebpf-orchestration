@@ -1,9 +1,14 @@
-FROM python:3.11-slim
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY go.mod ./
+COPY main.go ./
 
-COPY app.py /app/app.py
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o service-c
+
+FROM alpine:3.19
+WORKDIR /app
+COPY --from=builder /app/service-c /usr/local/bin/service-c
+
 EXPOSE 5003
-CMD ["python", "/app/app.py"]
+ENTRYPOINT ["/usr/local/bin/service-c"]

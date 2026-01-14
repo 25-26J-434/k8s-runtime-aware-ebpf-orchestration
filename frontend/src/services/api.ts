@@ -11,7 +11,7 @@ import type {
 import type { ScalingRule, LatestMetric, DeploymentInfo } from '../types/scaling';
 
 const API_BASE = '';  // Proxy handles routing
-const ROUTING_API_BASE = import.meta.env.VITE_ROUTING_API || 'http://localhost:4000';
+const ROUTING_API_BASE = (import.meta as any).env?.VITE_ROUTING_API || API_BASE || '';
 const SCALING_API_BASE = (import.meta as any).env?.VITE_SCALING_API_BASE || API_BASE;
 
 type ApplyResponse = {

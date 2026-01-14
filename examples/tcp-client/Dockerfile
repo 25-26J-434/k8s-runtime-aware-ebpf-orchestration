@@ -1,16 +1,14 @@
-FROM python:3.11-slim
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
+COPY go.mod ./
+COPY main.go ./
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o tcp-client
 
-COPY app.py .
+FROM alpine:3.19
+WORKDIR /app
+COPY --from=builder /app/tcp-client /usr/local/bin/tcp-client
 
 EXPOSE 5002
-
-CMD ["python", "app.py"]
-
-
-
-
+ENTRYPOINT ["/usr/local/bin/tcp-client"]
