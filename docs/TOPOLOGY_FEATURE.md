@@ -1,60 +1,60 @@
-# 🌐 Network Topology Feature - Interactive Pod Management
+# Network Topology Feature - Interactive Pod Management
 
 ## Overview
-A real-time, interactive network topology visualization that allows you to **view AND control** your Kubernetes pods directly from the dashboard.
+A real-time, interactive network topology visualization that allows you to **view AND control**your Kubernetes pods directly from the dashboard.
 
 ## Features Implemented
 
-### 1. **Live Network Topology Graph** ✅
+### 1. **Live Network Topology Graph**
 - Real-time visualization of pod connections
 - Physics-based layout (nodes repel each other, attract to center)
 - Animated data flow particles showing traffic between pods
 - Color-coded health status:
-  - 🟢 **Green**: Healthy (latency < 5ms)
-  - 🟡 **Yellow**: Warning (5ms < latency < 10ms, or minor issues)
-  - 🔴 **Red**: Critical (latency > 10ms, or TCP issues)
+ - **Green**: Healthy (latency < 5ms)
+ - **Yellow**: Warning (5ms < latency < 10ms, or minor issues)
+ - **Red**: Critical (latency > 10ms, or TCP issues)
 
-### 2. **Interactive Controls** ✅
-- **Click** on any pod to see detailed metrics
-- **Hover** to see pod name
-- **Pause/Resume** animation
-- **Filter** by namespace or health status
-- **Export** capability (ready for implementation)
-- **Fullscreen** mode (ready for implementation)
+### 2. **Interactive Controls**
+- **Click**on any pod to see detailed metrics
+- **Hover**to see pod name
+- **Pause/Resume**animation
+- **Filter**by namespace or health status
+- **Export**capability (ready for implementation)
+- **Fullscreen**mode (ready for implementation)
 
-### 3. **Pod Action Panel** ✅
+### 3. **Pod Action Panel**
 When you click on a pod, you can perform real actions:
 
 #### Available Actions:
-1. **Restart Pod** 🔄
-   - Deletes the pod (Kubernetes recreates it)
-   - Use when: Pod is misbehaving or needs a fresh start
+1. **Restart Pod**
+ - Deletes the pod (Kubernetes recreates it)
+ - Use when: Pod is misbehaving or needs a fresh start
 
-2. **Scale Deployment** ⚡
-   - Scales the deployment to specified replicas
-   - Use when: Need more/fewer instances
+2. **Scale Deployment**
+ - Scales the deployment to specified replicas
+ - Use when: Need more/fewer instances
 
-3. **Isolate Pod** 🚫
-   - Creates network policy to isolate the pod
-   - Use when: Security incident or debugging
+3. **Isolate Pod**
+ - Creates network policy to isolate the pod
+ - Use when: Security incident or debugging
 
-4. **Health Check** ✅
-   - Performs comprehensive health check
-   - Returns: Pod status, conditions, container status
-   - Use when: Investigating issues
+4. **Health Check**
+ - Performs comprehensive health check
+ - Returns: Pod status, conditions, container status
+ - Use when: Investigating issues
 
-5. **Download Logs** 📥
-   - Fetches last 50 lines of pod logs
-   - Use when: Debugging or troubleshooting
+5. **Download Logs**
+ - Fetches last 50 lines of pod logs
+ - Use when: Debugging or troubleshooting
 
-### 4. **Real-time Metrics Display** ✅
+### 4. **Real-time Metrics Display**
 Each selected pod shows:
 - Health status badge
 - DNS latency
 - TCP retransmissions
 - Packet loss count
 
-### 5. **Action Log** ✅
+### 5. **Action Log**
 - Real-time log of actions performed
 - Shows success/failure status
 - Displays API response data
@@ -67,19 +67,19 @@ Performs actions on pods.
 **Request Body:**
 ```json
 {
-  "action": "restart|scale|isolate|health|logs",
-  "namespace": "pod-namespace",
-  "pod_name": "pod-name",
-  "replicas": 2  // Optional, for scale action
+ "action": "restart|scale|isolate|health|logs",
+ "namespace": "pod-namespace",
+ "pod_name": "pod-name",
+ "replicas": 2 // Optional, for scale action
 }
 ```
 
 **Response:**
 ```json
 {
-  "success": true,
-  "message": "Action completed successfully",
-  "data": {}  // Optional additional data
+ "success": true,
+ "message": "Action completed successfully",
+ "data": {} // Optional additional data
 }
 ```
 
@@ -87,7 +87,7 @@ Performs actions on pods.
 
 ### 1. Access the Topology Page
 ```
-http://localhost:3000/topology
+http://localhost:5000/topology
 ```
 
 ### 2. Navigate to Topology
@@ -116,18 +116,18 @@ Click "Topology" in the navigation menu (between Dashboard and Routing)
 ```
 frontend/src/
 ├── components/
-│   ├── NetworkTopology.tsx      # Main topology component
-│   └── NetworkTopology.css      # Styling
+│ ├── NetworkTopology.tsx # Main topology component
+│ └── NetworkTopology.css # Styling
 ├── pages/
-│   └── Topology.tsx             # Topology page wrapper
-└── App.tsx                       # Added /topology route
+│ └── Topology.tsx # Topology page wrapper
+└── App.tsx # Added /topology route
 ```
 
 ### Backend Files
 ```
 daemon/pkg/api/
-├── pod_actions.go                # Pod action handlers
-└── api.go                        # Added /api/pod/action endpoint
+├── pod_actions.go # Pod action handlers
+└── api.go # Added /api/pod/action endpoint
 ```
 
 ## Architecture
@@ -140,19 +140,19 @@ NetworkTopology Component
 ├── Node management
 ├── Connection tracking
 └── NodeActionPanel
-    ├── Metrics display
-    ├── Action buttons
-    └── Action log
+ ├── Metrics display
+ ├── Action buttons
+ └── Action log
 ```
 
 ### Backend
 ```
 API Handler (pod_actions.go)
-├── handleRestartPod()        - Deletes pod
-├── handleScaleDeployment()   - Scales deployment
-├── handleIsolatePod()        - Creates network policy
-├── handleHealthCheck()       - Returns pod health
-└── handleGetLogs()           - Fetches pod logs
+├── handleRestartPod() - Deletes pod
+├── handleScaleDeployment() - Scales deployment
+├── handleIsolatePod() - Creates network policy
+├── handleHealthCheck() - Returns pod health
+└── handleGetLogs() - Fetches pod logs
 ```
 
 ## Permissions Required
@@ -169,26 +169,26 @@ These should already be configured in your `k8s/daemonset.yaml`.
 ## Demo Workflow
 
 1. **Start your cluster and services**
-   ```bash
-   ./rebuild-and-start.sh
-   ```
+ ```bash
+ ./rebuild-and-start.sh
+ ```
 
 2. **Navigate to Topology**
-   - Open http://localhost:3000/topology
+ - Open http://localhost:5000/topology
 
 3. **Explore the graph**
-   - See all your pods visualized
-   - Watch the animated connections
+ - See all your pods visualized
+ - Watch the animated connections
 
 4. **Try an action**
-   - Click on a pod
-   - Click "Health Check"
-   - See detailed health info in the log
+ - Click on a pod
+ - Click "Health Check"
+ - See detailed health info in the log
 
 5. **Restart a pod**
-   - Click on a pod
-   - Click "Restart Pod"
-   - Watch it disappear and recreate
+ - Click on a pod
+ - Click "Restart Pod"
+ - Watch it disappear and recreate
 
 ## Future Enhancements (Easy to add)
 
@@ -253,7 +253,7 @@ In production, this should use real eBPF connection tracking data.
 
 ## Summary
 
-You now have a **fully interactive network topology viewer** that goes beyond just displaying data - you can actually **control your cluster** through it! This is a significant step towards runtime-aware orchestration with a modern, intuitive interface.
+You now have a **fully interactive network topology viewer**that goes beyond just displaying data - you can actually **control your cluster**through it! This is a significant step towards runtime-aware orchestration with a modern, intuitive interface.
 
 Next steps for your research:
 1. Connect the topology to real eBPF connection data
@@ -261,5 +261,6 @@ Next steps for your research:
 3. Implement service mesh visualization
 4. Build intelligent routing decisions based on topology + metrics
 
-Enjoy exploring your cluster! 🚀
+Enjoy exploring your cluster!
+
 
