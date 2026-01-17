@@ -264,8 +264,9 @@ export const api = {
         return response.json();
     },
 
-    async getScalingRules(): Promise<ScalingRule[]> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling/rules`, {
+    async getScalingRules(node?: string): Promise<ScalingRule[]> {
+        const query = node ? `?node=${encodeURIComponent(node)}` : '';
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/rules${query}`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' },
             cache: 'no-cache',
@@ -276,8 +277,9 @@ export const api = {
         return response.json();
     },
 
-    async getNamespaces(): Promise<string[]> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling/namespaces`, {
+    async getNamespaces(node?: string): Promise<string[]> {
+        const query = node ? `?node=${encodeURIComponent(node)}` : '';
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/namespaces${query}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -344,8 +346,11 @@ export const api = {
         }
     },
 
-    async getDeployments(namespace?: string): Promise<DeploymentInfo[]> {
-        const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+    async getDeployments(namespace?: string, node?: string): Promise<DeploymentInfo[]> {
+        const params = new URLSearchParams();
+        if (namespace) params.set('namespace', namespace);
+        if (node) params.set('node', node);
+        const query = params.toString() ? `?${params.toString()}` : '';
         const response = await fetch(`${SCALING_API_BASE}/api/scaling/deployments${query}`, {
             method: 'GET',
             headers: {
@@ -359,8 +364,9 @@ export const api = {
         return response.json();
     },
 
-    async getLatestMetrics(): Promise<LatestMetric[]> {
-        const response = await fetch(`${API_BASE}/api/scaling/metrics/latest`, {
+    async getLatestMetrics(node?: string): Promise<LatestMetric[]> {
+        const query = node ? `?node=${encodeURIComponent(node)}` : '';
+        const response = await fetch(`${API_BASE}/api/scaling/metrics/latest${query}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
