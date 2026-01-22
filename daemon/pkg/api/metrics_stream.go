@@ -35,8 +35,8 @@ var (
 		},
 	}
 
-	clientsMu sync.RWMutex
-	clients   = make(map[*websocket.Conn]struct{})
+	clientsMu    sync.RWMutex
+	clients      = make(map[*websocket.Conn]struct{})
 	clientWrites = make(map[*websocket.Conn]*sync.Mutex)
 
 	clusterMetricsMu sync.RWMutex
@@ -72,50 +72,48 @@ func publishLocalMetrics() {
 		return
 	}
 
-	storeClusterMetrics(nodeKey, metrics)
-	broadcastClusterUpdate(nodeKey, metrics)
-
-	// Collects local metrics, stores them, broadcasts to clients, and notifies peers via comm.BroadcastMessage.
-	comm.BroadcastMessage(comm.Message{
-		Event:   comm.EventMetricUpdate,
-		Payload: map[string]any{"metrics": metrics},
-	})
+	       storeClusterMetrics(nodeKey, metrics)
+	       // No longer broadcast to WebSocket clients. Only respond to explicit requests.
+	       // comm.BroadcastMessage(comm.Message{
+	       //      Event:   comm.EventMetricUpdate,
+	       //      Payload: map[string]any{"metrics": metrics},
+	       // })
 }
 
 func handleRemoteMetricUpdate(msg comm.Message) {
-	payload, ok := msg.Payload["metrics"]
-	if !ok || payload == nil {
-		return
-	}
+       payload, ok := msg.Payload["metrics"]
+       if !ok || payload == nil {
+	       return
+       }
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("[API] Failed to marshal remote metrics payload: %v", err)
-		return
-	}
-	// Handles incoming metric updates from other nodes (via comm subsystem).
-	// Updates local cluster metrics and broadcasts to clients.
+       data, err := json.Marshal(payload)
+       if err != nil {
+	       log.Printf("[API] Failed to marshal remote metrics payload: %v", err)
+	       return
+       }
+       // Handles incoming metric updates from other nodes (via comm subsystem).
+       // Updates local cluster metrics only. No broadcast to clients.
 
-	var metrics UnifiedMetricsResponse
-	if err := json.Unmarshal(data, &metrics); err != nil {
-		log.Printf("[API] Failed to decode remote metrics payload: %v", err)
-		return
-	}
+       var metrics UnifiedMetricsResponse
+       if err := json.Unmarshal(data, &metrics); err != nil {
+	       log.Printf("[API] Failed to decode remote metrics payload: %v", err)
+	       return
+       }
 
-	nodeKey := metricsNodeKey(metrics)
-	if nodeKey == "" {
-		nodeKey = msg.Sender
-		if nodeKey == "" {
-			nodeKey = msg.SenderIP
-		}
-	}
-	if nodeKey == "" {
-		log.Printf("[API] Received metrics update without identifiable node")
-		return
-	}
+       nodeKey := metricsNodeKey(metrics)
+       if nodeKey == "" {
+	       nodeKey = msg.Sender
+	       if nodeKey == "" {
+		       nodeKey = msg.SenderIP
+	       }
+       }
+       if nodeKey == "" {
+	       log.Printf("[API] Received metrics update without identifiable node")
+	       return
+       }
 
-	storeClusterMetrics(nodeKey, metrics)
-	broadcastClusterUpdate(nodeKey, metrics)
+       storeClusterMetrics(nodeKey, metrics)
+       // No broadcast to WebSocket clients here.
 }
 
 func metricsWebSocketHandler(w http.ResponseWriter, r *http.Request) {
@@ -126,12 +124,7 @@ func metricsWebSocketHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	addClient(conn)
-
-	if err := sendClusterSnapshot(conn); err != nil {
-		log.Printf("[API] Failed to send metrics snapshot: %v", err)
-		// Handles new WebSocket client connections for metrics streaming.
-	}
-
+	// Do NOT send cluster snapshot on connect. Only respond to explicit requests.
 	go readPump(conn)
 }
 
@@ -188,14 +181,71 @@ func readPump(conn *websocket.Conn) {
 	})
 
 	for {
-		// Reads messages from a WebSocket client (for keepalive/ping-pong and cleanup).
-		if _, _, err := conn.ReadMessage(); err != nil {
+		// Wait for a message from the client
+		mt, message, err := conn.ReadMessage()
+		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("[API] Metrics websocket closed unexpectedly: %v", err)
 			}
 			break
 		}
+
+		// Only handle text/binary messages
+		if mt != websocket.TextMessage && mt != websocket.BinaryMessage {
+			continue
+		}
+
+		// Try to parse the message as a node ID request
+		var req struct {
+			Type   string `json:"type"`
+			NodeID string `json:"node_id"`
+		}
+		if err := json.Unmarshal(message, &req); err != nil {
+			log.Printf("[API] Failed to parse websocket message: %v", err)
+			continue
+		}
+
+		if req.Type == "get_pods" && req.NodeID != "" {
+			// Fetch pod details for the requested node
+			pods := getPodDetailsForNode(req.NodeID)
+			resp := struct {
+				Type   string      `json:"type"`
+				NodeID string      `json:"node_id"`
+				Pods   interface{} `json:"pods"`
+			}{
+				Type:   "pod_details",
+				NodeID: req.NodeID,
+				Pods:   pods,
+			}
+
+			// Get the write mutex for this connection
+			clientsMu.RLock()
+			writeMu := clientWrites[conn]
+			clientsMu.RUnlock()
+			if writeMu != nil {
+				writeMu.Lock()
+				conn.SetWriteDeadline(time.Now().Add(wsWriteTimeout))
+				_ = conn.WriteJSON(resp)
+				writeMu.Unlock()
+			}
+		}
 	}
+}
+
+// getPodDetailsForNode returns pod details for a given node ID.
+// Replace this stub with actual logic to fetch pod details from your cluster or cache.
+func getPodDetailsForNode(nodeID string) interface{} {
+	topology, err := GetClusterTopology()
+	if err != nil {
+		log.Printf("[API] Failed to get cluster topology: %v", err)
+		return []interface{}{}
+	}
+	for _, node := range topology.Nodes {
+		if node.Name == nodeID || node.IP == nodeID {
+			return node.Pods
+		}
+	}
+	return []interface{}{}
 }
 
 func removeClient(conn *websocket.Conn) {
@@ -206,54 +256,11 @@ func removeClient(conn *websocket.Conn) {
 	conn.Close()
 }
 
-func broadcastClusterUpdate(nodeKey string, metrics UnifiedMetricsResponse) {
-	message := struct {
-		Type string `json:"type"`
-		Node string `json:"node"`
-		// Removes a WebSocket client from the set and closes the connection.
-		Metrics UnifiedMetricsResponse `json:"metrics"`
-	}{
-		Type:    "node_update",
-		Node:    nodeKey,
-		Metrics: metrics,
-	}
+// broadcastClusterUpdate is now disabled. No cluster-wide broadcasts to WebSocket clients.
+// func broadcastClusterUpdate(nodeKey string, metrics UnifiedMetricsResponse) {}
 
-	// Broadcasts a metrics update for a single node to all connected clients.
-	broadcastToClients(message)
-}
-
-func broadcastToClients(message interface{}) {
-	clientsMu.RLock()
-	conns := make([]*websocket.Conn, 0, len(clients))
-	writers := make([]*sync.Mutex, 0, len(clients))
-	for conn := range clients {
-		conns = append(conns, conn)
-		writers = append(writers, clientWrites[conn])
-	}
-	clientsMu.RUnlock()
-
-	if len(conns) == 0 {
-		return
-	}
-	// Broadcasts a message to all connected WebSocket clients.
-
-	for i, conn := range conns {
-		writeMu := writers[i]
-		if writeMu == nil {
-			continue
-		}
-
-		writeMu.Lock()
-		conn.SetWriteDeadline(time.Now().Add(wsWriteTimeout))
-		if err := conn.WriteJSON(message); err != nil {
-			writeMu.Unlock()
-			log.Printf("[API] Failed to write to metrics websocket: %v", err)
-			removeClient(conn)
-			continue
-		}
-		writeMu.Unlock()
-	}
-}
+// broadcastToClients is now disabled. No cluster-wide broadcasts to WebSocket clients.
+// func broadcastToClients(message interface{}) {}
 
 func storeClusterMetrics(nodeKey string, metrics UnifiedMetricsResponse) {
 	clusterMetricsMu.Lock()
