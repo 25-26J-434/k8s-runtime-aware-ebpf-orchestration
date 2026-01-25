@@ -1,13 +1,14 @@
-FROM python:3.11-slim
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
+COPY go.mod ./
+COPY main.go ./
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o service-a
 
-COPY app.py .
+FROM alpine:3.19
+WORKDIR /app
+COPY --from=builder /app/service-a /usr/local/bin/service-a
 
 EXPOSE 5000
-
-CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app"]
-
+ENTRYPOINT ["/usr/local/bin/service-a"]

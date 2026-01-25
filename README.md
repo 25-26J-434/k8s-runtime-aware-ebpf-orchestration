@@ -1327,7 +1327,7 @@ npm install
 npm run dev
 ```
 
-**Dashboard will be available at:** `http://localhost:5000`
+**Dashboard will be available at:** `http://localhost:3000`
 
 ### Step 7: Deploy Node-to-Node Communication (Component 4 - Optional)
 
@@ -1465,7 +1465,7 @@ You should now have:
 **eBPF Daemon**: Collecting DNS latency from kernel  
 **Sample Services**: 3 pods generating DNS traffic  
 **REST API**: Available at `http://localhost:8080`  
-**React Dashboard**: Available at `http://localhost:5000`  
+**React Dashboard**: Available at `http://localhost:3000`
 **P2P Communication** (optional): Node-to-node messaging via Federation tab
 
 **Dashboard Features:**
@@ -1627,7 +1627,7 @@ lsof -i :8080
 
 ```bash
 # Check frontend is running
-lsof -i :5000
+lsof -i :3000
 
 # Check API is accessible
 curl http://localhost:8080/health
