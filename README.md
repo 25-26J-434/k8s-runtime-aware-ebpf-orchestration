@@ -705,14 +705,13 @@ One Kind cluster is used for all 4 components. The base cluster is created with 
 ./scripts/setup-base-cluster.sh
 ```
 
-This creates the Kind cluster from `k8s/kind-config.yaml` (with `disableDefaultCNI: true`), preloads the Cilium image, and installs Cilium via Helm with `localRedirectPolicy=true` and Kind-specific `k8sServiceHost=ebpf-cluster-control-plane`. Then deploy Component 1 (and optionally 2, 3, 4) on top.
+This creates the Kind cluster from `k8s/kind-config.yaml` (with `disableDefaultCNI: true`), preloads the Cilium image, and installs Cilium via Cilium CLI with `localRedirectPolicy=true` and Kind-specific `k8sServiceHost=ebpf-cluster-control-plane`. Then deploy Component 1 (and optionally 2, 3, 4) on top.
 
 **Manual Cilium install** (only if you did not use `setup-base-cluster.sh`):
 
 ```bash
-helm repo add cilium https://helm.cilium.io/
-helm repo update
-helm install cilium cilium/cilium --version 1.18.6 --namespace kube-system \
+# Using Cilium CLI (no Helm required)
+cilium install --version v1.18.6 \
   --set image.pullPolicy=IfNotPresent --set ipam.mode=kubernetes \
   --set localRedirectPolicy=true \
   --set k8sServiceHost=ebpf-cluster-control-plane --set k8sServicePort=6443

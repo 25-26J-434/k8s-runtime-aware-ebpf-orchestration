@@ -1,3 +1,7 @@
+# Based on Cilium official kind-config:
+#   curl -LO https://raw.githubusercontent.com/cilium/cilium/1.18.6/Documentation/installation/kind-config.yaml
+#   kind create cluster --config=kind-config.yaml
+# Plus project-specific: eBPF mounts for Component 1, port mappings, name ebpf-cluster
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: ebpf-cluster

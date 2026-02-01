@@ -23,7 +23,7 @@ This guide explains everything that gets installed, what each piece does, and ho
 | Component | What It Is | Where |
 |-----------|------------|-------|
 | **Kind** | Creates local Kubernetes clusters using Docker | `kind` CLI or `.tools/kind` |
-| **Helm** | Package manager for Kubernetes (installs Cilium) | `helm` CLI or `.tools/helm` |
+| **Cilium CLI** | Installs and manages Cilium (no Helm required) | `cilium` CLI or `.tools/cilium` |
 | **Cilium** | CNI (Container Network Interface) + eBPF networking | Runs as pods in `kube-system` |
 | **ebpf-daemon** | Component 1: collects kernel telemetry via eBPF | Runs as DaemonSet in `ebpf-telemetry` |
 | **CoreDNS** | DNS for the cluster (comes with Kind/K8s) | Runs in `kube-system` |
@@ -78,6 +78,16 @@ This guide explains everything that gets installed, what each piece does, and ho
 
 ## Kind: Local Kubernetes
 
+**Cilium's official approach** (from Cilium docs):
+```bash
+curl -LO https://raw.githubusercontent.com/cilium/cilium/1.18.6/Documentation/installation/kind-config.yaml
+kind create cluster --config=kind-config.yaml
+```
+
+Our project uses Cilium's kind-config as the base plus eBPF mounts and port mappings for Component 1. To use Cilium's vanilla config (no eBPF mounts), set `USE_CILIUM_OFFICIAL_CONFIG=1` before running `./scripts/setup-base-cluster.sh`.
+
+**Note:** Cilium may fail with "too many open files" — increase inotify limits on the host if needed.
+
 **What Kind does:**
 - Spins up Kubernetes nodes as Docker containers
 - Gives you a real cluster (API server, scheduler, etc.) on your machine
@@ -109,7 +119,7 @@ This guide explains everything that gets installed, what each piece does, and ho
 - Using Cilium as the **only** CNI avoids conflicts with kindnet and CoreDNS.
 
 **How we install Cilium:**
-- **Helm** installs the Cilium chart into `kube-system`.
+- **Cilium CLI** installs Cilium (no Helm required). Auto-installed to `.tools/cilium` if not in PATH.
 - We preload the image into Kind so it doesn’t need to pull at runtime.
 - Kind-specific settings:
   - `k8sServiceHost=ebpf-cluster-control-plane` — API server hostname
@@ -148,9 +158,8 @@ This guide explains everything that gets installed, what each piece does, and ho
 | 1 | Delete existing `ebpf-cluster` (if any) |
 | 2 | Create Kind cluster from `k8s/kind-config.yaml` |
 | 3 | Pull and load Cilium image into Kind |
-| 4 | Add Cilium Helm repo |
-| 5 | Install Cilium via Helm with Kind + LRP settings |
-| 6 | Wait for Cilium pods and nodes to be Ready |
+| 4 | Ensure Cilium CLI (auto-install to .tools if needed), install Cilium via `cilium install` with Kind + LRP settings |
+| 5 | Wait for Cilium pods and nodes to be Ready |
 
 **After this:** You have a 3-node cluster with Cilium as the CNI. Ready for Component 1 and the rest.
 

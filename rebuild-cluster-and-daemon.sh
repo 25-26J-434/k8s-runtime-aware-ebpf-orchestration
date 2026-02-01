@@ -10,10 +10,10 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Step 1: Base cluster = Kind with default CNI disabled + Cilium (for all 4 components)
-echo "[1/6] Creating base cluster (Kind + Cilium)..."
+# Step 1: Base cluster = Kind with default CNI disabled + Cilium via Cilium CLI (for all 4 components)
+echo "[1/6] Creating base cluster (Kind + Cilium via Cilium CLI)..."
 chmod +x scripts/setup-base-cluster.sh
-./scripts/setup-base-cluster.sh
+PATH="$(pwd)/.tools:$PATH" ./scripts/setup-base-cluster.sh
 echo ""
 
 # Step 2: Rebuild eBPF programs
