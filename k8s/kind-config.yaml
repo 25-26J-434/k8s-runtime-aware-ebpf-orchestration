@@ -40,6 +40,9 @@ nodes:
         containerPath: /sys/fs/bpf
         readOnly: false
 
+# Disable default CNI (kindnet) so Cilium is the only CNI. Avoids conflicts
+# with CoreDNS and enables Cilium for all 4 components (1=daemon, 2=routing, 3=scaling, 4=node-comm).
 networking:
+  disableDefaultCNI: true
   podSubnet: "10.244.0.0/16"
   serviceSubnet: "10.96.0.0/16"

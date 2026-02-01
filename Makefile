@@ -107,10 +107,10 @@ undeploy: ## Remove all deployments
 # 	kind load docker-image $(CPU_STRESS_IMAGE):$(IMAGE_TAG) --name ebpf-cluster
 # 	@echo "Images loaded!"
 
-kind-setup: ## Setup kind cluster
-	@echo "=== Setting up kind cluster ==="
-	kind create cluster --name ebpf-cluster --config=$(K8S_DIR)/kind-config.yaml || true
-	@echo "Kind cluster ready!"
+kind-setup: ## Setup kind cluster (Kind + Cilium, use setup-base-cluster.sh)
+	@echo "=== Setting up base cluster (Kind + Cilium) ==="
+	@echo "Use: PATH=\"\$$(pwd)/.tools:\$$PATH\" $(SCRIPTS_DIR)/setup-base-cluster.sh"
+	@echo "Or full rebuild: ./rebuild-cluster-and-daemon.sh"
 
 kind-load-images: build-images ## Load images into kind
 	@echo "=== Loading images into kind ==="

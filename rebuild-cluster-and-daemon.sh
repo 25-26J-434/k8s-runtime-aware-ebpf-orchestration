@@ -10,59 +10,42 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Step 1: Delete existing cluster if it exists
-echo "[1/6] Checking for existing cluster..."
-if kind get clusters 2>/dev/null | grep -q "^ebpf-cluster$"; then
-    echo "   Deleting existing cluster..."
-    kind delete cluster --name ebpf-cluster
-    echo "   Cluster deleted"
-else
-    echo "   No existing cluster found"
-fi
+# Step 1: Base cluster = Kind with default CNI disabled + Cilium (for all 4 components)
+echo "[1/6] Creating base cluster (Kind + Cilium)..."
+chmod +x scripts/setup-base-cluster.sh
+./scripts/setup-base-cluster.sh
 echo ""
 
-# Step 2: Create new cluster with updated config
-echo "[2/6] Creating new Kind cluster with updated config..."
-kind create cluster --name ebpf-cluster --config k8s/kind-config.yaml
-echo "   Cluster created"
-echo ""
-
-# Wait for cluster to be ready
-echo "[3/6] Waiting for cluster to be ready..."
-kubectl wait --for=condition=Ready nodes --all --timeout=120s
-echo "   Cluster ready"
-echo ""
-
-# Step 3: Rebuild eBPF programs
-echo "[4/6] Rebuilding eBPF programs..."
+# Step 2: Rebuild eBPF programs
+echo "[2/6] Rebuilding eBPF programs..."
 chmod +x scripts/build-ebpf.sh
 ./scripts/build-ebpf.sh
 echo "   eBPF programs rebuilt"
 echo ""
 
-# Step 4: Rebuild Go daemon binary
-echo "[5/6] Rebuilding Go daemon..."
+# Step 3: Rebuild Go daemon binary
+echo "[3/6] Rebuilding Go daemon..."
 cd daemon
 go build -o ebpf-daemon ./cmd/daemon
 cd ..
 echo "   Go daemon rebuilt"
 echo ""
 
-# Step 5: Build Docker image
-echo "[6/6] Building Docker image..."
+# Step 4: Build Docker image
+echo "[4/6] Building Docker image..."
 TIMESTAMP=$(date +%s)
 docker build --build-arg CACHEBUST=$TIMESTAMP -t ebpf-daemon:latest daemon
 echo "   Docker image built"
 echo ""
 
-# Step 6: Load image into kind cluster
-echo "[7/6] Loading image into kind cluster..."
+# Step 5: Load image into kind cluster
+echo "[5/6] Loading image into kind cluster..."
 kind load docker-image ebpf-daemon:latest --name ebpf-cluster
 echo "   Image loaded into cluster"
 echo ""
 
-# Step 7: Deploy daemon
-echo "[8/6] Deploying daemon..."
+# Step 6: Deploy Component 1 daemon
+echo "[6/6] Deploying Component 1 daemon..."
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/daemonset.yaml
 kubectl -n ebpf-telemetry wait --for=condition=ready pod -l app=ebpf-daemon --timeout=120s
@@ -73,7 +56,7 @@ echo "════════════════════════�
 echo "    CLUSTER & DAEMON REBUILD COMPLETE"
 echo "═══════════════════════════════════════════════════════"
 echo ""
-echo "Cluster: ebpf-cluster"
+echo "Cluster: ebpf-cluster (Kind + Cilium, all 4 components)"
 echo "Nodes: $(kubectl get nodes --no-headers | wc -l)"
 echo ""
 echo "Next steps:"
