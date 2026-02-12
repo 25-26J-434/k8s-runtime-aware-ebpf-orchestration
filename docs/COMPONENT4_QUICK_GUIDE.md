@@ -2,10 +2,12 @@
 
 ## Complete Setup in 5 Steps
 
-### 1. Create 3-Node Kind Cluster
+### 1. Create 3-Node Kind Cluster (Kind + Cilium)
 ```bash
-cd /home/kavishka/Documents/k8s-runtime-aware-ebpf-orchestration
-kind create cluster --name ebpf-cluster --config k8s/kind-config.yaml
+cd /path/to/k8s-runtime-aware-ebpf-orchestration
+# Use base cluster script (Kind with default CNI disabled + Cilium)
+PATH="$(pwd)/.tools:$PATH" ./scripts/setup-base-cluster.sh
+# Or full rebuild: ./rebuild-cluster-and-daemon.sh
 
 # Verify all 3 nodes are ready
 kubectl get nodes

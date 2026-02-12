@@ -132,3 +132,7 @@ lerna-debug.log*
 *~
 *.bak
 *.backup
+
+# Cilium binary / tools
+.tools/cilium
+.tools/cilium/**

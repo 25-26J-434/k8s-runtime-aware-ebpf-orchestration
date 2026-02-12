@@ -600,8 +600,10 @@ Component 1 is the foundation of the system and must be deployed first. It provi
 
 **Option 2: Step-by-Step Manual Setup**
 ```bash
-# 1. Create Kind cluster with eBPF support
-kind create cluster --name ebpf-cluster --config k8s/kind-config.yaml
+# 1. Create base cluster (Kind with default CNI disabled + Cilium). Use this for all 4 components.
+./scripts/setup-base-cluster.sh
+# Or: kind create cluster --name ebpf-cluster --config k8s/kind-config.yaml
+#     then install Cilium per Cilium Kind docs (see Component 2 section).
 
 # 2. Build eBPF programs
 make build-ebpf
@@ -691,28 +693,29 @@ curl http://localhost:8080/api/cluster/topology  # Should return cluster structu
 Component 2 requires Component 1 to be running and provides dynamic traffic routing based on telemetry data.
 
 #### Prerequisites
-- Component 1 deployed and running
-- Cilium CNI installed with LocalRedirectPolicy enabled
+- Component 1 deployed and running (or use the same base cluster from `./rebuild-cluster-and-daemon.sh`)
+- **Cilium CNI** with LocalRedirectPolicy: the base cluster already has Cilium installed (see [Base cluster (Kind + Cilium)](#base-cluster-kind--cilium) below). If you created the cluster without `scripts/setup-base-cluster.sh`, install Cilium manually as shown there.
 - Test services deployed for routing experiments
 
-#### Cilium Installation with LocalRedirectPolicy
+#### Base cluster (Kind + Cilium)
+
+One Kind cluster is used for all 4 components. The base cluster is created with **default CNI disabled** and **Cilium** as the only CNI (avoids conflicts between kindnet, CoreDNS, and Cilium). Create it with:
 
 ```bash
-# Install Cilium using Helm with LocalRedirectPolicy enabled
-helm repo add cilium https://helm.cilium.io/
-helm repo update
+./scripts/setup-base-cluster.sh
+```
 
-# Install Cilium with required features
-helm install cilium cilium/cilium \
-  --namespace kube-system \
+This creates the Kind cluster from `k8s/kind-config.yaml` (with `disableDefaultCNI: true`), preloads the Cilium image, and installs Cilium via Cilium CLI with `localRedirectPolicy=true` and Kind-specific `k8sServiceHost=ebpf-cluster-control-plane`. Then deploy Component 1 (and optionally 2, 3, 4) on top.
+
+**Manual Cilium install** (only if you did not use `setup-base-cluster.sh`):
+
+```bash
+# Using Cilium CLI (no Helm required)
+cilium install --version v1.18.6 \
+  --set image.pullPolicy=IfNotPresent --set ipam.mode=kubernetes \
   --set localRedirectPolicy=true \
-  --set k8sServiceHost=kind-control-plane \
-  --set k8sServicePort=6443
-
-# Wait for Cilium to be ready
+  --set k8sServiceHost=ebpf-cluster-control-plane --set k8sServicePort=6443
 kubectl wait --for=condition=ready pod -l k8s-app=cilium -n kube-system --timeout=300s
-
-# Verify LocalRedirectPolicy CRD is available
 kubectl api-resources | grep LocalRedirect
 ```
 
@@ -1102,11 +1105,7 @@ kubectl apply -f k8s/mongo.yaml
 kubectl wait --for=condition=ready pod -l app=mongo -n rules-db --timeout=300s
 ```
 
-**Step 3: Install Cilium for Component 2 (if using)**
-```bash
-helm install cilium cilium/cilium --namespace kube-system \
-  --set localRedirectPolicy=true
-```
+**Step 3: Cilium** — Already installed when using `./rebuild-cluster-and-daemon.sh` (base cluster includes Cilium). If you created the cluster without it, run `./scripts/setup-base-cluster.sh` or install Cilium manually (see Component 2 / Base cluster in the README).
 
 **Step 4: Deploy Component 4**
 ```bash
@@ -1205,14 +1204,12 @@ chmod +x rebuild-cluster-and-daemon.sh
 ```
 
 This script will:
-1. Delete existing cluster (if any)
-2. Create new Kind cluster with eBPF support
-3. Build all eBPF programs (DNS, RTT, TCP, Scheduling, Disk I/O)
-4. Build Go daemon binary
-5. Build Docker image
-6. Load image into Kind cluster
-7. Deploy daemon to Kubernetes
-8. Wait for daemon to be ready
+1. Create **base cluster** (Kind with default CNI disabled + Cilium) for all 4 components
+2. Build all eBPF programs (DNS, RTT, TCP, Scheduling, Disk I/O)
+3. Build Go daemon binary
+4. Build Docker image
+5. Load image into Kind cluster
+6. Deploy Component 1 daemon and wait for ready
 
 **Expected output:**
 ```
@@ -1220,14 +1217,12 @@ This script will:
    REBUILD KIND CLUSTER & DAEMON
 ═══════════════════════════════════════════════════════
 
-[1/6] Checking for existing cluster...
-[2/6] Creating new Kind cluster...
-[3/6] Waiting for cluster to be ready...
-[4/6] Rebuilding eBPF programs...
-[5/6] Rebuilding Go daemon...
-[6/6] Building Docker image...
-[7/6] Loading image into kind cluster...
-[8/6] Deploying daemon...
+[1/6] Creating base cluster (Kind + Cilium)...
+[2/6] Rebuilding eBPF programs...
+[3/6] Rebuilding Go daemon...
+[4/6] Building Docker image...
+[5/6] Loading image into kind cluster...
+[6/6] Deploying Component 1 daemon...
    Daemon deployed and ready
 ```
 
@@ -1327,7 +1322,7 @@ npm install
 npm run dev
 ```
 
-**Dashboard will be available at:** `http://localhost:5000`
+**Dashboard will be available at:** `http://localhost:3000`
 
 ### Step 7: Deploy Node-to-Node Communication (Component 4 - Optional)
 
@@ -1465,7 +1460,7 @@ You should now have:
 **eBPF Daemon**: Collecting DNS latency from kernel  
 **Sample Services**: 3 pods generating DNS traffic  
 **REST API**: Available at `http://localhost:8080`  
-**React Dashboard**: Available at `http://localhost:5000`  
+**React Dashboard**: Available at `http://localhost:3000`
 **P2P Communication** (optional): Node-to-node messaging via Federation tab
 
 **Dashboard Features:**
@@ -1627,7 +1622,7 @@ lsof -i :8080
 
 ```bash
 # Check frontend is running
-lsof -i :5000
+lsof -i :3000
 
 # Check API is accessible
 curl http://localhost:8080/health

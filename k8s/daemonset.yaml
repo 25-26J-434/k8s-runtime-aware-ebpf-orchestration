@@ -57,11 +57,17 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: MONGO_URI
-              value: "mongodb+srv://kernelEye:root@cluster0.n2rdrcb.mongodb.net/?appName=Cluster0"
+              value: "mongodb://mongodb.test-services.svc.cluster.local:27017/component2?directConnection=true"
             - name: MONGO_DB
-              value: "rulesdb"
+              value: "component2"
             - name: MONGO_COLLECTION
               value: "scaling_rules"
+            - name: ROUTING_MONGO_URI
+              value: "mongodb://mongodb.test-services.svc.cluster.local:27017/component2?directConnection=true"
+            - name: ROUTING_MONGO_DB
+              value: "component2"
+            - name: ROUTING_MONGO_COLLECTION
+              value: "policies"
           securityContext:
             privileged: true
             capabilities:
@@ -138,7 +144,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["nodes", "pods", "services", "endpoints", "namespaces"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch", "update"]
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get", "list"]
@@ -151,6 +157,9 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["cilium.io"]
+    resources: ["ciliumlocalredirectpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
