@@ -5,7 +5,6 @@
 ### Create/Recreate Cluster
 ```bash
 # Create 4-node cluster (1 control-plane + 3 workers)
-# Use base cluster (Kind + Cilium): ./scripts/setup-base-cluster.sh
 kind create cluster --name ebpf-cluster --config k8s/kind-config.yaml
 
 # Delete cluster
@@ -368,7 +367,6 @@ kubectl delete pods --field-selector status.phase=Failed,status.phase=Succeeded 
 ### Full Deploy Pipeline
 ```bash
 # 1. Create cluster
-# Use base cluster (Kind + Cilium): ./scripts/setup-base-cluster.sh
 kind create cluster --name ebpf-cluster --config k8s/kind-config.yaml
 
 # 2. Verify nodes

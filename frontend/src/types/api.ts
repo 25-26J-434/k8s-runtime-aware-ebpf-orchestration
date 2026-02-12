@@ -279,60 +279,6 @@ export interface Service {
     ports: string[];
 }
 
-export interface RedirectRulePayload {
-    policy_name: string;
-    namespace: string;
-    // Canonical fields (returned by the API)
-    frontend_service?: string;
-    frontend_service_port?: string | number;
-    monitor_pod_contains?: string;
-    redirect_backend_label?: string;
-    redirect_backend_port?: string | number;
-    redirect_backend_protocol?: string;
-    choose_best_pod?: boolean;
-    backend_candidate_label?: string;
-    redirect_winner_label?: string;
-    // Aliases for user-facing payloads
-    source_service?: string;
-    source_port?: string | number;
-    monitor_selector?: string;
-    target_selector?: string;
-    target_port?: string | number;
-    target_protocol?: string;
-    strategy?: 'all' | 'best_pod';
-    metric: string;
-    violation_threshold: number | string;
-    action: string;
-    ttl_seconds: number | string;
-    notes?: string;
-}
-
-export type RedirectionStatus = 'applied' | 'expired' | 'deleted' | 'skipped' | 'observed';
-
-export interface RedirectionEventPayload {
-    policy_name: string;
-    frontend_service?: string;
-    planned_backend_service?: string;
-    planned_backend_label?: string;
-    planned_backend_port?: string;
-    final_backend_service?: string;
-    final_backend_label?: string;
-    final_backend_port?: string;
-    redirect_backend_label?: string;
-    redirect_backend_port?: string;
-    violation_triggered: boolean;
-    accepted_service?: string;
-    status?: RedirectionStatus;
-    notes?: string;
-    occurred_at?: string;
-}
-
-export interface RedirectionEvent extends RedirectionEventPayload {
-    id?: string;
-    createdAt?: string;
-    updatedAt?: string;
-}
-
 export interface CommStats {
     broadcast: number;
     unicast: number;

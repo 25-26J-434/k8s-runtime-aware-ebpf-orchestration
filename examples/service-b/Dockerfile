@@ -1,14 +1,13 @@
-FROM golang:1.22-alpine AS builder
+FROM python:3.11-slim
 
 WORKDIR /app
-COPY go.mod ./
-COPY main.go ./
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o service-b
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-FROM alpine:3.19
-WORKDIR /app
-COPY --from=builder /app/service-b /usr/local/bin/service-b
+COPY app.py .
 
 EXPOSE 5001
-ENTRYPOINT ["/usr/local/bin/service-b"]
+
+CMD ["gunicorn", "-b", "0.0.0.0:5001", "app:app"]
+

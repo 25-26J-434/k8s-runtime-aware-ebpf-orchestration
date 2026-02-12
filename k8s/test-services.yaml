@@ -37,6 +37,18 @@ spec:
               value: "http://service-b.test-services.svc.cluster.local:5001"
             - name: PORT
               value: "5000"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 3
+            periodSeconds: 5
           resources:
             requests:
               cpu: 50m
@@ -88,6 +100,18 @@ spec:
           env:
             - name: PORT
               value: "5001"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 3
+            periodSeconds: 5
           resources:
             requests:
               cpu: 50m
@@ -139,6 +163,18 @@ spec:
           env:
             - name: PORT
               value: "5003"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5003
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5003
+            initialDelaySeconds: 3
+            periodSeconds: 5
           resources:
             requests:
               cpu: 50m
@@ -219,19 +255,21 @@ spec:
             httpGet:
               path: /health
               port: 5002
-            initialDelaySeconds: 20
+            initialDelaySeconds: 10
             periodSeconds: 30
-            timeoutSeconds: 3
-            failureThreshold: 5
-
           readinessProbe:
             httpGet:
               path: /health
               port: 5002
-            initialDelaySeconds: 10
+            initialDelaySeconds: 5
             periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
 ---
 apiVersion: v1
 kind: Service

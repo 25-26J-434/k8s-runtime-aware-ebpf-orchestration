@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
@@ -71,7 +70,6 @@ func StartServer() {
 	} else {
 		go refreshPodIPMappingPeriodically()
 	}
-	initRoutingBackend()
 
 	initMetricsStreaming()
 
@@ -86,7 +84,6 @@ func StartServer() {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "OK")
 	}))
-	http.HandleFunc("/whoami", corsMiddleware(handleWhoAmI))
 
 	http.HandleFunc("/ready", corsMiddleware(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -133,21 +130,6 @@ func StartServer() {
 	http.HandleFunc("/api/scaling/deployments", corsMiddleware(handleScalingDeployments))
 	http.HandleFunc("/api/scaling/namespaces", corsMiddleware(handleScalingNamespaces))
 	http.HandleFunc("/api/scaling/metrics/latest", corsMiddleware(handleScalingLatestMetrics))
-
-	// Component 2 (routing) endpoints
-	http.HandleFunc("/api/probe/", corsMiddleware(handleProbe))
-	http.HandleFunc("/api/policies", corsMiddleware(handlePolicies))
-	http.HandleFunc("/api/policies/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/evaluate"):
-			handlePolicyEvaluate(w, r)
-		case strings.HasSuffix(r.URL.Path, "/expire"):
-			handlePolicyExpire(w, r)
-		default:
-			handlePolicyByName(w, r)
-		}
-	}))
-	http.HandleFunc("/api/cluster/summary", corsMiddleware(handleClusterSummary))
 
 	// WebSocket endpoints
 	http.HandleFunc("/ws/metrics", corsMiddleware(handleWebSocketMetrics))

@@ -3,26 +3,13 @@ import type {
     ClusterTopology,
     Service,
     UnifiedMetricsResponse,
-    RedirectionEvent,
-    RedirectionEventPayload,
     CommStats,
     CommLogEntry,
 } from '../types/api';
 import type { ScalingRule, LatestMetric, DeploymentInfo } from '../types/scaling';
 
-const API_BASE = '';  // Proxy handles routing
-const ROUTING_API_BASE = (import.meta as any).env?.VITE_ROUTING_API || API_BASE || '';
+export const API_BASE = '';  // Proxy handles routing
 const SCALING_API_BASE = (import.meta as any).env?.VITE_SCALING_API_BASE || API_BASE;
-
-type ApplyResponse = {
-    message: string;
-    stdout?: string;
-    stderr?: string;
-    helper?: string;
-    rule?: string;
-    exitCode?: number;
-    signal?: string;
-};
 
 // Transform unified metrics to expected format
 export function transformUnifiedMetrics(data: UnifiedMetricsResponse): MetricsResponse {
@@ -147,20 +134,6 @@ export const api = {
         return response.json();
     },
 
-    async getServiceAWhoami(): Promise<string> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/probe/service-a`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to fetch service-a whoami: ${response.status} ${response.statusText} - ${text}`);
-        }
-        return response.text();
-    },
-
     async getClusterTopology(): Promise<ClusterTopology> {
         const response = await fetch(`${API_BASE}/api/cluster/topology`, {
             method: 'GET',
@@ -188,19 +161,19 @@ export const api = {
         if (!response.ok) throw new Error('Failed to fetch disk I/O metrics');
         return response.json();
     },
-
+    
     async getDiskIOPods() {
         const response = await fetch(`${API_BASE}/api/disk/pods`);
         if (!response.ok) throw new Error('Failed to fetch disk I/O pod metrics');
         return response.json();
     },
-
+    
     async getDiskIOContainers() {
         const response = await fetch(`${API_BASE}/api/disk/containers`);
         if (!response.ok) throw new Error('Failed to fetch disk I/O container metrics');
         return response.json();
     },
-
+    
     async getPodDNSMetrics() {
         const response = await fetch(`${API_BASE}/api/dns/pods`);
         if (!response.ok) throw new Error('Failed to fetch pod DNS metrics');
@@ -299,228 +272,6 @@ export const api = {
         });
         if (!response.ok) {
             throw new Error(`Failed to fetch scaling rules: ${response.status} ${response.statusText}`);
-        }
-        return response.json();
-    },
-
-    async createRedirectionEvent(payload: RedirectionEventPayload): Promise<RedirectionEvent> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/redirections`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to create redirection event: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async getPolicies(): Promise<any[]> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/policies`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to fetch policies: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async createPolicy(policy: any): Promise<any> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/policies`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(policy),
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to create policy: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async updatePolicy(policyName: string, policy: any): Promise<any> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(policy),
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to update policy: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async deletePolicy(policyName: string): Promise<void> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to delete policy: ${response.status} ${response.statusText} - ${text}`);
-        }
-    },
-
-    async upsertPolicyRule(policyName: string, rule: any): Promise<any> {
-        const response = await fetch(
-            `${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}/rule`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(rule),
-            }
-        );
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to upsert rule: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async applyPolicy(policyName: string): Promise<ApplyResponse> {
-        const response = await fetch(
-            `${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}/evaluate`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to apply policy: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async applyRuleByPolicy(policyName: string): Promise<ApplyResponse> {
-        const response = await fetch(
-            `${ROUTING_API_BASE}/api/rules/by-policy/${encodeURIComponent(policyName)}/apply`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to apply policy: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async getRuleByPolicy(policyName: string): Promise<{ id: string }> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/rules/by-policy/${encodeURIComponent(policyName)}`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch rule: ${response.status} ${response.statusText}`);
-        }
-
-        return response.json();
-    },
-
-    async deleteRule(id: string): Promise<void> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/rules/${encodeURIComponent(id)}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to delete rule: ${response.status} ${response.statusText} - ${text}`);
-        }
-    },
-
-    async createRule(rule: any): Promise<any> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/rules`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(rule),
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to create rule: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async getRedirectionEvents(policyName?: string): Promise<RedirectionEvent[]> {
-        const query = policyName ? `?policy_name=${encodeURIComponent(policyName)}` : '';
-        const response = await fetch(`${ROUTING_API_BASE}/api/redirections${query}`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch redirection events: ${response.status} ${response.statusText}`);
-        }
-
-        return response.json();
-    },
-
-    async getRoutingIdentity(): Promise<string> {
-        const response = await fetch(`${ROUTING_API_BASE}/whoami`);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch routing service identity: ${response.status} ${response.statusText}`);
-        }
-        return response.text();
-    },
-
-    async getClusterSummary(): Promise<any> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/cluster/summary`, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            cache: 'no-store',
-        });
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to fetch cluster summary: ${response.status} ${response.statusText} - ${text}`);
         }
         return response.json();
     },

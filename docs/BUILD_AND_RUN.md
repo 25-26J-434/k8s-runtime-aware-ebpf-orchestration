@@ -38,7 +38,7 @@ make deploy-daemon
 pkill -f "kubectl port-forward.*8080" 2>/dev/null
 
 # Start port-forward (runs in background)
-kubectl port-forward -n ebpf-telemetry svc/ebpf-daemon 8080:8080 > /tmp/port-forward.log 2>&1 &
+kubectl port-forward -n ebpf-telemetry svc/ebpf-daemon-service 8080:8080 > /tmp/port-forward.log 2>&1 &
 
 # Or use Makefile (runs in foreground)
 make port-forward
@@ -81,7 +81,7 @@ sleep 15
 echo "🔌 Setting up port-forward..."
 pkill -f "kubectl port-forward.*8080" 2>/dev/null
 sleep 2
-kubectl port-forward -n ebpf-telemetry svc/ebpf-daemon 8080:8080 > /tmp/port-forward.log 2>&1 &
+kubectl port-forward -n ebpf-telemetry svc/ebpf-daemon-service 8080:8080 > /tmp/port-forward.log 2>&1 &
 
 # 4. Start frontend
 echo "🚀 Starting frontend..."

@@ -1,38 +1,35 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mongodb
-  namespace: test-services
+  name: mongo
+  namespace: rules-db
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mongodb
+      app: mongo
   template:
     metadata:
       labels:
-        app: mongodb
+        app: mongo
     spec:
       containers:
-        - name: mongodb
+        - name: mongo
           image: mongo:7
           ports:
             - containerPort: 27017
-          volumeMounts:
-            - name: mongo-data
-              mountPath: /data/db
-      volumes:
-        - name: mongo-data
-          emptyDir: {}
+          env:
+            - name: MONGO_INITDB_DATABASE
+              value: rulesdb
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: mongodb
-  namespace: test-services
+  name: mongo
+  namespace: rules-db
 spec:
   selector:
-    app: mongodb
+    app: mongo
   ports:
     - name: mongo
       port: 27017

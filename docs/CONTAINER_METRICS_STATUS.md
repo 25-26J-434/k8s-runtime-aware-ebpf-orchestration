@@ -5,7 +5,7 @@
 ### **What's Deployed:**
 
 1. **eBPF Daemon** - Running with container mapper support
-2. **Frontend Dashboard** - Running on http://localhost:3000
+2. **Frontend Dashboard** - Running on http://localhost:5000
 3. **Test Traffic Pods** - 4 deployments actively generating DNS/TCP traffic:
  - `dns-client` (2 replicas, 2 containers each) - Continuous DNS queries
  - `http-client` (1 replica, 3 containers) - HTTP/HTTPS requests
@@ -94,7 +94,7 @@ The container mapper needs to:
 
 ```bash
 # Frontend Dashboard
-http://localhost:3000
+http://localhost:5000
 
 # Backend API
 http://localhost:8080/api/metrics

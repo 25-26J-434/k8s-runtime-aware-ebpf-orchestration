@@ -142,8 +142,8 @@ k8s-runtime-aware-ebpf-orchestration/
 **Purpose**: Rebuild just the daemon
 **Commit**: Yes
 
-#### `setup-base-cluster.sh`
-**Purpose**: Sets up Kind cluster with default CNI disabled and Cilium as the only CNI (for all 4 components)
+#### `setup-kind-cluster.sh`
+**Purpose**: Sets up Kind Kubernetes cluster
 **Commit**: Yes
 
 ---
@@ -408,10 +408,9 @@ Each has:
  docker build -t ebpf-daemon:latest daemon/
  ```
 
-6. **Setup Kind cluster (Kind + Cilium)**
+6. **Setup Kind cluster**
  ```bash
- PATH="$(pwd)/.tools:$PATH" ./scripts/setup-base-cluster.sh
- # Or full rebuild: ./rebuild-cluster-and-daemon.sh
+ ./setup-kind-cluster.sh
  ```
 
 7. **Load image and deploy**

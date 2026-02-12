@@ -13,10 +13,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-var (
-	k8sClient   *kubernetes.Clientset
-	k8sRestConf *rest.Config
-)
+var k8sClient *kubernetes.Clientset
 
 // InitKubernetesClient initializes the Kubernetes client
 func InitKubernetesClient() error {
@@ -40,7 +37,6 @@ func InitKubernetesClient() error {
 		}
 	}
 
-	k8sRestConf = config
 	k8sClient, err = kubernetes.NewForConfig(config)
 	if err != nil {
 		log.Printf("[K8s] Failed to create Kubernetes clientset: %v", err)
@@ -54,11 +50,6 @@ func InitKubernetesClient() error {
 // GetK8sClient returns the Kubernetes client for use by other packages
 func GetK8sClient() *kubernetes.Clientset {
 	return k8sClient
-}
-
-// GetRestConfig exposes the REST config so other packages can build dynamic clients.
-func GetRestConfig() *rest.Config {
-	return k8sRestConf
 }
 
 // ClusterTopology represents the cluster structure
