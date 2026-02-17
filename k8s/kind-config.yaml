@@ -8,6 +8,7 @@ name: ebpf-cluster
 
 nodes:
   - role: control-plane
+    image: kindest/node:v1.33.2
     extraPortMappings:
       - containerPort: 30000
         hostPort: 30000
@@ -18,31 +19,33 @@ nodes:
       - containerPort: 30080
         hostPort: 8081
         protocol: TCP
-    extraMounts:
-      - hostPath: /lib/modules
-        containerPath: /lib/modules
-        readOnly: true
-      - hostPath: /sys/fs/bpf
-        containerPath: /sys/fs/bpf
-        readOnly: false
+#    extraMounts:
+#      - hostPath: /lib/modules
+#        containerPath: /lib/modules
+#        readOnly: true
+#      - hostPath: /sys/fs/bpf
+#        containerPath: /sys/fs/bpf
+#        readOnly: false
 
   - role: worker
-    extraMounts:
-      - hostPath: /lib/modules
-        containerPath: /lib/modules
-        readOnly: true
-      - hostPath: /sys/fs/bpf
-        containerPath: /sys/fs/bpf
-        readOnly: false
+    image: kindest/node:v1.33.2
+#    extraMounts:
+#      - hostPath: /lib/modules
+#        containerPath: /lib/modules
+#        readOnly: true
+#      - hostPath: /sys/fs/bpf
+#        containerPath: /sys/fs/bpf
+#        readOnly: false
 
   - role: worker
-    extraMounts:
-      - hostPath: /lib/modules
-        containerPath: /lib/modules
-        readOnly: true
-      - hostPath: /sys/fs/bpf
-        containerPath: /sys/fs/bpf
-        readOnly: false
+    image: kindest/node:v1.33.2
+#    extraMounts:
+#      - hostPath: /lib/modules
+#        containerPath: /lib/modules
+#        readOnly: true
+#      - hostPath: /sys/fs/bpf
+#        containerPath: /sys/fs/bpf
+#        readOnly: false
 
 # Disable default CNI (kindnet) so Cilium is the only CNI. Avoids conflicts
 # with CoreDNS and enables Cilium for all 4 components (1=daemon, 2=routing, 3=scaling, 4=node-comm).
