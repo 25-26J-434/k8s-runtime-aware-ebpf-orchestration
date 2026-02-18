@@ -14,9 +14,17 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 K8S_DIR="${ROOT_DIR}/k8s"
 TOOLS_DIR="${ROOT_DIR}/.tools"
 CLUSTER_NAME="ebpf-cluster"
+KIND_CONFIG="${K8S_DIR}/kind-config.yaml"
 
 # Cilium version to match Kind/Cilium docs; LocalRedirectPolicy supported
 CILIUM_VERSION="${CILIUM_VERSION:-1.18.6}"
+# Default platform for images we preload into Kind (override with CILIUM_IMAGE_PLATFORM)
+CILIUM_PLATFORM_ARCH="amd64"
+[ "$(uname -m)" = "aarch64" ] || [ "$(uname -m)" = "arm64" ] && CILIUM_PLATFORM_ARCH="arm64"
+CILIUM_IMAGE_PLATFORM="${CILIUM_IMAGE_PLATFORM:-linux/${CILIUM_PLATFORM_ARCH}}"
+CILIUM_IMAGE="quay.io/cilium/cilium:v${CILIUM_VERSION}"
+# Allow skipping preloading (Cilium CLI will pull images if needed)
+PRELOAD_CILIUM_IMAGE="${PRELOAD_CILIUM_IMAGE:-1}"
 
 # Ensure Cilium CLI is available (check PATH and .tools)
 ensure_cilium_cli() {
@@ -48,10 +56,6 @@ ensure_cilium_cli() {
     export PATH="${TOOLS_DIR}:${PATH}"
 }
 
-# Use Cilium's official kind-config from their repo (per Cilium docs), or our merged config.
-# Set USE_CILIUM_OFFICIAL_CONFIG=1 to use Cilium's vanilla config (no eBPF mounts; Component 1 won't work).
-USE_CILIUM_OFFICIAL="${USE_CILIUM_OFFICIAL_CONFIG:-0}"
-
 echo "═══════════════════════════════════════════════════════"
 echo "   BASE CLUSTER: Kind + Cilium (all 4 components)"
 echo "═══════════════════════════════════════════════════════"
@@ -72,13 +76,9 @@ echo ""
 
 # 2. Create Kind cluster (Cilium's kind-config: disableDefaultCNI=true)
 echo "[2/6] Creating Kind cluster..."
-if [ "$USE_CILIUM_OFFICIAL" = "1" ]; then
-    KIND_CONFIG_SRC="https://raw.githubusercontent.com/cilium/cilium/${CILIUM_VERSION}/Documentation/installation/kind-config.yaml"
-    KIND_CONFIG="${ROOT_DIR}/kind-config.yaml"
-    echo "   Fetching Cilium's official kind-config (per Cilium docs)..."
-    curl -fsSL -o "$KIND_CONFIG" "$KIND_CONFIG_SRC"
-else
-    KIND_CONFIG="${K8S_DIR}/kind-config.yaml"
+if [ ! -f "$KIND_CONFIG" ]; then
+    echo "   Error: Kind config not found at $KIND_CONFIG"
+    exit 1
 fi
 echo "   Using config: $KIND_CONFIG"
 kind create cluster --name "$CLUSTER_NAME" --config "$KIND_CONFIG"
@@ -86,11 +86,36 @@ echo "   Cluster created (nodes will be NotReady until Cilium is installed)"
 echo ""
 
 # 3. Preload Cilium image into Kind (per Cilium Kind installation docs)
-echo "[3/6] Preloading Cilium image into Kind..."
-docker pull "quay.io/cilium/cilium:v${CILIUM_VERSION}" || true
-kind load docker-image "quay.io/cilium/cilium:v${CILIUM_VERSION}" --name "$CLUSTER_NAME"
-echo "   Cilium image loaded"
-echo ""
+if [ "${PRELOAD_CILIUM_IMAGE}" = "1" ]; then
+    echo "[3/6] Preloading Cilium image into Kind..."
+    docker pull --platform="${CILIUM_IMAGE_PLATFORM}" "${CILIUM_IMAGE}" || true
+    PRELOAD_OK=0
+    if kind load docker-image "${CILIUM_IMAGE}" --name "$CLUSTER_NAME"; then
+        PRELOAD_OK=1
+    else
+        echo "   kind load failed; retrying via image-archive to avoid multi-arch digest issues (platform: ${CILIUM_IMAGE_PLATFORM})..."
+        TMP_CILIUM_TAR="$(mktemp "/tmp/cilium-${CILIUM_VERSION}-XXXX.tar")"
+        if docker save "${CILIUM_IMAGE}" -o "${TMP_CILIUM_TAR}"; then
+            if kind load image-archive "${TMP_CILIUM_TAR}" --name "$CLUSTER_NAME"; then
+                PRELOAD_OK=1
+            else
+                echo "   WARN: kind load image-archive failed (will let Cilium CLI pull images)"
+            fi
+        else
+            echo "   WARN: docker save failed; skipping preload (Cilium CLI will pull images)"
+        fi
+        rm -f "${TMP_CILIUM_TAR}"
+    fi
+    if [ "${PRELOAD_OK}" = "1" ]; then
+        echo "   Cilium image loaded"
+    else
+        echo "   Continuing without preloading Cilium image"
+    fi
+    echo ""
+else
+    echo "[3/6] Skipping preload (PRELOAD_CILIUM_IMAGE=${PRELOAD_CILIUM_IMAGE})"
+    echo ""
+fi
 
 # 4. Ensure Cilium CLI and install Cilium (no Helm required)
 echo "[4/6] Installing Cilium via Cilium CLI (Kind + LocalRedirectPolicy for Component 2)..."
