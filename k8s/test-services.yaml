@@ -33,6 +33,8 @@ spec:
           ports:
             - containerPort: 5000
           env:
+            - name: MONGO_URI
+              value: "mongodb://mongo.mongo.svc.cluster.local:27017/?replicaSet=rs0"
             - name: SERVICE_B_URL
               value: "http://service-b.test-services.svc.cluster.local:5001"
             - name: PORT
@@ -86,6 +88,8 @@ spec:
           ports:
             - containerPort: 5001
           env:
+            - name: MONGO_URI
+              value: "mongodb://mongo.mongo.svc.cluster.local:27017/?replicaSet=rs0"
             - name: PORT
               value: "5001"
           resources:
@@ -137,6 +141,8 @@ spec:
           ports:
             - containerPort: 5003
           env:
+            - name: MONGO_URI
+              value: "mongodb://mongo.mongo.svc.cluster.local:27017/?replicaSet=rs0"
             - name: PORT
               value: "5003"
           resources:
@@ -215,6 +221,9 @@ spec:
           imagePullPolicy: Never
           ports:
             - containerPort: 5002
+          env:
+            - name: MONGO_URI
+              value: "mongodb://mongo.mongo.svc.cluster.local:27017/?replicaSet=rs0"
           livenessProbe:
             httpGet:
               path: /health
