@@ -26,7 +26,7 @@ spec:
             - name: SERVICE_A_WHOAMI_URL
               value: "http://service-a.test-services.svc.cluster.local:5000/whoami"
             - name: MONGODB_URI
-              value: "mongodb://mongodb.test-services.svc.cluster.local:27017/component2?directConnection=true"
+              value: "mongodb://mongo.mongo.svc.cluster.local:27017/component2?replicaSet=rs0"
             - name: SERVICE_NAME
               value: "component2-backend"
 
