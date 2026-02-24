@@ -57,17 +57,17 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: MONGO_URI
-              value: "mongodb://mongodb.test-services.svc.cluster.local:27017/component2?directConnection=true"
+              value: "mongodb://mongo.mongo.svc.cluster.local:27017/kerneleye?replicaSet=rs0"
             - name: MONGO_DB
-              value: "component2"
+              value: "kerneleye"
             - name: MONGO_COLLECTION
               value: "scaling_rules"
             - name: ROUTING_MONGO_URI
-              value: "mongodb://mongodb.test-services.svc.cluster.local:27017/component2?directConnection=true"
+              value: "mongodb://mongo.mongo.svc.cluster.local:27017/kerneleye?replicaSet=rs0"
             - name: ROUTING_MONGO_DB
-              value: "component2"
+              value: "kerneleye"
             - name: ROUTING_MONGO_COLLECTION
-              value: "policies"
+              value: "routing_policies"
           securityContext:
             privileged: true
             capabilities:
