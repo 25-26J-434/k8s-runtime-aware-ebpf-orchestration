@@ -170,7 +170,10 @@ metadata:
   name: traffic-generator
   namespace: test-services
 spec:
+  concurrencyPolicy: Forbid
   schedule: "*/1 * * * *"  # Every minute
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
       template:
@@ -183,7 +186,7 @@ spec:
                 - -c
                 - |
                   echo "Generating DNS and HTTP traffic..."
-                  for i in $(seq 1 10); do
+                  for i in $(seq 1 60); do
                     curl -s http://service-a.test-services.svc.cluster.local:5000/dns-test
                     curl -s http://service-a.test-services.svc.cluster.local:5000/call-service-b
                     sleep 1
