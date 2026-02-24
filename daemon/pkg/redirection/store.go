@@ -27,11 +27,11 @@ func InitStore(ctx context.Context) (*Store, error) {
 	uri := firstNonEmpty(
 		os.Getenv("ROUTING_MONGO_URI"),
 		os.Getenv("MONGODB_URI"),
-		"mongodb://mongodb.test-services.svc.cluster.local:27017/component2?directConnection=true",
+		"mongodb://mongo.mongo.svc.cluster.local:27017/kerneleye?replicaSet=rs0",
 	)
 
-	dbName := firstNonEmpty(os.Getenv("ROUTING_MONGO_DB"), "component2")
-	collName := firstNonEmpty(os.Getenv("ROUTING_MONGO_COLLECTION"), "policies")
+	dbName := firstNonEmpty(os.Getenv("ROUTING_MONGO_DB"), "kerneleye")
+	collName := firstNonEmpty(os.Getenv("ROUTING_MONGO_COLLECTION"), "routing_policies")
 
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
 	if err != nil {

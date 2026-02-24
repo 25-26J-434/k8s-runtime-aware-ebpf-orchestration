@@ -30,12 +30,12 @@ func InitMongo() error {
 	initOnce.Do(func() {
 		uri := os.Getenv("MONGO_URI")
 		if uri == "" {
-			uri = "mongodb://mongo.rules-db.svc.cluster.local:27017"
+			uri = "mongodb://mongo.mongo.svc.cluster.local:27017/kerneleye?replicaSet=rs0"
 		}
 
 		dbName := os.Getenv("MONGO_DB")
 		if dbName == "" {
-			dbName = "rulesdb"
+			dbName = "kerneleye"
 		}
 
 		colName := os.Getenv("MONGO_COLLECTION")

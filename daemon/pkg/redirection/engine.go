@@ -294,7 +294,6 @@ func (e *Engine) applyRedirect(ctx context.Context, p *Policy, avgValue float64)
 						},
 					},
 				},
-				"loadBalancerMode": "localized",
 			},
 		},
 	}
