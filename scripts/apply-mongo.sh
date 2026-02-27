@@ -10,7 +10,11 @@ kubectl -n mongo wait --for=condition=ready pod -l app.kubernetes.io/name=mongo 
 
 echo "[mongo] Initiating replica set (rs0) if needed..."
 kubectl -n mongo exec -it mongo-0 -- mongosh --eval '
-if (rs.status().ok !== 1) {
+try {
+  printjson(rs.status())
+  print("rs0 already initialized")
+} catch (e) {
+  print("Initializing rs0...")
   rs.initiate({
     _id: "rs0",
     members: [
@@ -19,8 +23,6 @@ if (rs.status().ok !== 1) {
       { _id: 2, host: "mongo-2.mongo.mongo.svc.cluster.local:27017" }
     ]
   })
-} else {
-  print("rs0 already initialized")
 }
 '
 
