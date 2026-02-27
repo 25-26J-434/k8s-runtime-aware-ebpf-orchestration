@@ -67,7 +67,7 @@ func AttachDNATCgroup() error {
 
 	lnk, err := link.AttachCgroup(link.CgroupOptions{
 		Path:    cgroupPath,
-		Attach:  ebpf.AttachCGroupConnect4,
+		Attach:  ebpf.AttachCGroupInet4Connect,
 		Program: prog,
 	})
 	if err != nil {
