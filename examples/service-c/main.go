@@ -60,9 +60,8 @@ func main() {
 	})
 
 	mux.HandleFunc("/whoami", func(w http.ResponseWriter, r *http.Request) {
-	    hostname, err := os.Hostname()
 		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprintf(w, "Hi, I am service C (pod=%s)\n", host)
+		fmt.Fprintf(w, "Hi, I am service C ")
 	})
 
 	server := &http.Server{
