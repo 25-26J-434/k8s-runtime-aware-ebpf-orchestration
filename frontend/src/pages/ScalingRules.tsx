@@ -369,8 +369,8 @@ export function ScalingRules() {
             </div>
 
             {showForm && (
-                <div className="modal">
-                    <div className="modal-card">
+                <div className="scaling-modal">
+                    <div className="scaling-modal-card">
                         <h2>{editingRule ? 'Edit Rule' : 'Create Rule'}</h2>
                         <ScalingRuleForm
                             initial={editingRule ?? undefined}

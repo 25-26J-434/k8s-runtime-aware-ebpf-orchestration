@@ -1054,8 +1054,22 @@
 
 .error { color: #ffb4b4; background: rgba(255, 0, 0, 0.04); padding: 0.6rem; border-radius: 8px; grid-column: 1 / -1; }
 
-.modal {
-  position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.6);
+.scaling-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 70;
 }
 
-.modal-card { background: rgba(10,14,39,0.9); padding: 1.2rem; border-radius: 12px; width: min(1100px, calc(100% - 40px)); max-height: calc(100vh - 80px); overflow-y: auto; }
+.scaling-modal-card {
+  background: rgba(10, 14, 39, 0.9);
+  padding: 1.2rem;
+  border-radius: 12px;
+  width: min(1100px, calc(100% - 40px));
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  box-shadow: 0 24px 60px rgba(3, 7, 18, 0.6);
+}
