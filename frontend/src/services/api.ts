@@ -291,8 +291,9 @@ export const api = {
         return response.json();
     },
 
-    async getScalingRules(): Promise<ScalingRule[]> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling/rules`, {
+    async getScalingRules(node?: string): Promise<ScalingRule[]> {
+        const query = node ? `?node=${encodeURIComponent(node)}` : '';
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/rules${query}`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' },
             cache: 'no-cache',
@@ -303,230 +304,9 @@ export const api = {
         return response.json();
     },
 
-    async createRedirectionEvent(payload: RedirectionEventPayload): Promise<RedirectionEvent> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/redirections`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to create redirection event: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async getPolicies(): Promise<any[]> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/policies`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to fetch policies: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async createPolicy(policy: any): Promise<any> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/policies`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(policy),
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to create policy: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async updatePolicy(policyName: string, policy: any): Promise<any> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(policy),
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to update policy: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async deletePolicy(policyName: string): Promise<void> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to delete policy: ${response.status} ${response.statusText} - ${text}`);
-        }
-    },
-
-    async upsertPolicyRule(policyName: string, rule: any): Promise<any> {
-        const response = await fetch(
-            `${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}/rule`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(rule),
-            }
-        );
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to upsert rule: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async applyPolicy(policyName: string): Promise<ApplyResponse> {
-        const response = await fetch(
-            `${ROUTING_API_BASE}/api/policies/${encodeURIComponent(policyName)}/evaluate`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to apply policy: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async applyRuleByPolicy(policyName: string): Promise<ApplyResponse> {
-        const response = await fetch(
-            `${ROUTING_API_BASE}/api/rules/by-policy/${encodeURIComponent(policyName)}/apply`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to apply policy: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async getRuleByPolicy(policyName: string): Promise<{ id: string }> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/rules/by-policy/${encodeURIComponent(policyName)}`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch rule: ${response.status} ${response.statusText}`);
-        }
-
-        return response.json();
-    },
-
-    async deleteRule(id: string): Promise<void> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/rules/${encodeURIComponent(id)}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to delete rule: ${response.status} ${response.statusText} - ${text}`);
-        }
-    },
-
-    async createRule(rule: any): Promise<any> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/rules`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(rule),
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to create rule: ${response.status} ${response.statusText} - ${text}`);
-        }
-
-        return response.json();
-    },
-
-    async getRedirectionEvents(policyName?: string): Promise<RedirectionEvent[]> {
-        const query = policyName ? `?policy_name=${encodeURIComponent(policyName)}` : '';
-        const response = await fetch(`${ROUTING_API_BASE}/api/redirections${query}`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch redirection events: ${response.status} ${response.statusText}`);
-        }
-
-        return response.json();
-    },
-
-    async getRoutingIdentity(): Promise<string> {
-        const response = await fetch(`${ROUTING_API_BASE}/whoami`);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch routing service identity: ${response.status} ${response.statusText}`);
-        }
-        return response.text();
-    },
-
-    async getClusterSummary(): Promise<any> {
-        const response = await fetch(`${ROUTING_API_BASE}/api/cluster/summary`, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            cache: 'no-store',
-        });
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(`Failed to fetch cluster summary: ${response.status} ${response.statusText} - ${text}`);
-        }
-        return response.json();
-    },
-
-    async getNamespaces(): Promise<string[]> {
-        const response = await fetch(`${SCALING_API_BASE}/api/scaling/namespaces`, {
+    async getNamespaces(node?: string): Promise<string[]> {
+        const query = node ? `?node=${encodeURIComponent(node)}` : '';
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/namespaces${query}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -593,8 +373,11 @@ export const api = {
         }
     },
 
-    async getDeployments(namespace?: string): Promise<DeploymentInfo[]> {
-        const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : '';
+    async getDeployments(namespace?: string, node?: string): Promise<DeploymentInfo[]> {
+        const params = new URLSearchParams();
+        if (namespace) params.set('namespace', namespace);
+        if (node) params.set('node', node);
+        const query = params.toString() ? `?${params.toString()}` : '';
         const response = await fetch(`${SCALING_API_BASE}/api/scaling/deployments${query}`, {
             method: 'GET',
             headers: {
@@ -608,8 +391,9 @@ export const api = {
         return response.json();
     },
 
-    async getLatestMetrics(): Promise<LatestMetric[]> {
-        const response = await fetch(`${API_BASE}/api/scaling/metrics/latest`, {
+    async getLatestMetrics(node?: string): Promise<LatestMetric[]> {
+        const query = node ? `?node=${encodeURIComponent(node)}` : '';
+        const response = await fetch(`${API_BASE}/api/scaling/metrics/latest${query}`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',

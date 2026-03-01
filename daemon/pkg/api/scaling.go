@@ -41,7 +41,31 @@ func handleScalingRules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, rules)
+		nodeQuery := r.URL.Query().Get("node")
+		if nodeQuery == "" {
+			writeJSON(w, rules)
+			return
+		}
+		if k8sClient == nil {
+			http.Error(w, "Kubernetes client not initialized", http.StatusServiceUnavailable)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
+		defer cancel()
+		nodeName, err := resolveNodeName(ctx, nodeQuery)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		filtered := make([]scaling.ScalingRule, 0, len(rules))
+		for _, rule := range rules {
+			ok, err := deploymentHasPodsOnNode(ctx, rule.Namespace, rule.Deployment, nodeName)
+			if err != nil || !ok {
+				continue
+			}
+			filtered = append(filtered, rule)
+		}
+		writeJSON(w, filtered)
 	case http.MethodPost:
 		var rule scaling.ScalingRule
 		if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
@@ -148,10 +172,20 @@ func handleScalingDeployments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()
 
 	namespace := r.URL.Query().Get("namespace")
+	nodeQuery := r.URL.Query().Get("node")
+	nodeName := ""
+	if nodeQuery != "" {
+		resolved, err := resolveNodeName(ctx, nodeQuery)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		nodeName = resolved
+	}
 	deps, err := k8sClient.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -160,6 +194,19 @@ func handleScalingDeployments(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]DeploymentInfo, 0, len(deps.Items))
 	for _, dep := range deps.Items {
+		if nodeName != "" {
+			if len(dep.Spec.Selector.MatchLabels) == 0 {
+				continue
+			}
+			selector := labels.SelectorFromSet(dep.Spec.Selector.MatchLabels).String()
+			pods, err := k8sClient.CoreV1().Pods(dep.Namespace).List(ctx, metav1.ListOptions{
+				LabelSelector: selector,
+				FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName),
+			})
+			if err != nil || len(pods.Items) == 0 {
+				continue
+			}
+		}
 		replicas := int32(0)
 		if dep.Spec.Replicas != nil {
 			replicas = *dep.Spec.Replicas
@@ -185,8 +232,38 @@ func handleScalingNamespaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()
+
+	nodeQuery := r.URL.Query().Get("node")
+	if nodeQuery != "" {
+		nodeName, err := resolveNodeName(ctx, nodeQuery)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		pods, err := k8sClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName),
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		nsSet := make(map[string]struct{})
+		for _, pod := range pods.Items {
+			if pod.Namespace == "" {
+				continue
+			}
+			nsSet[pod.Namespace] = struct{}{}
+		}
+		out := make([]string, 0, len(nsSet))
+		for ns := range nsSet {
+			out = append(out, ns)
+		}
+		sort.Strings(out)
+		writeJSON(w, out)
+		return
+	}
 
 	namespaces, err := k8sClient.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -203,6 +280,49 @@ func handleScalingNamespaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+func resolveNodeName(ctx context.Context, nodeQuery string) (string, error) {
+	if nodeQuery == "" {
+		return "", nil
+	}
+	nodes, err := k8sClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to list nodes: %w", err)
+	}
+	for _, node := range nodes.Items {
+		if node.Name == nodeQuery {
+			return node.Name, nil
+		}
+		for _, addr := range node.Status.Addresses {
+			if addr.Address == nodeQuery {
+				return node.Name, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("node not found: %s", nodeQuery)
+}
+
+func deploymentHasPodsOnNode(ctx context.Context, namespace, name, nodeName string) (bool, error) {
+	if nodeName == "" {
+		return true, nil
+	}
+	dep, err := k8sClient.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	if len(dep.Spec.Selector.MatchLabels) == 0 {
+		return false, nil
+	}
+	selector := labels.SelectorFromSet(dep.Spec.Selector.MatchLabels).String()
+	pods, err := k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: selector,
+		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName),
+	})
+	if err != nil {
+		return false, err
+	}
+	return len(pods.Items) > 0, nil
+}
+
 func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -215,6 +335,17 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()
+
+	nodeQuery := r.URL.Query().Get("node")
+	nodeName := ""
+	if nodeQuery != "" {
+		resolved, err := resolveNodeName(ctx, nodeQuery)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		nodeName = resolved
+	}
 
 	deps, err := k8sClient.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -235,10 +366,15 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 		}
 
 		selector := labels.SelectorFromSet(dep.Spec.Selector.MatchLabels).String()
-		pods, err := k8sClient.CoreV1().Pods(dep.Namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: selector,
-		})
+		listOptions := metav1.ListOptions{LabelSelector: selector}
+		if nodeName != "" {
+			listOptions.FieldSelector = fmt.Sprintf("spec.nodeName=%s", nodeName)
+		}
+		pods, err := k8sClient.CoreV1().Pods(dep.Namespace).List(ctx, listOptions)
 		if err != nil {
+			continue
+		}
+		if nodeName != "" && len(pods.Items) == 0 {
 			continue
 		}
 
