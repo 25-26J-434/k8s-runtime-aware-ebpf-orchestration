@@ -160,12 +160,20 @@ export function Routing() {
         return actionObj.ttl_seconds || policy.ttl_seconds || '—';
     };
 
-    const isExpiredPolicy = (policy: PolicyRecord) => {
+    const policyStatusLabel = (policy: PolicyRecord) => {
         const status = (policy as any).status || {};
         const lastDecision = status.last_decision || status.lastDecision || (policy as any).last_decision || (policy as any).lastDecision;
         const lastExpired =
             status.last_expired_at || status.lastExpiredAt || (policy as any).last_expired_at || (policy as any).lastExpiredAt;
-        return String(lastDecision || '').toUpperCase() === 'EXPIRED' || !!lastExpired;
+        const lastApplied =
+            status.last_applied_at || status.lastAppliedAt || (policy as any).last_applied_at || (policy as any).lastAppliedAt;
+        if (String(lastDecision || '').toUpperCase() === 'EXPIRED' || !!lastExpired) {
+            return 'expired';
+        }
+        if (String(lastDecision || '').toUpperCase() === 'APPLIED' || !!lastApplied) {
+            return 'active';
+        }
+        return 'unknown';
     };
 
     const hydrateEditForm = (policy: PolicyRecord) => {
@@ -519,19 +527,6 @@ export function Routing() {
         );
     };
 
-    const { activePolicies, expiredPolicies } = useMemo(() => {
-        const active: PolicyRecord[] = [];
-        const expired: PolicyRecord[] = [];
-        policies.forEach((policy) => {
-            if (isExpiredPolicy(policy)) {
-                expired.push(policy);
-            } else {
-                active.push(policy);
-            }
-        });
-        return { activePolicies: active, expiredPolicies: expired };
-    }, [policies]);
-
     const renderPolicyTable = (list: PolicyRecord[], showLoadingRow: boolean, emptyLabel: string) => {
         return (
             <div className="policy-table-wrapper">
@@ -542,6 +537,7 @@ export function Routing() {
                             <th>Traffic Entry Serivce</th>
                             <th>Target Service</th>
                             <th>Scope</th>
+                            <th>Status</th>
                             <th>Action</th>
                             <th>Metric</th>
                             <th>Threshold</th>
@@ -554,14 +550,14 @@ export function Routing() {
                     <tbody>
                         {showLoadingRow && (
                             <tr>
-                                <td colSpan={11} className="table-loading">
+                                <td colSpan={12} className="table-loading">
                                     Loading…
                                 </td>
                             </tr>
                         )}
                         {!showLoadingRow && list.length === 0 && (
                             <tr>
-                                <td colSpan={11} className="table-loading">
+                                <td colSpan={12} className="table-loading">
                                     {emptyLabel}
                                 </td>
                             </tr>
@@ -570,6 +566,7 @@ export function Routing() {
                             list.map((policy) => {
                                 const source = resolveFrontend(policy);
                                 const target = resolveTarget(policy);
+                                const status = policyStatusLabel(policy);
 
                                 return (
                                     <tr key={policy.id || policy.policy_name}>
@@ -579,6 +576,9 @@ export function Routing() {
                                         <td>{source || '—'}</td>
                                         <td>{target || '—'}</td>
                                         <td>{policy.scope || 'local'}</td>
+                                        <td>
+                                            <span className={`status-pill ${status}`}>{status}</span>
+                                        </td>
                                         <td>{formatAction(policy.action)}</td>
                                         <td>{resolveMetric(policy)}</td>
                                         <td>{resolveThreshold(policy)}</td>
@@ -708,21 +708,7 @@ export function Routing() {
                     </div>
                 )}
 
-                <div className="policy-section">
-                    <div className="section-header">
-                        <div className="section-title">Active Policies</div>
-                        <div className="section-meta">{activePolicies.length} active</div>
-                    </div>
-                    {renderPolicyTable(activePolicies, loading, 'No active policies.')}
-                </div>
-
-                <div className="policy-section">
-                    <div className="section-header">
-                        <div className="section-title">Expired Policies</div>
-                        <div className="section-meta">{expiredPolicies.length} expired</div>
-                    </div>
-                    {renderPolicyTable(expiredPolicies, false, 'No expired policies.')}
-                </div>
+                {renderPolicyTable(policies, loading, 'No policies found.')}
             </div>
 
             {drawerOpen && <div className="drawer-overlay" onClick={() => setDrawerOpen(false)} />}
