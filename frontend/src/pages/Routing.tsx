@@ -167,12 +167,15 @@ export function Routing() {
             status.last_expired_at || status.lastExpiredAt || (policy as any).last_expired_at || (policy as any).lastExpiredAt;
         const lastApplied =
             status.last_applied_at || status.lastAppliedAt || (policy as any).last_applied_at || (policy as any).lastAppliedAt;
+        const appliedAt = lastApplied ? new Date(lastApplied).getTime() : 0;
+        const expiredAt = lastExpired ? new Date(lastExpired).getTime() : 0;
+        if (appliedAt > 0 && appliedAt >= expiredAt) {
+            return 'active';
+        }
         if (String(lastDecision || '').toUpperCase() === 'EXPIRED' || !!lastExpired) {
             return 'expired';
         }
-        if (String(lastDecision || '').toUpperCase() === 'APPLIED' || !!lastApplied) {
-            return 'active';
-        }
+        if (String(lastDecision || '').toUpperCase() === 'APPLIED' || !!lastApplied) return 'active';
         return 'unknown';
     };
 
