@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, type ExtensionInfo, type ExtensionInput } from '../services/api';
 import type { UnifiedMetricsResponse } from '../types/api';
-import { FiSave, FiPlusCircle, FiEdit2, FiTrash2, FiChevronRight, FiActivity } from 'react-icons/fi';
+import { FiSave, FiPlusCircle, FiEdit2, FiTrash2, FiChevronRight, FiActivity, FiBell, FiSend, FiSliders } from 'react-icons/fi';
 
 export type WebhookRow = { id: string; type: 'teams' | 'discord' | 'slack'; url: string; enabled: boolean };
 export type ThresholdRow = { id: string; metric_type: string; level: string; threshold_value: number; node_name?: string };
@@ -37,7 +37,7 @@ function NotificationWebhooksTable({
             <tbody>
                 {webhooks.map((w) => (
                     <tr key={w.id}>
-                        <td>{typeLabel(w.type)}</td>
+                        <td><span className={`ext-webhook-pill ext-webhook-pill-${w.type}`}>{typeLabel(w.type)}</span></td>
                         <td>
                             {w.url?.startsWith('http') ? (
                                 <a href={w.url} target="_blank" rel="noopener noreferrer" className="extensions-saved-link">{w.url.length > 48 ? w.url.slice(0, 48) + '…' : w.url}</a>
@@ -354,17 +354,21 @@ export function Extensions() {
                         {hasConfigEndpoint && ext.inputs && ext.inputs.length > 0 ? (
                                             hasConfigEndpoint ? (
                                                 <>
-                                                    <div className="ext-notif-global">
-                                                        <label className="ext-notif-checkbox">
-                                                            <input type="checkbox" checked={config.enabled !== false} onChange={(e) => updateConfig('enabled', e.target.checked)} />
-                                                            <span>Enable notifications</span>
-                                                        </label>
-                                                        <div className="extensions-form-row ext-notif-interval">
-                                                            <label>Check interval (seconds)</label>
-                                                            <input type="number" min={5} value={Number(config.interval_seconds) || 15} onChange={(e) => updateConfig('interval_seconds', Number(e.target.value) || 15)} />
+                                                    <div className="ext-notif-global info-card">
+                                                        <div className="ext-notif-global-inner">
+                                                            <FiBell className="ext-notif-section-icon" aria-hidden />
+                                                            <label className="ext-notif-checkbox">
+                                                                <input type="checkbox" checked={config.enabled !== false} onChange={(e) => updateConfig('enabled', e.target.checked)} />
+                                                                <span>Enable notifications</span>
+                                                            </label>
+                                                            <div className="extensions-form-row ext-notif-interval">
+                                                                <label>Check interval (seconds)</label>
+                                                                <input type="number" min={5} value={Number(config.interval_seconds) || 15} onChange={(e) => updateConfig('interval_seconds', Number(e.target.value) || 15)} />
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                    <section className="ext-notif-section">
+                                                    <section className="ext-notif-section info-card">
+                                                        <FiSend className="ext-notif-section-icon" aria-hidden />
                                                         <h3 className="ext-notif-section-title">Alert destinations</h3>
                                                         <p className="ext-notif-section-desc">When any rule below is exceeded, alerts are sent to all enabled destinations. Add multiple (e.g. Teams and Discord).</p>
                                                         <NotificationWebhooksTable webhooks={webhooksList} onDelete={deleteWebhook} onToggleEnabled={setWebhookEnabled} />
@@ -378,7 +382,8 @@ export function Extensions() {
                                                             <button type="button" className="btn btn-primary" onClick={() => { if (newWebhookUrl.trim()) { addWebhook(newWebhookType, newWebhookUrl); setNewWebhookUrl(''); } }}><FiPlusCircle /> Add destination</button>
                                                         </div>
                                                     </section>
-                                                    <section className="ext-notif-section">
+                                                    <section className="ext-notif-section info-card">
+                                                        <FiSliders className="ext-notif-section-icon" aria-hidden />
                                                         <h3 className="ext-notif-section-title">Alert rules</h3>
                                                         <p className="ext-notif-section-desc">Define metric thresholds. When exceeded, alerts go to all destinations above.</p>
                                                         <NotificationThresholdsTable thresholds={thresholdsList} onEdit={startEditThreshold} onDelete={deleteThresholdAt} />
@@ -442,27 +447,29 @@ export function Extensions() {
                                                         </div>
                                                     </div>
                                                     </section>
-                                                    <div className="ext-notif-save">
-                                                        <button type="button" className="btn btn-primary" onClick={handleSaveConfig} disabled={saving}>
-                                                            <FiSave /> {saving ? 'Saving…' : 'Save configuration'}
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            className="btn"
-                                                            onClick={async () => {
-                                                                try {
-                                                                    setError(null);
-                                                                    await api.sendTestNotification();
-                                                                    setSaveSuccess('Test notification sent to all destinations. Check Discord/Teams/Slack.');
-                                                                    setTimeout(() => setSaveSuccess(null), 5000);
-                                                                } catch (e) {
-                                                                    setError(e instanceof Error ? e.message : 'Test failed');
-                                                                }
-                                                            }}
-                                                            title="Send a test message to all webhooks to verify they work"
-                                                        >
-                                                            Send test notification
-                                                        </button>
+                                                    <div className="ext-notif-save info-card">
+                                                        <div className="ext-notif-save-inner">
+                                                            <button type="button" className="btn btn-primary" onClick={handleSaveConfig} disabled={saving}>
+                                                                <FiSave /> {saving ? 'Saving…' : 'Save configuration'}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-muted"
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        setError(null);
+                                                                        await api.sendTestNotification();
+                                                                        setSaveSuccess('Test notification sent to all destinations. Check Discord/Teams/Slack.');
+                                                                        setTimeout(() => setSaveSuccess(null), 5000);
+                                                                    } catch (e) {
+                                                                        setError(e instanceof Error ? e.message : 'Test failed');
+                                                                    }
+                                                                }}
+                                                                title="Send a test message to all webhooks to verify they work"
+                                                            >
+                                                                <FiSend /> Send test notification
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                     {newThreshold.node_name && (
                                                         <div className="extensions-pods-on-node feature-card">
@@ -687,66 +694,79 @@ function NotificationMetricsPreview({
     if (error) return <div className="extensions-metrics-preview error">{error}</div>;
     if (!metrics) return null;
 
-    const rows: { key: string; label: string; value: number; unit: string }[] = [];
+    type Row = { key: string; level: 'Node' | 'Pod' | 'Container'; source: string; value: number; unit: string };
+    const rows: Row[] = [];
     const node = metrics.node || {};
     const pods = metrics.pods || {};
     const containers = metrics.containers || {};
 
-    const add = (key: string, label: string, value: number, unit: string) => {
-        if (Number.isFinite(value)) rows.push({ key, label, value, unit });
+    const add = (key: string, level: 'Node' | 'Pod' | 'Container', source: string, value: number, unit: string) => {
+        if (Number.isFinite(value)) rows.push({ key, level, source, value, unit });
     };
+
+    const metricTypeLabel: Record<string, string> = {
+        dns_latency: 'DNS latency (avg)',
+        rtt: 'RTT (avg)',
+        node_system: 'Node CPU / memory',
+        sched_latency: 'Scheduling latency',
+        disk_io: 'Disk I/O',
+    };
+    const metricLabel = metricTypeLabel[metricType] || metricType;
+    let unitLabel = 'µs';
+    if (metricType === 'node_system') unitLabel = '%';
+    else if (metricType === 'disk_io') unitLabel = 'bytes';
 
     if (metricType === 'dns_latency') {
         const unit = 'µs';
         if (level === 'node') {
             const d = node.dns_latency as { avg_latency_ns?: number; total_events?: number; total_latency_ns?: number } | undefined;
-            if (d && d.total_events) add('node', 'Node', (d.avg_latency_ns ?? (d.total_latency_ns! / d.total_events)) / 1000, unit);
+            if (d && d.total_events) add('node', 'Node', '—', (d.avg_latency_ns ?? (d.total_latency_ns! / d.total_events)) / 1000, unit);
         } else if (level === 'pod') {
             Object.entries(pods).forEach(([podKey, p]) => {
                 const d = p?.dns_latency as { avg_latency_ns?: number; total_events?: number; total_latency_ns?: number } | undefined;
-                if (d && d.total_events) add(podKey, podKey, (d.avg_latency_ns ?? (d.total_latency_ns! / d.total_events)) / 1000, unit);
+                if (d && d.total_events) add(podKey, 'Pod', podKey, (d.avg_latency_ns ?? (d.total_latency_ns! / d.total_events)) / 1000, unit);
             });
         } else {
             Object.entries(containers).forEach(([cKey, c]) => {
                 const d = c?.dns_latency as { avg_latency_ns?: number; total_events?: number; total_latency_ns?: number } | undefined;
-                if (d && d.total_events) add(cKey, cKey, (d.avg_latency_ns ?? (d.total_latency_ns! / d.total_events)) / 1000, unit);
+                if (d && d.total_events) add(cKey, 'Container', cKey, (d.avg_latency_ns ?? (d.total_latency_ns! / d.total_events)) / 1000, unit);
             });
         }
     } else if (metricType === 'rtt') {
         const unit = 'µs';
         if (level === 'node') {
             const d = node.rtt as { avg_rtt_ns?: number; total_events?: number; total_rtt_ns?: number } | undefined;
-            if (d && d.total_events) add('node', 'Node', (d.avg_rtt_ns ?? (d.total_rtt_ns! / d.total_events)) / 1000, unit);
+            if (d && d.total_events) add('node', 'Node', '—', (d.avg_rtt_ns ?? (d.total_rtt_ns! / d.total_events)) / 1000, unit);
         } else if (level === 'pod') {
             Object.entries(pods).forEach(([podKey, p]) => {
                 const d = p?.rtt as { avg_rtt_ns?: number; total_events?: number; total_rtt_ns?: number } | undefined;
-                if (d && d.total_events) add(podKey, podKey, (d.avg_rtt_ns ?? (d.total_rtt_ns! / d.total_events)) / 1000, unit);
+                if (d && d.total_events) add(podKey, 'Pod', podKey, (d.avg_rtt_ns ?? (d.total_rtt_ns! / d.total_events)) / 1000, unit);
             });
         } else {
             Object.entries(containers).forEach(([cKey, c]) => {
                 const d = c?.tcp_metrics as { smoothed_rtt_us?: number; min_rtt_us?: number } | undefined;
                 const v = d?.min_rtt_us ?? d?.smoothed_rtt_us;
-                if (v != null) add(cKey, cKey, v, unit);
+                if (v != null) add(cKey, 'Container', cKey, v, unit);
             });
         }
     } else if (metricType === 'node_system' && level === 'node') {
         const d = node.node_system as { cpu_usage_percent?: number; memory_usage_percent?: number } | undefined;
-        if (d?.cpu_usage_percent != null) add('node_cpu', 'Node CPU %', d.cpu_usage_percent, '%');
-        if (d?.memory_usage_percent != null) add('node_mem', 'Node memory %', d.memory_usage_percent, '%');
+        if (d?.cpu_usage_percent != null) add('node_cpu', 'Node', 'CPU', d.cpu_usage_percent, '%');
+        if (d?.memory_usage_percent != null) add('node_mem', 'Node', 'Memory', d.memory_usage_percent, '%');
     } else if (metricType === 'sched_latency') {
         const unit = 'µs';
         if (level === 'node') {
             const d = node.sched_latency as { avg_runqueue_latency_us?: number } | undefined;
-            if (d?.avg_runqueue_latency_us != null) add('node', 'Node', d.avg_runqueue_latency_us, unit);
+            if (d?.avg_runqueue_latency_us != null) add('node', 'Node', '—', d.avg_runqueue_latency_us, unit);
         } else if (level === 'pod') {
             Object.entries(pods).forEach(([podKey, p]) => {
                 const d = p?.sched_latency as { avg_runqueue_latency_us?: number } | undefined;
-                if (d?.avg_runqueue_latency_us != null) add(podKey, podKey, d.avg_runqueue_latency_us, unit);
+                if (d?.avg_runqueue_latency_us != null) add(podKey, 'Pod', podKey, d.avg_runqueue_latency_us, unit);
             });
         } else {
             Object.entries(containers).forEach(([cKey, c]) => {
                 const d = c?.sched_latency as { avg_runqueue_latency_us?: number } | undefined;
-                if (d?.avg_runqueue_latency_us != null) add(cKey, cKey, d.avg_runqueue_latency_us, unit);
+                if (d?.avg_runqueue_latency_us != null) add(cKey, 'Container', cKey, d.avg_runqueue_latency_us, unit);
             });
         }
     } else if (metricType === 'disk_io') {
@@ -757,16 +777,16 @@ function NotificationMetricsPreview({
                 const d = p?.disk_io as { total_read_bytes?: number; total_write_bytes?: number } | undefined;
                 if (d) total += (d.total_read_bytes ?? 0) + (d.total_write_bytes ?? 0);
             });
-            if (total > 0) add('node', 'Node (sum pods)', total, unit);
+            if (total > 0) add('node', 'Node', 'Sum (pods)', total, unit);
         } else if (level === 'pod') {
             Object.entries(pods).forEach(([podKey, p]) => {
                 const d = p?.disk_io as { total_read_bytes?: number; total_write_bytes?: number } | undefined;
-                if (d) add(podKey, podKey, (d.total_read_bytes ?? 0) + (d.total_write_bytes ?? 0), unit);
+                if (d) add(podKey, 'Pod', podKey, (d.total_read_bytes ?? 0) + (d.total_write_bytes ?? 0), unit);
             });
         } else {
             Object.entries(containers).forEach(([cKey, c]) => {
                 const d = c?.disk_io as { total_read_bytes?: number; total_write_bytes?: number } | undefined;
-                if (d) add(cKey, cKey, (d.total_read_bytes ?? 0) + (d.total_write_bytes ?? 0), unit);
+                if (d) add(cKey, 'Container', cKey, (d.total_read_bytes ?? 0) + (d.total_write_bytes ?? 0), unit);
             });
         }
     }
@@ -774,32 +794,39 @@ function NotificationMetricsPreview({
     if (rows.length === 0) {
         return (
             <div className="extensions-metrics-preview feature-card">
-                <h3><FiActivity className="extensions-metrics-icon" /> Current metrics (Component 1)</h3>
-                <p className="list-subtext">No data yet for {metricType} at {level}. Metrics will appear as telemetry is collected.</p>
+                <h3><FiActivity className="extensions-metrics-icon" /> Current metrics</h3>
+                <p className="ext-metrics-meta">Metric type: <strong>{metricLabel}</strong> · Unit: <strong>{unitLabel}</strong></p>
+                <p className="list-subtext">No data yet for {metricLabel} at {level} level. Metrics will appear as telemetry is collected.</p>
             </div>
         );
     }
 
+    const displayUnit = rows[0]?.unit ?? unitLabel;
+    const valueStr = (v: number, u: string) => (typeof v === 'number' && v % 1 !== 0 ? v.toFixed(2) : String(v)) + ' ' + u;
+
     return (
         <div className="extensions-metrics-preview feature-card">
-            <h3><FiActivity className="extensions-metrics-icon" /> Current metrics (Component 1)</h3>
+            <h3><FiActivity className="extensions-metrics-icon" /> Current metrics</h3>
+            <p className="ext-metrics-meta">Metric type: <strong>{metricLabel}</strong> · Unit: <strong>{displayUnit}</strong> {displayUnit === 'µs' ? '(microseconds)' : displayUnit === '%' ? '(percentage)' : ''}</p>
             {savedThreshold != null && Number.isFinite(savedThreshold) && (
-                <p className="extensions-saved-threshold">Saved threshold: <strong>{savedThreshold}</strong></p>
+                <p className="extensions-saved-threshold">Saved threshold: <strong>{valueStr(savedThreshold, displayUnit)}</strong></p>
             )}
-            <p className="list-subtext">Live values from the daemon. Alerts (with Node + Pod name) are sent when a value exceeds the saved threshold.</p>
+            <p className="list-subtext">Node → Pod → Container. Alerts are sent when a value exceeds the saved threshold.</p>
             <table className="extensions-metrics-table">
                 <thead>
                     <tr>
+                        <th>Level</th>
                         <th>Source</th>
-                        <th>Value</th>
+                        <th>Value ({displayUnit})</th>
                         {threshold != null && <th>Status</th>}
                     </tr>
                 </thead>
                 <tbody>
                     {rows.map((r) => (
                         <tr key={r.key}>
-                            <td>{r.label}</td>
-                            <td>{typeof r.value === 'number' && r.value % 1 !== 0 ? r.value.toFixed(2) : r.value} {r.unit}</td>
+                            <td><span className="ext-metrics-level">{r.level}</span></td>
+                            <td>{r.source}</td>
+                            <td>{valueStr(r.value, r.unit)}</td>
                             {threshold != null && (
                                 <td>
                                     {r.value >= threshold ? (
