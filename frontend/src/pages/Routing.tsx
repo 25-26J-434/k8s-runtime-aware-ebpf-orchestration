@@ -8,6 +8,7 @@ type PolicyRecord = {
     id?: string;
     policy_name?: string;
     namespace?: string;
+    scope?: string;
     frontend_service?: string;
     frontend_service_port?: string | number;
     redirect_backend_label?: string;
@@ -81,6 +82,7 @@ export function Routing() {
     const defaultCreateForm = {
         policy_name: '',
         namespace: 'test-services',
+        scope: 'local',
         frontend_service: '',
         frontend_port: '',
         action_target_namespace: '',
@@ -163,6 +165,7 @@ export function Routing() {
         return {
             policy_name: policy.policy_name || '',
             namespace: policy.namespace || '',
+            scope: policy.scope || 'local',
             action_target_namespace: (policy as any).action_target_namespace || policy.namespace || '',
             frontend_service: policy.frontend?.service || policy.frontend_service || '',
             frontend_port: policy.frontend?.port || policy.frontend_service_port || '',
@@ -290,6 +293,7 @@ export function Routing() {
             const body = {
                 policy_name: editForm.policy_name,
                 namespace: editForm.namespace,
+                scope: editForm.scope || 'local',
                 frontend: {
                     service: editForm.frontend_service,
                     port: numOrString(editForm.frontend_port),
@@ -341,6 +345,7 @@ export function Routing() {
         const body: any = {};
 
         addIfValue(body, 'namespace', editForm.namespace);
+        addIfValue(body, 'scope', editForm.scope);
 
         // frontend
         if (
@@ -589,6 +594,7 @@ export function Routing() {
                                 <th>Policy</th>
                                 <th>Traffic Entry Serivce</th>
                                 <th>Target Service</th>
+                                <th>Scope</th>
                                 <th>Action</th>
                                 <th>Metric</th>
                                 <th>Threshold</th>
@@ -601,7 +607,7 @@ export function Routing() {
                         <tbody>
                             {loading && (
                                 <tr>
-                                    <td colSpan={10} className="table-loading">
+                                    <td colSpan={11} className="table-loading">
                                         Loading…
                                     </td>
                                 </tr>
@@ -618,6 +624,7 @@ export function Routing() {
                                             </td>
                                             <td>{source || '—'}</td>
                                             <td>{target || '—'}</td>
+                                            <td>{policy.scope || 'local'}</td>
                                             <td>{formatAction(policy.action)}</td>
                                             <td>{resolveMetric(policy)}</td>
                                             <td>{resolveThreshold(policy)}</td>
@@ -770,6 +777,16 @@ export function Routing() {
                                             </option>
                                         )
                                     )}
+                                </select>
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Scope</span>
+                                <select
+                                    value={editForm.scope || 'local'}
+                                    onChange={(e) => setEditForm((prev: any) => ({ ...prev, scope: e.target.value }))}
+                                >
+                                    <option value="local">Local</option>
+                                    <option value="cluster">Cluster</option>
                                 </select>
                             </label>
                             <label className="form-field">
@@ -1081,6 +1098,16 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
+                                <span className="form-label">Scope</span>
+                                <select
+                                    value={editForm.scope || 'local'}
+                                    onChange={(e) => setEditForm((prev: any) => ({ ...prev, scope: e.target.value }))}
+                                >
+                                    <option value="local">Local</option>
+                                    <option value="cluster">Cluster</option>
+                                </select>
+                            </label>
+                            <label className="form-field">
                                 <span className="form-label">Traffic Entrypoint Service *</span>
                                 <select
                                     value={editForm.frontend_service || ''}
@@ -1337,6 +1364,7 @@ export function Routing() {
                                     { label: 'Frontend', value: selectedPolicy.frontend || selectedPolicy.frontend_service },
                                     { label: 'Monitor', value: selectedPolicy.telemetry?.monitor_pod_contains || selectedPolicy.monitor_pod_contains },
                                     { label: 'Target selector', value: resolveTarget(selectedPolicy) },
+                                    { label: 'Scope', value: selectedPolicy.scope || 'local' },
                                     { label: 'Backend candidates', value: (selectedPolicy as any).backend_candidates_selector || (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).backend_candidates_selector : '') },
                                     { label: 'Action', value: selectedPolicy.action },
                                     { label: 'Strategy', value: (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).strategy : (selectedPolicy as any).strategy) },
