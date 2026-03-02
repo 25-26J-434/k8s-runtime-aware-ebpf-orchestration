@@ -346,13 +346,16 @@ func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue f
 		return nil, fmt.Errorf("winner pod has no IP: %s", winnerPod)
 	}
 
-	svc, err := e.resolveBackendService(ctx, targetNS, p.Action)
+	frontendSvc, err := e.resolveFrontendService(ctx, p.Namespace, p.Frontend.Service)
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureServicePortExists(frontendSvc, p.Frontend.Port); err != nil {
+		return nil, err
+	}
 
-	if err := e.applyDNATRedirect(ctx, svc, winner, p); err != nil {
-		if err := e.updateEndpointSlicesForService(ctx, targetNS, svc, winner, p.PolicyName); err != nil {
+	if err := e.applyDNATRedirectWithPorts(ctx, frontendSvc, winner, uint16(p.Frontend.Port), uint16(p.Action.BackendPort)); err != nil {
+		if err := e.updateEndpointSlicesForService(ctx, p.Namespace, frontendSvc, winner, p.PolicyName); err != nil {
 			return nil, err
 		}
 
@@ -367,7 +370,7 @@ func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue f
 				fmt.Sprintf("Target backend: %s", winnerPod),
 				fmt.Sprintf("Metric avg: %.2f (threshold %.2f)", avgValue, p.Telemetry.ViolationThreshold),
 			},
-			Stdout: fmt.Sprintf("EndpointSlice updated for service %s", svc.Name),
+			Stdout: fmt.Sprintf("EndpointSlice updated for service %s", frontendSvc.Name),
 		}, nil
 	}
 
@@ -382,7 +385,7 @@ func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue f
 			fmt.Sprintf("Target backend: %s", winnerPod),
 			fmt.Sprintf("Metric avg: %.2f (threshold %.2f)", avgValue, p.Telemetry.ViolationThreshold),
 		},
-		Stdout: fmt.Sprintf("DNAT map updated for service %s", svc.Name),
+		Stdout: fmt.Sprintf("DNAT map updated for service %s", frontendSvc.Name),
 	}, nil
 }
 
@@ -456,18 +459,18 @@ func (e *Engine) restoreClusterRedirect(ctx context.Context, p *Policy, clearWin
 		targetNS = p.Action.TargetNamespace
 	}
 
-	svc, err := e.resolveBackendService(ctx, targetNS, p.Action)
+	frontendSvc, err := e.resolveFrontendService(ctx, p.Namespace, p.Frontend.Service)
 	if err != nil {
 		return err
 	}
 
-	if err := e.deleteDNATRedirect(svc, p); err != nil {
-		endpoints, err := e.buildEndpointsForService(ctx, targetNS, svc)
+	if err := e.deleteDNATRedirectWithPort(frontendSvc, uint16(p.Frontend.Port)); err != nil {
+		endpoints, err := e.buildEndpointsForService(ctx, p.Namespace, frontendSvc)
 		if err != nil {
 			return err
 		}
 
-		if err := e.updateEndpointSlicesWithEndpoints(ctx, targetNS, svc, endpoints, p.PolicyName); err != nil {
+		if err := e.updateEndpointSlicesWithEndpoints(ctx, p.Namespace, frontendSvc, endpoints, p.PolicyName); err != nil {
 			return err
 		}
 	}
@@ -547,6 +550,28 @@ func (e *Engine) resolveBackendService(ctx context.Context, ns string, action Ac
 		names = append(names, svc.Name)
 	}
 	return nil, fmt.Errorf("multiple backend services match selector: %s", strings.Join(names, ", "))
+}
+
+func (e *Engine) resolveFrontendService(ctx context.Context, ns, name string) (*corev1.Service, error) {
+	if name == "" {
+		return nil, fmt.Errorf("frontend service is required")
+	}
+	return e.kube.CoreV1().Services(ns).Get(ctx, name, metav1.GetOptions{})
+}
+
+func ensureServicePortExists(svc *corev1.Service, port int) error {
+	if svc == nil {
+		return fmt.Errorf("service is nil")
+	}
+	if port <= 0 {
+		return fmt.Errorf("frontend port must be a positive number")
+	}
+	for _, p := range svc.Spec.Ports {
+		if int(p.Port) == port {
+			return nil
+		}
+	}
+	return fmt.Errorf("service %s does not expose port %d", svc.Name, port)
 }
 
 func (e *Engine) updateEndpointSlicesForService(ctx context.Context, ns string, svc *corev1.Service, winner *corev1.Pod, policyName string) error {
@@ -651,6 +676,45 @@ func (e *Engine) applyDNATRedirect(ctx context.Context, svc *corev1.Service, win
 	return dnatMap.Update(&key, &val, ebpf.UpdateAny)
 }
 
+func (e *Engine) applyDNATRedirectWithPorts(ctx context.Context, svc *corev1.Service, winner *corev1.Pod, servicePort, targetPort uint16) error {
+	dnatMap := loader.DNATMapHandle()
+	if dnatMap == nil {
+		return fmt.Errorf("dnat map not available")
+	}
+	if svc == nil || winner == nil {
+		return fmt.Errorf("service or winner pod is nil")
+	}
+	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+		return fmt.Errorf("service %s has no cluster IP", svc.Name)
+	}
+	if winner.Status.PodIP == "" {
+		return fmt.Errorf("winner pod has no IP")
+	}
+	if servicePort == 0 || targetPort == 0 {
+		return fmt.Errorf("service and target ports must be set")
+	}
+
+	serviceIP, err := parseIPv4NetOrder(svc.Spec.ClusterIP)
+	if err != nil {
+		return err
+	}
+	targetIP, err := parseIPv4NetOrder(winner.Status.PodIP)
+	if err != nil {
+		return err
+	}
+
+	key := dnatKey{
+		DstIP:   serviceIP,
+		DstPort: htons(servicePort),
+	}
+	val := dnatVal{
+		TargetIP:   targetIP,
+		TargetPort: htons(targetPort),
+	}
+
+	return dnatMap.Update(&key, &val, ebpf.UpdateAny)
+}
+
 func (e *Engine) deleteDNATRedirect(svc *corev1.Service, p *Policy) error {
 	dnatMap := loader.DNATMapHandle()
 	if dnatMap == nil {
@@ -666,6 +730,36 @@ func (e *Engine) deleteDNATRedirect(svc *corev1.Service, p *Policy) error {
 	servicePort, _, err := resolveServicePorts(svc, p.Action)
 	if err != nil {
 		return err
+	}
+
+	serviceIP, err := parseIPv4NetOrder(svc.Spec.ClusterIP)
+	if err != nil {
+		return err
+	}
+
+	key := dnatKey{
+		DstIP:   serviceIP,
+		DstPort: htons(servicePort),
+	}
+	if err := dnatMap.Delete(&key); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
+		return err
+	}
+	return nil
+}
+
+func (e *Engine) deleteDNATRedirectWithPort(svc *corev1.Service, servicePort uint16) error {
+	dnatMap := loader.DNATMapHandle()
+	if dnatMap == nil {
+		return fmt.Errorf("dnat map not available")
+	}
+	if svc == nil {
+		return fmt.Errorf("service is nil")
+	}
+	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+		return fmt.Errorf("service %s has no cluster IP", svc.Name)
+	}
+	if servicePort == 0 {
+		return fmt.Errorf("service port must be set")
 	}
 
 	serviceIP, err := parseIPv4NetOrder(svc.Spec.ClusterIP)
