@@ -160,6 +160,14 @@ export function Routing() {
         return actionObj.ttl_seconds || policy.ttl_seconds || '—';
     };
 
+    const isExpiredPolicy = (policy: PolicyRecord) => {
+        const status = (policy as any).status || {};
+        const lastDecision = status.last_decision || status.lastDecision || (policy as any).last_decision || (policy as any).lastDecision;
+        const lastExpired =
+            status.last_expired_at || status.lastExpiredAt || (policy as any).last_expired_at || (policy as any).lastExpiredAt;
+        return String(lastDecision || '').toUpperCase() === 'EXPIRED' || !!lastExpired;
+    };
+
     const hydrateEditForm = (policy: PolicyRecord) => {
         const actionObj = typeof policy.action === 'object' ? (policy.action as any) : {};
         return {
@@ -511,6 +519,119 @@ export function Routing() {
         );
     };
 
+    const { activePolicies, expiredPolicies } = useMemo(() => {
+        const active: PolicyRecord[] = [];
+        const expired: PolicyRecord[] = [];
+        policies.forEach((policy) => {
+            if (isExpiredPolicy(policy)) {
+                expired.push(policy);
+            } else {
+                active.push(policy);
+            }
+        });
+        return { activePolicies: active, expiredPolicies: expired };
+    }, [policies]);
+
+    const renderPolicyTable = (list: PolicyRecord[], showLoadingRow: boolean, emptyLabel: string) => {
+        return (
+            <div className="policy-table-wrapper">
+                <table className="policy-table">
+                    <thead>
+                        <tr>
+                            <th>Policy</th>
+                            <th>Traffic Entry Serivce</th>
+                            <th>Target Service</th>
+                            <th>Scope</th>
+                            <th>Action</th>
+                            <th>Metric</th>
+                            <th>Threshold</th>
+                            <th>Protocol</th>
+                            <th>TTL (s)</th>
+                            <th>Actions</th>
+                            <th>POLICY ACTION</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {showLoadingRow && (
+                            <tr>
+                                <td colSpan={11} className="table-loading">
+                                    Loading…
+                                </td>
+                            </tr>
+                        )}
+                        {!showLoadingRow && list.length === 0 && (
+                            <tr>
+                                <td colSpan={11} className="table-loading">
+                                    {emptyLabel}
+                                </td>
+                            </tr>
+                        )}
+                        {!showLoadingRow &&
+                            list.map((policy) => {
+                                const source = resolveFrontend(policy);
+                                const target = resolveTarget(policy);
+
+                                return (
+                                    <tr key={policy.id || policy.policy_name}>
+                                        <td>
+                                            <div className="cell-main">{policy.policy_name || '—'}</div>
+                                        </td>
+                                        <td>{source || '—'}</td>
+                                        <td>{target || '—'}</td>
+                                        <td>{policy.scope || 'local'}</td>
+                                        <td>{formatAction(policy.action)}</td>
+                                        <td>{resolveMetric(policy)}</td>
+                                        <td>{resolveThreshold(policy)}</td>
+                                        <td>{resolveProtocol(policy)}</td>
+                                        <td>{resolveTtl(policy)}</td>
+                                        <td className="table-actions">
+                                            <button
+                                                type="button"
+                                                className="icon-button"
+                                                aria-label="View policy"
+                                                onClick={() => openView(policy)}
+                                            >
+                                                <FiEye />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="icon-button"
+                                                aria-label="Edit policy"
+                                                onClick={() => openEdit(policy)}
+                                            >
+                                                <FiEdit2 />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="icon-button danger"
+                                                aria-label="Delete policy"
+                                                onClick={() => {
+                                                    setDeleteTarget(policy);
+                                                    setShowDeleteConfirm(true);
+                                                }}
+                                            >
+                                                <FiTrash2 />
+                                            </button>
+                                        </td>
+                                        <td className="policy-action-cell">
+                                            <button
+                                                type="button"
+                                                className="apply-button"
+                                                onClick={() => handleApplyPolicy(policy)}
+                                                disabled={applyingPolicy === policy.policy_name}
+                                            >
+                                                {applyingPolicy === policy.policy_name ? 'Applying…' : 'Apply'}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                    </tbody>
+                </table>
+            </div>
+        );
+    };
+
     const namespacesForNode = useMemo(() => {
         if (!selectedNode || !clusterSummary?.pods) return clusterSummary?.namespaces || [];
         const nsSet = new Set<string>();
@@ -587,93 +708,20 @@ export function Routing() {
                     </div>
                 )}
 
-                <div className="policy-table-wrapper">
-                    <table className="policy-table">
-                        <thead>
-                            <tr>
-                                <th>Policy</th>
-                                <th>Traffic Entry Serivce</th>
-                                <th>Target Service</th>
-                                <th>Scope</th>
-                                <th>Action</th>
-                                <th>Metric</th>
-                                <th>Threshold</th>
-                                <th>Protocol</th>
-                                <th>TTL (s)</th>
-                                <th>Actions</th>
-                                <th>POLICY ACTION</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading && (
-                                <tr>
-                                    <td colSpan={11} className="table-loading">
-                                        Loading…
-                                    </td>
-                                </tr>
-                            )}
-                            {!loading &&
-                                policies.map((policy) => {
-                                    const source = resolveFrontend(policy);
-                                    const target = resolveTarget(policy);
+                <div className="policy-section">
+                    <div className="section-header">
+                        <div className="section-title">Active Policies</div>
+                        <div className="section-meta">{activePolicies.length} active</div>
+                    </div>
+                    {renderPolicyTable(activePolicies, loading, 'No active policies.')}
+                </div>
 
-                                    return (
-                                        <tr key={policy.id || policy.policy_name}>
-                                            <td>
-                                                <div className="cell-main">{policy.policy_name || '—'}</div>
-                                            </td>
-                                            <td>{source || '—'}</td>
-                                            <td>{target || '—'}</td>
-                                            <td>{policy.scope || 'local'}</td>
-                                            <td>{formatAction(policy.action)}</td>
-                                            <td>{resolveMetric(policy)}</td>
-                                            <td>{resolveThreshold(policy)}</td>
-                                            <td>{resolveProtocol(policy)}</td>
-                                            <td>{resolveTtl(policy)}</td>
-                                            <td className="table-actions">
-                                                <button
-                                                    type="button"
-                                                    className="icon-button"
-                                                    aria-label="View policy"
-                                                    onClick={() => openView(policy)}
-                                                >
-                                                    <FiEye />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="icon-button"
-                                                    aria-label="Edit policy"
-                                                    onClick={() => openEdit(policy)}
-                                                >
-                                                    <FiEdit2 />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="icon-button danger"
-                                                    aria-label="Delete policy"
-                                                    onClick={() => {
-                                                        setDeleteTarget(policy);
-                                                        setShowDeleteConfirm(true);
-                                                    }}
-                                                >
-                                                    <FiTrash2 />
-                                                </button>
-                                            </td>
-                                            <td className="policy-action-cell">
-                                                <button
-                                                    type="button"
-                                                    className="apply-button"
-                                                    onClick={() => handleApplyPolicy(policy)}
-                                                    disabled={applyingPolicy === policy.policy_name}
-                                                >
-                                                    {applyingPolicy === policy.policy_name ? 'Applying…' : 'Apply'}
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                        </tbody>
-                    </table>
+                <div className="policy-section">
+                    <div className="section-header">
+                        <div className="section-title">Expired Policies</div>
+                        <div className="section-meta">{expiredPolicies.length} expired</div>
+                    </div>
+                    {renderPolicyTable(expiredPolicies, false, 'No expired policies.')}
                 </div>
             </div>
 
