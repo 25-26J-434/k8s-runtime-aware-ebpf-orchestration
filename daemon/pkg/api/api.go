@@ -74,6 +74,7 @@ func StartServer() {
 	initRoutingBackend()
 
 	initMetricsStreaming()
+	initNodeHealthStreaming()
 
 	// Initialize WebSocket hub
 	InitWebSocket()
@@ -101,8 +102,6 @@ func StartServer() {
 	http.HandleFunc("/api/rtt/pods", corsMiddleware(handlePodRTTMetrics))
 	http.HandleFunc("/api/cluster/topology", corsMiddleware(handleClusterTopology))
 	http.HandleFunc("/api/cluster/services", corsMiddleware(handleClusterServices))
-
-	initMetricsStreaming()
 
 	// Register in-process communication handlers (broadcast/unicast/multicast/stats/health).
 	comm.RegisterHandlers(nil, corsMiddleware)
@@ -171,6 +170,7 @@ func StartServer() {
 	log.Println("[API]   WS /ws/metrics                   - Real-time metrics stream")
 	log.Println("[API]   WS /ws/topology                  - Real-time topology stream")
 	log.Println("[API]   WS /ws/pod-details               - Real-time pod details stream")
+	log.Println("[API]   WS /ws/node-health               - Real-time node health & alerts stream")
 	log.Println("[API] Endpoints:")
 	log.Println("[API]   GET /health                  - Health check")
 	log.Println("[API]   GET /ready                   - Readiness check")
@@ -181,6 +181,7 @@ func StartServer() {
 	log.Println("[API]   GET /api/rtt/pods            - Per-pod RTT metrics")
 	log.Println("[API]   GET /api/cluster/topology    - Cluster topology")
 	log.Println("[API]   GET /api/cluster/services    - Services info")
+	log.Println("[API]   GET /api/cluster/node-health - Cluster node health (5s federated)")
 
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalf("[API] Server failed: %v", err)

@@ -47,6 +47,7 @@ const (
 	EventScheduling   EventType = "SCHEDULING"
 	EventStateUpdate  EventType = "STATE_UPDATE"
 	EventMetricUpdate EventType = "METRIC_UPDATE"
+	EventNodeHealth   EventType = "NODE_HEALTH_UPDATE"
 	EventHandshake    EventType = "HANDSHAKE"
 	EventDiscovery    EventType = "DISCOVERY"
 	EventError        EventType = "ERROR"
