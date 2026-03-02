@@ -23,8 +23,7 @@
     {
       "key": "webhook_url",
       "label": "Webhook URL (Discord)",
-      "type": "string",
-      "default": "https://discord.com/api/webhooks/1477930630967726101/b4R8PJXQ1yFL-iKs3jqN9rQqUT6dpJqNtrXzDWBbMzVt0FuDzOwuB5GVhh-c_Qx2-Hkp"
+      "type": "string"
     },
     {
       "key": "webhook_url_slack",
