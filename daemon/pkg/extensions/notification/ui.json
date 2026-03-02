@@ -1,0 +1,82 @@
+{
+  "label": "Notification",
+  "description": "Send alerts to Slack, Discord, or Microsoft Teams when node, pod, or container metrics exceed configured thresholds.",
+  "summary_keys": ["webhook_type", "threshold_value", "metric_type", "level", "node_name", "webhook_url", "webhook_url_teams", "webhook_url_slack"],
+  "inputs": [
+    {
+      "key": "enabled",
+      "label": "Enable notifications",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "webhook_type",
+      "label": "Webhook type",
+      "type": "select",
+      "options": [
+        { "value": "slack", "label": "Slack" },
+        { "value": "discord", "label": "Discord" },
+        { "value": "teams", "label": "Microsoft Teams" }
+      ],
+      "default": "discord"
+    },
+    {
+      "key": "webhook_url",
+      "label": "Webhook URL (Discord)",
+      "type": "string",
+      "default": "https://discord.com/api/webhooks/1477930630967726101/b4R8PJXQ1yFL-iKs3jqN9rQqUT6dpJqNtrXzDWBbMzVt0FuDzOwuB5GVhh-c_Qx2-Hkp"
+    },
+    {
+      "key": "webhook_url_slack",
+      "label": "Webhook URL (Slack)",
+      "type": "string"
+    },
+    {
+      "key": "webhook_url_teams",
+      "label": "Webhook URL (Microsoft Teams)",
+      "type": "string"
+    },
+    {
+      "key": "metric_type",
+      "label": "Metric to monitor",
+      "type": "select",
+      "options": [
+        { "value": "dns_latency", "label": "DNS latency (avg µs)" },
+        { "value": "rtt", "label": "RTT (avg µs)" },
+        { "value": "node_system", "label": "Node CPU / memory %" },
+        { "value": "sched_latency", "label": "Scheduling latency" },
+        { "value": "disk_io", "label": "Disk I/O" }
+      ],
+      "default": "dns_latency"
+    },
+    {
+      "key": "level",
+      "label": "Level",
+      "type": "select",
+      "options": [
+        { "value": "node", "label": "Node" },
+        { "value": "pod", "label": "Pod" },
+        { "value": "container", "label": "Container" }
+      ],
+      "default": "pod"
+    },
+    {
+      "key": "node_name",
+      "label": "Node name (optional – only alert for this node; leave empty for current node)",
+      "type": "string"
+    },
+    {
+      "key": "threshold_value",
+      "label": "Threshold value (exceed this to alert)",
+      "type": "number",
+      "required": true,
+      "default": 100
+    },
+    {
+      "key": "interval_seconds",
+      "label": "Check interval (seconds)",
+      "type": "number",
+      "default": 15
+    }
+  ]
+}

@@ -149,6 +149,15 @@ func StartServer() {
 	}))
 	http.HandleFunc("/api/cluster/summary", corsMiddleware(handleClusterSummary))
 
+	// Extensions (SPI) endpoints (list at /api/extensions and /api/extensions/)
+	http.HandleFunc("/api/extensions", corsMiddleware(handleExtensionsList))
+	http.HandleFunc("/api/extensions/", corsMiddleware(handleExtensionsListSlash))
+	http.HandleFunc("/api/extensions/notification/config", corsMiddleware(handleNotificationConfig))
+	http.HandleFunc("/api/extensions/notification/trigger", corsMiddleware(handleNotificationTrigger))
+	http.HandleFunc("/api/extensions/notification/test", corsMiddleware(handleNotificationTest))
+	http.HandleFunc("/api/extensions/notification/test/", corsMiddleware(handleNotificationTest))
+	http.HandleFunc("/api/extensions/notification/ui", corsMiddleware(handleExtensionUI))
+
 	// WebSocket endpoints
 	http.HandleFunc("/ws/metrics", corsMiddleware(handleWebSocketMetrics))
 	http.HandleFunc("/ws/topology", corsMiddleware(handleWebSocketClusterTopology))

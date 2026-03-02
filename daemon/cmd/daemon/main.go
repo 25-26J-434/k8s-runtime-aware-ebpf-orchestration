@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -9,9 +10,12 @@ import (
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/api"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/extensions/notification"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/extensions/registry"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/loader"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/plugins/routing"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/scaling"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/spi"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 )
 
@@ -171,6 +175,25 @@ func main() {
 
 	// Start API server for external consumers (dashboard, Prometheus, etc.)
 	go api.StartServer()
+
+	// Init notification extension store (MongoDB) and load saved thresholds so extension and API use them
+	if err := notification.InitStore(context.Background()); err != nil {
+		log.Printf("[Main] Notification store init failed (optional): %v", err)
+	} else {
+		notification.LoadConfigFromStore(context.Background())
+	}
+
+	// Start SPI extensions (e.g. notification with webhooks)
+	extCtx, extCancel := context.WithCancel(context.Background())
+	defer extCancel()
+	for _, ext := range registry.All() {
+		go func(ext spi.Extension) {
+			if err := ext.Run(extCtx, spi.ExtensionParams{}); err != nil && extCtx.Err() == nil {
+				log.Printf("[Main] Extension %s exited: %v", ext.Name(), err)
+			}
+		}(ext)
+	}
+	log.Println("[Main] SPI extensions started")
 
 	log.Println("[Main] eBPF Daemon is running. Press Ctrl+C to exit.")
 
