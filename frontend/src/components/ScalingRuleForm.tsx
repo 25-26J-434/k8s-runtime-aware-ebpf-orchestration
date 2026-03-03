@@ -226,11 +226,11 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                     </div>
                     <div className="section-body">
                         <div className="form-row">
-                            <label>Node Scope</label>
+                            <label>Trigger Node (Observed)</label>
                             <div className="node-scope-pill">
                                 {nodeScope ? `${nodeScope.name}${nodeScope.ip ? ` (${nodeScope.ip})` : ''}` : 'All nodes'}
                             </div>
-                            <div className="field-hint">Namespaces and deployments are filtered to this node.</div>
+                            <div className="field-hint">This node is only used to evaluate telemetry and decide scaling. New pods may be scheduled onto other healthier nodes.</div>
                         </div>
                         <div className="form-row">
                             <label>Namespace</label>
@@ -380,7 +380,7 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                     <div className="section-header">
                         <div>
                             <div className="section-title">5. Scheduling</div>
-                            <div className="section-subtitle">Preview where Kubernetes has placed pods for the selected workload.</div>
+                            <div className="section-subtitle">See where Kubernetes actually placed the workload after scaling decisions were made.</div>
                         </div>
                         <div className="section-chip">Visibility</div>
                     </div>

@@ -22,7 +22,6 @@ export function ScalingRules() {
     const [nodeError, setNodeError] = useState<string | null>(null);
     const [formTarget, setFormTarget] = useState<{ namespace?: string; deployment?: string }>({});
     const [schedulingExpanded, setSchedulingExpanded] = useState(true);
-    const [podsModalOpen, setPodsModalOpen] = useState(false);
     const pollingInterval = showForm ? 0 : 15000;
     const { rules, deployments, latestMetrics, loading, error, createRule, updateRule, toggleRule, deleteRule, reload } = useScalingRules(selectedNodeKey, pollingInterval);
     const { data: placementData, loading: placementLoading, error: placementError, fetchPlacement } = useScalingPlacement();
@@ -187,18 +186,6 @@ export function ScalingRules() {
         void fetchPlacement(schedulingTarget.namespace, schedulingTarget.deployment);
     }, [schedulingExpanded, schedulingTarget, fetchPlacement]);
 
-    useEffect(() => {
-        if (!podsModalOpen) return;
-        if (!schedulingTarget.namespace || !schedulingTarget.deployment) return;
-        void fetchPlacement(schedulingTarget.namespace, schedulingTarget.deployment);
-    }, [podsModalOpen, schedulingTarget, fetchPlacement]);
-
-    const openPodsModal = async () => {
-        if (!schedulingTarget.namespace || !schedulingTarget.deployment) return;
-        setPodsModalOpen(true);
-        await fetchPlacement(schedulingTarget.namespace, schedulingTarget.deployment);
-    };
-
     const refreshPlacement = async () => {
         if (!schedulingTarget.namespace || !schedulingTarget.deployment) return;
         await fetchPlacement(schedulingTarget.namespace, schedulingTarget.deployment, true);
@@ -214,6 +201,13 @@ export function ScalingRules() {
             .join(', ')
         : '';
     const placementPods = currentPlacementData?.pods || [];
+    const latestPlacementPods = [...placementPods]
+        .sort((a, b) => {
+            const aTime = a.startTime ? new Date(a.startTime).getTime() : 0;
+            const bTime = b.startTime ? new Date(b.startTime).getTime() : 0;
+            return bTime - aTime;
+        })
+        .slice(0, 5);
 
     const renderAge = (pod: ScalingPlacementPod) => {
         if (!pod.ageSeconds) return '—';
@@ -236,30 +230,65 @@ export function ScalingRules() {
             <div className="scheduling-panel">
                 <div className="panel-header scheduling-panel-header">
                     <div>
-                        <strong>Scheduling Visibility</strong>
+                        <strong>Scheduling Result</strong>
                         <div className="list-subtext">
-                            Node placement is read from Kubernetes <code>pod.spec.nodeName</code> and reflects scheduler binding.
+                            The trigger node is only used for observing telemetry. New pods may still land on healthier nodes chosen by the scheduler.
                         </div>
                     </div>
-                    <button className="btn btn-sm" onClick={() => setSchedulingExpanded((current) => !current)}>
-                        {schedulingExpanded ? 'Collapse' : 'Expand'}
-                    </button>
+                    <div className="toolbar-actions">
+                        <button className="btn btn-sm" onClick={() => void refreshPlacement()}>Refresh</button>
+                        <button className="btn btn-sm" onClick={() => setSchedulingExpanded((current) => !current)}>
+                            {schedulingExpanded ? 'Collapse' : 'Expand'}
+                        </button>
+                    </div>
                 </div>
 
                 {schedulingExpanded && (
                     <div className="scheduling-panel-body">
-                        <div className="scheduling-summary-row">
-                            <div>
+                        <div className="scheduling-details-grid">
+                            <div className="scheduling-detail-card">
+                                <div className="summary-title">Observed Node</div>
+                                <div className="placement-summary-text">{selectedNode?.name || '—'}</div>
+                            </div>
+                            <div className="scheduling-detail-card">
                                 <div className="summary-title">Node Placement</div>
                                 <div className="placement-summary-text">
                                     {placementLoading && !currentPlacementSummary ? 'Loading placement...' : (currentPlacementSummary || 'No scheduled pods yet')}
                                 </div>
                             </div>
-                            <button className="btn btn-primary btn-sm" onClick={() => void openPodsModal()}>
-                                View Pods
-                            </button>
                         </div>
                         {placementError && <div className="error">{placementError}</div>}
+                        <div className="scheduling-latest-pods">
+                            <div className="summary-title">Latest Pods</div>
+                            {placementLoading && latestPlacementPods.length === 0 && <div className="list-subtext">Loading pods...</div>}
+                            {!placementLoading && latestPlacementPods.length === 0 && !placementError && (
+                                <div className="list-subtext">No pods found for this deployment.</div>
+                            )}
+                            {latestPlacementPods.length > 0 && (
+                                <div className="scaling-table-wrapper placement-table-wrapper">
+                                    <table className="scaling-table placement-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Pod Name</th>
+                                                <th>Node</th>
+                                                <th>Phase</th>
+                                                <th>Age</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {latestPlacementPods.map((pod) => (
+                                                <tr key={pod.name}>
+                                                    <td>{pod.name}</td>
+                                                    <td>{pod.node || 'Pending'}</td>
+                                                    <td>{pod.phase}</td>
+                                                    <td>{renderAge(pod)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>
@@ -274,7 +303,7 @@ export function ScalingRules() {
                     <p className="page-subtitle">Manage autoscaling rules driven by eBPF telemetry</p>
                 </div>
                 <div className="scaling-node-picker">
-                    <label>Selected Node</label>
+                    <label>Trigger Node (Observed)</label>
                     <select
                         value={selectedNode?.name || ''}
                         onChange={(e) => setSelectedNodeKey(e.target.value)}
@@ -288,6 +317,9 @@ export function ScalingRules() {
                     </select>
                     {loadingNodes && <span className="list-subtext">Loading nodes...</span>}
                     {nodeError && <span className="list-subtext">{nodeError}</span>}
+                    <div className="scaling-node-helper">
+                        This node is only used to evaluate telemetry and decide scaling. New pods may be scheduled onto other healthier nodes.
+                    </div>
                 </div>
             </div>
 
@@ -495,58 +527,6 @@ export function ScalingRules() {
                 </div>
             )}
 
-            {podsModalOpen && (
-                <div className="scaling-modal" onClick={() => setPodsModalOpen(false)}>
-                    <div className="scaling-modal-card scaling-modal-card-wide" onClick={(e) => e.stopPropagation()}>
-                        <div className="panel-header scheduling-panel-header">
-                            <div>
-                                <h2>Pod Placement</h2>
-                                <div className="list-subtext">
-                                    {schedulingTarget.namespace}/{schedulingTarget.deployment}
-                                </div>
-                            </div>
-                            <div className="toolbar-actions">
-                                <button className="btn btn-sm" onClick={() => void refreshPlacement()}>Refresh</button>
-                                <button className="btn btn-muted btn-sm" onClick={() => setPodsModalOpen(false)}>Close</button>
-                            </div>
-                        </div>
-
-                        {placementError && <div className="error">{placementError}</div>}
-                        {placementLoading && placementPods.length === 0 && <div className="list-subtext">Loading pods...</div>}
-
-                        {!placementLoading && placementPods.length === 0 && !placementError && (
-                            <div className="list-subtext">No pods found for this deployment.</div>
-                        )}
-
-                        {placementPods.length > 0 && (
-                            <div className="scaling-table-wrapper placement-table-wrapper">
-                                <table className="scaling-table placement-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Pod Name</th>
-                                            <th>Node</th>
-                                            <th>Phase</th>
-                                            <th>Ready</th>
-                                            <th>Age</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {placementPods.map((pod) => (
-                                            <tr key={pod.name}>
-                                                <td>{pod.name}</td>
-                                                <td>{pod.node || 'Pending'}</td>
-                                                <td>{pod.phase}</td>
-                                                <td>{pod.ready ? 'Yes' : 'No'}</td>
-                                                <td>{renderAge(pod)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
