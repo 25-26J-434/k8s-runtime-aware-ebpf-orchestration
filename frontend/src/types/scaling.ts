@@ -35,3 +35,19 @@ export interface DeploymentInfo {
     replicas: number;
     availableReplicas?: number;
 }
+
+export interface ScalingPlacementPod {
+    name: string;
+    node: string;
+    phase: string;
+    ready: boolean;
+    startTime?: string;
+    ageSeconds: number;
+}
+
+export interface ScalingPlacementResponse {
+    namespace: string;
+    deployment: string;
+    pods: ScalingPlacementPod[];
+    nodeCounts: Record<string, number>;
+}

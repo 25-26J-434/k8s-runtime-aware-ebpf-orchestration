@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import type { ScalingRule, MetricType, OperatorType, DeploymentInfo, ScalingAction } from '../types/scaling';
 import type { Pod } from '../types/api';
 import { api } from '../services/api';
@@ -15,9 +16,11 @@ interface Props {
     onCancel: () => void;
     onSubmit: (rule: Partial<ScalingRule>) => Promise<void> | void;
     submitLabel?: string;
+    onTargetChange?: (target: { namespace?: string; deployment?: string }) => void;
+    schedulingContent?: ReactNode;
 }
 
-export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, submitLabel = 'Save' }: Props) {
+export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, submitLabel = 'Save', onTargetChange, schedulingContent }: Props) {
     const [namespaces, setNamespaces] = useState<string[]>([]);
     const [namespace, setNamespace] = useState(initial.namespace || 'default');
     const [deploymentOptions, setDeploymentOptions] = useState<DeploymentInfo[]>([]);
@@ -104,6 +107,13 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
     useEffect(() => {
         setError(null);
     }, [namespace, deployment, metric, operator, threshold, step, minReplicas, maxReplicas, action, enabled]);
+
+    useEffect(() => {
+        onTargetChange?.({
+            namespace: namespace || undefined,
+            deployment: deployment || undefined,
+        });
+    }, [namespace, deployment, onTargetChange]);
 
     const nodeNamespaces = useMemo(() => {
         if (!nodeScope?.pods || nodeScope.pods.length === 0) return [];
@@ -363,6 +373,21 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                                 </div>
                             ))}
                         </div>
+                    </div>
+                </div>
+
+                <div className="form-section form-section-full">
+                    <div className="section-header">
+                        <div>
+                            <div className="section-title">5. Scheduling</div>
+                            <div className="section-subtitle">Preview where Kubernetes has placed pods for the selected workload.</div>
+                        </div>
+                        <div className="section-chip">Visibility</div>
+                    </div>
+                    <div className="section-body">
+                        {schedulingContent || (
+                            <div className="list-subtext">Select a deployment to view node placement.</div>
+                        )}
                     </div>
                 </div>
 

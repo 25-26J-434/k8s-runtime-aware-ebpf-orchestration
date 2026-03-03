@@ -8,7 +8,7 @@ import type {
     CommStats,
     CommLogEntry,
 } from '../types/api';
-import type { ScalingRule, LatestMetric, DeploymentInfo } from '../types/scaling';
+import type { ScalingRule, LatestMetric, DeploymentInfo, ScalingPlacementResponse } from '../types/scaling';
 
 const API_BASE = '';  // Proxy handles routing
 const ROUTING_API_BASE = (import.meta as any).env?.VITE_ROUTING_API || API_BASE || '';
@@ -315,6 +315,19 @@ export const api = {
         });
         if (!response.ok) {
             throw new Error(`Failed to fetch namespaces: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async getScalingPods(namespace: string, deployment: string): Promise<ScalingPlacementResponse> {
+        const query = `?namespace=${encodeURIComponent(namespace)}&deployment=${encodeURIComponent(deployment)}`;
+        const response = await fetch(`${SCALING_API_BASE}/api/scaling/pods${query}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch scaling pods: ${response.status} ${response.statusText}`);
         }
         return response.json();
     },

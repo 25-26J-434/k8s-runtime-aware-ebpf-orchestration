@@ -133,6 +133,7 @@ func StartServer() {
 	http.HandleFunc("/api/scaling/deployments", corsMiddleware(handleScalingDeployments))
 	http.HandleFunc("/api/scaling/namespaces", corsMiddleware(handleScalingNamespaces))
 	http.HandleFunc("/api/scaling/metrics/latest", corsMiddleware(handleScalingLatestMetrics))
+	http.HandleFunc("/api/scaling/pods", corsMiddleware(handleScalingPods))
 
 	// Component 2 (routing) endpoints
 	http.HandleFunc("/api/probe/", corsMiddleware(handleProbe))
@@ -167,6 +168,7 @@ func StartServer() {
 	log.Println("[API]   GET /api/scaling/deployments     - Deployment replica info")
 	log.Println("[API]   GET /api/scaling/namespaces      - Cluster namespaces")
 	log.Println("[API]   GET /api/scaling/metrics/latest  - Latest per-deployment metrics")
+	log.Println("[API]   GET /api/scaling/pods            - Pod placement for a deployment")
 	log.Println("[API] WebSocket Endpoints:")
 	log.Println("[API]   WS /ws/metrics                   - Real-time metrics stream")
 	log.Println("[API]   WS /ws/topology                  - Real-time topology stream")
