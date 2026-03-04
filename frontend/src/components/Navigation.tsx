@@ -1,7 +1,15 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { FiHome, FiGitBranch, FiGrid, FiClock, FiGlobe, FiChevronRight, FiBarChart2, FiActivity, FiZap, FiServer, FiCpu, FiRadio, FiPackage, FiDownload, FiSettings, FiRefreshCw, FiTrendingUp, FiLayers, FiBell } from 'react-icons/fi';
+import { api, type ExtensionInfo } from '../services/api';
 import './Navigation.css';
+
+const extensionIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+    notification: FiBell,
+};
+function getExtensionIcon(name: string) {
+    return extensionIconMap[name] ?? FiLayers;
+}
 
 export function Navigation() {
     const location = useLocation();
@@ -11,6 +19,13 @@ export function Navigation() {
     const extensionsLinkRef = useRef<HTMLDivElement>(null);
 
     const isActive = (path: string) => location.pathname === path;
+    const [extensions, setExtensions] = useState<ExtensionInfo[]>([]);
+
+    useEffect(() => {
+        api.getExtensions()
+            .then((res) => setExtensions(res.extensions ?? []))
+            .catch(() => setExtensions([]));
+    }, []);
 
     const dashboardSubItems = [
         { id: 'health', label: 'System Health', icon: FiActivity },
@@ -158,13 +173,26 @@ export function Navigation() {
                     <div className="submenu" style={extensionsSubmenuStyle}>
                         <div className="submenu-header">Extensions</div>
                         <div className="submenu-items-container">
-                            <Link 
-                                to="/extensions/notification" 
-                                className={`submenu-item submenu-item-link ${location.pathname === '/extensions/notification' ? 'active' : ''}`}
-                            >
-                                <FiBell className="submenu-icon" />
-                                <span className="submenu-text">Notification</span>
-                            </Link>
+                            {extensions.length === 0 ? (
+                                <Link to="/extensions/notification" className={`submenu-item submenu-item-link ${location.pathname === '/extensions/notification' ? 'active' : ''}`}>
+                                    <FiBell className="submenu-icon" />
+                                    <span className="submenu-text">Notification</span>
+                                </Link>
+                            ) : (
+                                extensions.map((ext) => {
+                                    const Icon = getExtensionIcon(ext.name);
+                                    return (
+                                        <Link
+                                            key={ext.name}
+                                            to={`/extensions/${ext.name}`}
+                                            className={`submenu-item submenu-item-link ${location.pathname === `/extensions/${ext.name}` ? 'active' : ''}`}
+                                        >
+                                            <Icon className="submenu-icon" />
+                                            <span className="submenu-text">{ext.label || ext.name}</span>
+                                        </Link>
+                                    );
+                                })
+                            )}
                         </div>
                     </div>
                 </div>
