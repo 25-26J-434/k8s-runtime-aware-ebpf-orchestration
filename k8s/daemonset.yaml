@@ -68,6 +68,8 @@ spec:
               value: "kerneleye"
             - name: ROUTING_MONGO_COLLECTION
               value: "routing_policies"
+            - name: EBPF_CGROUP_PATH
+              value: "/host/sys/fs/cgroup"
           securityContext:
             privileged: true
             capabilities:
@@ -112,11 +114,18 @@ spec:
             - name: kernel-src
               mountPath: /usr/src
               readOnly: true
+            - name: cgroup
+              mountPath: /host/sys/fs/cgroup
+              readOnly: true
       volumes:
         - name: bpf
           hostPath:
             path: /sys/fs/bpf
             type: DirectoryOrCreate
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
         - name: debugfs
           hostPath:
             path: /sys/kernel/debug
