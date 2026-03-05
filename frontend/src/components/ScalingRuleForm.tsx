@@ -60,49 +60,12 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
     };
 
     const metricInfo = metricDetails[metric];
-    const operatorText = operator === '>' ? 'above' : 'below';
-    const actionLabel = action === 'scale_up' ? 'Scale up' : 'Scale down';
-
-    const ruleSummary = useMemo(() => {
-        const target = namespace && deployment ? `${namespace}/${deployment}` : 'Select a target';
-        const thresholdText = `${threshold} ${metricInfo.unit}`;
-        const stepText = `${step} replica${step === 1 ? '' : 's'}`;
-        return {
-            target,
-            trigger: `${metricInfo.label} ${operatorText} ${thresholdText}`,
-            action: `${actionLabel} by ${stepText}`,
-            guardrails: `Min ${minReplicas} / Max ${maxReplicas}`,
-        };
-    }, [namespace, deployment, threshold, metricInfo, operatorText, actionLabel, step, minReplicas, maxReplicas]);
-
     const safetyChecks = [
         { label: 'Deployment selected', ok: Boolean(namespace && deployment) },
         { label: 'Step >= 1', ok: step >= 1 },
         { label: 'Min <= Max', ok: minReplicas <= maxReplicas },
         { label: 'Threshold set', ok: Number.isFinite(threshold) && threshold >= 0 },
     ];
-
-    const applyPreset = (preset: 'latency-burst' | 'rtt-jitter' | 'retransmits') => {
-        if (preset === 'latency-burst') {
-            setMetric('dns_latency');
-            setOperator('>');
-            setThreshold(150);
-            setAction('scale_up');
-            setStep(2);
-        } else if (preset === 'rtt-jitter') {
-            setMetric('rtt');
-            setOperator('>');
-            setThreshold(80);
-            setAction('scale_up');
-            setStep(1);
-        } else {
-            setMetric('tcp_retrans');
-            setOperator('>');
-            setThreshold(3);
-            setAction('scale_up');
-            setStep(1);
-        }
-    };
 
     useEffect(() => {
         setError(null);
@@ -226,14 +189,33 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                     </div>
                     <div className="section-body">
                         <div className="form-row">
-                            <label>Trigger Node (Observed)</label>
+                            <div className="label-with-info">
+                                <label>Trigger Node (Observed)</label>
+                                <button
+                                    type="button"
+                                    className="field-info-trigger"
+                                    title="This node is only used to evaluate telemetry and decide scaling. New pods may be scheduled onto other healthier nodes."
+                                    aria-label="About Trigger Node (Observed)"
+                                >
+                                    !
+                                </button>
+                            </div>
                             <div className="node-scope-pill">
                                 {nodeScope ? `${nodeScope.name}${nodeScope.ip ? ` (${nodeScope.ip})` : ''}` : 'All nodes'}
                             </div>
-                            <div className="field-hint">This node is only used to evaluate telemetry and decide scaling. New pods may be scheduled onto other healthier nodes.</div>
                         </div>
                         <div className="form-row">
-                            <label>Namespace</label>
+                            <div className="label-with-info">
+                                <label>Namespace</label>
+                                <button
+                                    type="button"
+                                    className="field-info-trigger"
+                                    title="Pick the namespace that owns the deployment you want to scale."
+                                    aria-label="About Namespace"
+                                >
+                                    !
+                                </button>
+                            </div>
                             <select
                                 value={namespace}
                                 onChange={(e) => { setNamespace(e.target.value); setDeployment(''); }}
@@ -248,11 +230,20 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                             {!loadingNamespaces && namespaces.length === 0 && (
                                 <div className="list-subtext">No namespaces match this node</div>
                             )}
-                            <div className="field-hint">Pick the namespace that owns the deployment you want to scale.</div>
                         </div>
 
                         <div className="form-row">
-                            <label>Deployment</label>
+                            <div className="label-with-info">
+                                <label>Deployment</label>
+                                <button
+                                    type="button"
+                                    className="field-info-trigger"
+                                    title="Select the specific workload that should scale automatically."
+                                    aria-label="About Deployment"
+                                >
+                                    !
+                                </button>
+                            </div>
                             <select
                                 value={deployment}
                                 onChange={(e) => setDeployment(e.target.value)}
@@ -269,7 +260,6 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                             {!loadingDeployments && namespace && deploymentOptions.length === 0 && (
                                 <div className="list-subtext">No deployments found for this node</div>
                             )}
-                            <div className="field-hint">Select the specific workload that should scale automatically.</div>
                         </div>
 
                         <div className="form-row">
@@ -292,28 +282,55 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                     </div>
                     <div className="section-body">
                         <div className="form-row">
-                            <label>Metric</label>
+                            <div className="label-with-info">
+                                <label>Metric</label>
+                                <button
+                                    type="button"
+                                    className="field-info-trigger"
+                                    title={metricInfo.description}
+                                    aria-label="About Metric"
+                                >
+                                    !
+                                </button>
+                            </div>
                             <select value={metric} onChange={(e) => setMetric(e.target.value as MetricType)}>
                                 <option value="dns_latency">dns_latency</option>
                                 <option value="rtt">rtt</option>
                                 <option value="tcp_retrans">tcp_retrans</option>
                             </select>
-                            <div className="field-hint">{metricInfo.description}</div>
                         </div>
 
                         <div className="form-row">
-                            <label>Operator</label>
+                            <div className="label-with-info">
+                                <label>Operator</label>
+                                <button
+                                    type="button"
+                                    className="field-info-trigger"
+                                    title={`Trigger when metric is ${operator === '>' ? 'higher' : 'lower'} than the threshold.`}
+                                    aria-label="About Operator"
+                                >
+                                    !
+                                </button>
+                            </div>
                             <select value={operator} onChange={(e) => setOperator(e.target.value as OperatorType)}>
                                 <option value=">">&gt;</option>
                                 <option value="<">&lt;</option>
                             </select>
-                            <div className="field-hint">Trigger when metric is {operator === '>' ? 'higher' : 'lower'} than the threshold.</div>
                         </div>
 
                         <div className="form-row">
-                            <label>Threshold</label>
+                            <div className="label-with-info">
+                                <label>Threshold</label>
+                                <button
+                                    type="button"
+                                    className="field-info-trigger"
+                                    title={`Units: ${metricInfo.unit}. Typical range: ${metricInfo.typical}.`}
+                                    aria-label="About Threshold"
+                                >
+                                    !
+                                </button>
+                            </div>
                             <input type="number" value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} />
-                            <div className="field-hint">Units: {metricInfo.unit}. Typical range: {metricInfo.typical}.</div>
                         </div>
                     </div>
                 </div>
@@ -328,18 +345,36 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                     </div>
                     <div className="section-body">
                         <div className="form-row">
-                            <label>Action</label>
+                            <div className="label-with-info">
+                                <label>Action</label>
+                                <button
+                                    type="button"
+                                    className="field-info-trigger"
+                                    title={action === 'scale_up' ? 'Add replicas when conditions worsen.' : 'Reduce replicas when conditions improve.'}
+                                    aria-label="About Action"
+                                >
+                                    !
+                                </button>
+                            </div>
                             <select value={action} onChange={(e) => setAction(e.target.value as ScalingAction)}>
                                 <option value="scale_up">scale_up</option>
                                 <option value="scale_down">scale_down</option>
                             </select>
-                            <div className="field-hint">{action === 'scale_up' ? 'Add replicas when conditions worsen.' : 'Reduce replicas when conditions improve.'}</div>
                         </div>
 
                         <div className="form-row">
-                            <label>Replicas Change</label>
+                            <div className="label-with-info">
+                                <label>Replicas Change</label>
+                                <button
+                                    type="button"
+                                    className="field-info-trigger"
+                                    title="Change the replica count by this amount each time the rule fires."
+                                    aria-label="About Replicas Change"
+                                >
+                                    !
+                                </button>
+                            </div>
                             <input type="number" min={1} value={step} onChange={(e) => setStep(Number(e.target.value))} />
-                            <div className="field-hint">Change the replica count by this amount each time the rule fires.</div>
                         </div>
                     </div>
                 </div>
@@ -354,15 +389,33 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                     </div>
                     <div className="section-body guardrail-grid">
                         <div className="form-row">
-                            <label>Min Replicas</label>
+                            <div className="label-with-info">
+                                <label>Min Replicas</label>
+                                <button
+                                    type="button"
+                                    className="field-info-trigger"
+                                    title="Lower bound even when scaling down."
+                                    aria-label="About Min Replicas"
+                                >
+                                    !
+                                </button>
+                            </div>
                             <input type="number" min={0} value={minReplicas} onChange={(e) => setMinReplicas(Number(e.target.value))} />
-                            <div className="field-hint">Lower bound even when scaling down.</div>
                         </div>
 
                         <div className="form-row">
-                            <label>Max Replicas</label>
+                            <div className="label-with-info">
+                                <label>Max Replicas</label>
+                                <button
+                                    type="button"
+                                    className="field-info-trigger"
+                                    title="Upper bound even when scaling up."
+                                    aria-label="About Max Replicas"
+                                >
+                                    !
+                                </button>
+                            </div>
                             <input type="number" min={0} value={maxReplicas} onChange={(e) => setMaxReplicas(Number(e.target.value))} />
-                            <div className="field-hint">Upper bound even when scaling up.</div>
                         </div>
                         <div className="guardrail-status">
                             <div className="guardrail-title">Safety Checks</div>
@@ -397,55 +450,6 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                     <button type="submit" className="btn btn-primary" disabled={submitting}>{submitLabel}</button>
                 </div>
             </form>
-
-            <aside className="scaling-form-guide">
-                <div className="guide-card">
-                    <div className="guide-title">Quick Start Presets</div>
-                    <div className="preset-buttons">
-                        <button type="button" className="btn btn-sm" onClick={() => applyPreset('latency-burst')}>Latency Burst</button>
-                        <button type="button" className="btn btn-sm" onClick={() => applyPreset('rtt-jitter')}>RTT Jitter</button>
-                        <button type="button" className="btn btn-sm" onClick={() => applyPreset('retransmits')}>Retransmit Spike</button>
-                    </div>
-                    <div className="guide-text">Presets fill recommended values that you can fine-tune.</div>
-                </div>
-
-                <div className="guide-card">
-                    <div className="guide-title">Live Rule Preview</div>
-                    <div className="rule-preview">
-                        <div className="preview-line">Target: <strong>{ruleSummary.target}</strong></div>
-                        <div className="preview-line">Trigger: <strong>{ruleSummary.trigger}</strong></div>
-                        <div className="preview-line">Action: <strong>{ruleSummary.action}</strong></div>
-                        <div className="preview-line">Guardrails: <strong>{ruleSummary.guardrails}</strong></div>
-                    </div>
-                    <div className="guide-text">This preview updates as you change the form.</div>
-                </div>
-
-                <div className="guide-card">
-                    <div className="guide-title">How To Fill This Form</div>
-                    <ol className="guide-steps">
-                        <li>Pick the namespace and deployment first.</li>
-                        <li>Choose a metric and set a threshold with units.</li>
-                        <li>Select the scaling action and step size.</li>
-                        <li>Apply min/max bounds to keep it safe.</li>
-                    </ol>
-                </div>
-
-                <div className="guide-card">
-                    <div className="guide-title">Signal Reference</div>
-                    <div className="signal-row">
-                        <div className="signal-name">DNS Latency</div>
-                        <div className="signal-meta">{metricDetails.dns_latency.typical}</div>
-                    </div>
-                    <div className="signal-row">
-                        <div className="signal-name">RTT</div>
-                        <div className="signal-meta">{metricDetails.rtt.typical}</div>
-                    </div>
-                    <div className="signal-row">
-                        <div className="signal-name">TCP Retrans</div>
-                        <div className="signal-meta">{metricDetails.tcp_retrans.typical}</div>
-                    </div>
-                </div>
-            </aside>
         </div>
     );
 }
