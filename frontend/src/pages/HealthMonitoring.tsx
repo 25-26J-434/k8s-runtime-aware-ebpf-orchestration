@@ -6,6 +6,7 @@ import {
   PodHealth,
 } from "../types/health";
 import { healthService } from "../services/health";
+import { metricsConfigService } from "../services/metricsConfig";
 import { FiRefreshCw, FiAlertTriangle, FiSettings } from "react-icons/fi";
 import "./HealthMonitoring.css";
 
@@ -17,7 +18,7 @@ export const HealthMonitoring: React.FC = () => {
   const [recentAlerts, setRecentAlerts] = useState<HealthAlert[]>([]);
   
   // Filter states
-  const [selectedCluster, setSelectedCluster] = useState<string>("local");
+  const [selectedNode, setSelectedNode] = useState<string>("all");
   const [filterNamespace, setFilterNamespace] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchPod, setSearchPod] = useState<string>("");
@@ -25,6 +26,8 @@ export const HealthMonitoring: React.FC = () => {
   
   // Configuration states
   const [showConfig, setShowConfig] = useState(false);
+  const [configLoading, setConfigLoading] = useState(true);
+  const [configError, setConfigError] = useState<string | null>(null);
   const [metricsConfig, setMetricsConfig] = useState({
     dns_latency_threshold: 20, // ms
     dns_latency_penalty: 20,
@@ -39,6 +42,23 @@ export const HealthMonitoring: React.FC = () => {
   });
 
   useEffect(() => {
+    // Load metrics config from backend
+    const loadConfig = async () => {
+      try {
+        setConfigLoading(true);
+        const config = await metricsConfigService.getConfig();
+        setMetricsConfig(config);
+        setConfigError(null);
+        console.log('[HealthMonitoring] Loaded config from backend:', config);
+      } catch (error) {
+        console.error('[HealthMonitoring] Failed to load config from backend:', error);
+        setConfigError('Failed to load configuration from backend');
+        // Keep using default values on error
+      } finally {
+        setConfigLoading(false);
+      }
+    };
+
     healthService.onConnect(() => setIsConnected(true));
     healthService.onDisconnect(() => setIsConnected(false));
     healthService.onClusterHealthUpdate((data) => {
@@ -49,6 +69,7 @@ export const HealthMonitoring: React.FC = () => {
       setRecentAlerts((prev) => [alert, ...prev.slice(0, 9)]);
     });
 
+    loadConfig();
     healthService.connect();
     handleRefreshData();
 
@@ -71,6 +92,21 @@ export const HealthMonitoring: React.FC = () => {
     }
   };
 
+  const handleSaveConfig = async () => {
+    try {
+      setConfigError(null);
+      await metricsConfigService.updateConfig(metricsConfig);
+      console.log('[HealthMonitoring] Configuration saved to backend:', metricsConfig);
+      alert('Configuration saved successfully!');
+      setShowConfig(false);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[HealthMonitoring] Failed to save config:', errorMsg);
+      setConfigError(`Failed to save configuration: ${errorMsg}`);
+      alert(`Error: ${errorMsg}`);
+    }
+  };
+
   // Get all pods across all nodes
   const getAllPods = (): { pod: PodHealth; node: string }[] => {
     if (!healthData) return [];
@@ -86,6 +122,11 @@ export const HealthMonitoring: React.FC = () => {
   // Filter pods based on search and filters
   const getFilteredPods = (): { pod: PodHealth; node: string }[] => {
     let pods = getAllPods();
+    
+    // Filter by selected node
+    if (selectedNode !== "all") {
+      pods = pods.filter((p) => p.node === selectedNode);
+    }
     
     if (filterNamespace !== "all") {
       pods = pods.filter((p) => p.pod.namespace === filterNamespace);
@@ -115,8 +156,14 @@ export const HealthMonitoring: React.FC = () => {
     return Array.from(namespaces).sort();
   };
 
+  const getNodes = (): string[] => {
+    if (!healthData) return [];
+    return Object.keys(healthData.nodes).sort();
+  };
+
   const filteredPods = getFilteredPods();
   const namespaces = getNamespaces();
+  const nodes = getNodes();
 
   // Render config modal
   const renderConfigModal = () => {
@@ -237,9 +284,25 @@ export const HealthMonitoring: React.FC = () => {
             </div>
           </div>
 
+          {configError && (
+            <div style={{ color: '#ef4444', padding: '10px', marginBottom: '10px', fontSize: '12px' }}>
+              ⚠️ {configError}
+            </div>
+          )}
+
           <div className="modal-footer">
-            <button className="btn-save" onClick={() => setShowConfig(false)}>Save & Close</button>
-            <button className="btn-reset" onClick={() => location.reload()}>Reset to Defaults</button>
+            <button className="btn-save" onClick={handleSaveConfig} disabled={configLoading}>
+              {configLoading ? 'Saving...' : 'Save & Close'}
+            </button>
+            <button className="btn-reset" onClick={async () => {
+              try {
+                const config = await metricsConfigService.getConfig();
+                setMetricsConfig(config);
+                alert('Reset to backend configuration');
+              } catch (error) {
+                alert('Failed to reset configuration');
+              }
+            }}>Reset to Saved</button>
           </div>
         </div>
       </div>
@@ -325,14 +388,14 @@ export const HealthMonitoring: React.FC = () => {
         </div>
         <div className="header-right">
           <select 
-            value={selectedCluster} 
-            onChange={(e) => setSelectedCluster(e.target.value)}
+            value={selectedNode} 
+            onChange={(e) => setSelectedNode(e.target.value)}
             className="cluster-select"
           >
-            <option value="local">Local Cluster</option>
-            <option value="prod">Production</option>
-            <option value="staging">Staging</option>
-            <option value="dev">Development</option>
+            <option value="all">All Nodes</option>
+            {nodes.map((node) => (
+              <option key={node} value={node}>{node}</option>
+            ))}
           </select>
 
           <button 

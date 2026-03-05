@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/config"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -99,6 +100,7 @@ func initNodeHealthStreaming() {
 		comm.RegisterMessageHandler(comm.EventNodeHealth, handleRemoteNodeHealthUpdate)
 		http.HandleFunc("/api/cluster/node-health", corsMiddleware(handleClusterNodeHealth))
 		http.HandleFunc("/ws/node-health", corsMiddleware(handleWebSocketNodeHealth))
+		http.HandleFunc("/api/test-alert", corsMiddleware(handleTestAlert))
 		go nodeHealthBroadcastLoop()
 		go nodeHealthWebSocketBroadcaster()
 	})
@@ -340,6 +342,9 @@ func handleClusterNodeHealth(w http.ResponseWriter, _ *http.Request) {
 // detectHealthAlerts detects changes in node/pod health and generates alerts
 func detectHealthAlerts(nodeKey string, current NodeHealthUpdate) []HealthAlert {
 	var alerts []HealthAlert
+	
+	// Get current metrics configuration for threshold-based alerts
+	cfg := config.GetCurrentMetricsConfig()
 
 	previousHealthMu.RLock()
 	previous, hadPrevious := previousNodeHealth[nodeKey]
@@ -448,7 +453,7 @@ func detectHealthAlerts(nodeKey string, current NodeHealthUpdate) []HealthAlert 
 			}
 
 			// High restart count
-			if existed && pod.RestartCount > prevPod.RestartCount && pod.RestartCount >= 5 {
+			if existed && pod.RestartCount > prevPod.RestartCount && pod.RestartCount >= cfg.RestartCountThreshold {
 				alertID := "pod:" + nodeKey + ":" + podKey + ":restarts"
 				alert := HealthAlert{
 					Timestamp: current.Timestamp,
@@ -493,12 +498,81 @@ func detectHealthAlerts(nodeKey string, current NodeHealthUpdate) []HealthAlert 
 				alerts = append(alerts, alert)
 			}
 		}
+	} else {
+		// First time seeing this node - check for immediate issues
+		for _, pod := range current.Pods {
+			podKey := pod.Namespace + "/" + pod.Name
+			
+			// Alert on failed pods even on first detection
+			if pod.Phase == "Failed" {
+				alertID := "pod:" + nodeKey + ":" + podKey + ":failed"
+				alert := HealthAlert{
+					Timestamp: current.Timestamp,
+					Severity:  AlertCritical,
+					Source:    "pod",
+					NodeName:  current.NodeName,
+					PodName:   pod.Name,
+					Namespace: pod.Namespace,
+					Message:   fmt.Sprintf("Pod %s/%s has failed", pod.Namespace, pod.Name),
+					Details: map[string]interface{}{
+						"phase":         pod.Phase,
+						"restart_count": pod.RestartCount,
+					},
+				}
+				storeAlert(alertID, alert)
+				alerts = append(alerts, alert)
+			}
+			
+			// Alert on high restart count on first detection
+			if pod.RestartCount >= cfg.RestartCountThreshold {
+				alertID := "pod:" + nodeKey + ":" + podKey + ":restarts"
+				alert := HealthAlert{
+					Timestamp: current.Timestamp,
+					Severity:  AlertWarning,
+					Source:    "pod",
+					NodeName:  current.NodeName,
+					PodName:   pod.Name,
+					Namespace: pod.Namespace,
+					Message:   fmt.Sprintf("Pod %s/%s has high restart count: %d", pod.Namespace, pod.Name, pod.RestartCount),
+					Details: map[string]interface{}{
+						"restart_count": pod.RestartCount,
+					},
+				}
+				storeAlert(alertID, alert)
+				alerts = append(alerts, alert)
+			}
+			
+			// Alert on not-ready pods
+			if pod.Phase == "Running" && !pod.Ready {
+				alertID := "pod:" + nodeKey + ":" + podKey + ":notready"
+				alert := HealthAlert{
+					Timestamp: current.Timestamp,
+					Severity:  AlertWarning,
+					Source:    "pod",
+					NodeName:  current.NodeName,
+					PodName:   pod.Name,
+					Namespace: pod.Namespace,
+					Message:   fmt.Sprintf("Pod %s/%s is running but not ready", pod.Namespace, pod.Name),
+					Details: map[string]interface{}{
+						"phase": pod.Phase,
+						"ready": pod.Ready,
+					},
+				}
+				storeAlert(alertID, alert)
+				alerts = append(alerts, alert)
+			}
+		}
 	}
 
 	// Update previous state
 	previousHealthMu.Lock()
 	previousNodeHealth[nodeKey] = current
 	previousHealthMu.Unlock()
+
+	// Log alert count for debugging
+	if len(alerts) > 0 {
+		log.Printf("[Alerts] Generated %d alerts for node %s", len(alerts), nodeKey)
+	}
 
 	return alerts
 }
@@ -520,6 +594,58 @@ func broadcastAlert(alert HealthAlert) {
 		Event:   "HEALTH_ALERT",
 		Payload: map[string]any{"alert": alert},
 	})
+}
+
+// handleTestAlert generates a test alert for debugging (GET /api/test-alert)
+func handleTestAlert(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	nodeName := r.URL.Query().Get("node")
+	if nodeName == "" {
+		nodeName = getLocalNodeName()
+	}
+
+	severity := r.URL.Query().Get("severity")
+	if severity == "" {
+		severity = "warning"
+	}
+
+	alertSeverity := AlertWarning
+	if severity == "critical" {
+		alertSeverity = AlertCritical
+	} else if severity == "info" {
+		alertSeverity = AlertInfo
+	}
+
+	testAlert := HealthAlert{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Severity:  alertSeverity,
+		Source:    "test",
+		NodeName:  nodeName,
+		PodName:   "test-pod",
+		Namespace: "default",
+		Message:   fmt.Sprintf("Test alert generated at %s", time.Now().Format(time.RFC3339)),
+		Details: map[string]interface{}{
+			"test": true,
+			"type": "manual",
+		},
+	}
+
+	// Store and broadcast the test alert
+	alertID := fmt.Sprintf("test:alert:%d", time.Now().Unix())
+	storeAlert(alertID, testAlert)
+	broadcastAlert(testAlert)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"alert":  testAlert,
+	})
+
+	log.Printf("[API] Test alert generated: %s", testAlert.Message)
 }
 
 // handleWebSocketNodeHealth handles WebSocket connections for node health
@@ -596,6 +722,9 @@ func applyMetricsBasedHealthLevels(update *NodeHealthUpdate, metrics UnifiedMetr
 }
 
 func evaluatePodHealthLevel(pod PodHealth, podMetrics map[string]interface{}) (HealthLevel, int, []string) {
+	// Get current metrics configuration
+	cfg := config.GetCurrentMetricsConfig()
+	
 	if pod.Phase == string(corev1.PodFailed) {
 		return HealthLevelUnhealthy, 0, []string{"pod phase is Failed"}
 	}
@@ -616,12 +745,13 @@ func evaluatePodHealthLevel(pod PodHealth, podMetrics map[string]interface{}) (H
 		reasons = append(reasons, "pod is running but not Ready")
 	}
 
+	// Restart count - now using configurable thresholds
 	switch {
-	case pod.RestartCount >= 5:
-		score -= 30
+	case pod.RestartCount >= cfg.RestartCountThreshold:
+		score -= cfg.RestartCountPenalty
 		reasons = append(reasons, fmt.Sprintf("high restart count: %d", pod.RestartCount))
-	case pod.RestartCount >= 2:
-		score -= 15
+	case pod.RestartCount >= cfg.RestartCountThreshold/2:
+		score -= cfg.RestartCountPenalty / 2
 		reasons = append(reasons, fmt.Sprintf("restart count elevated: %d", pod.RestartCount))
 	}
 
@@ -631,21 +761,23 @@ func evaluatePodHealthLevel(pod PodHealth, podMetrics map[string]interface{}) (H
 		packetLoss := asFloat64(tcpMetrics["packet_loss"])
 		badHandshakes := asFloat64(tcpMetrics["bad_handshakes"])
 
+		// TCP Retransmissions - now using configurable thresholds
 		switch {
-		case retrans >= 50:
-			score -= 20
+		case retrans >= cfg.TCPRetransThreshold:
+			score -= cfg.TCPRetransPenalty
 			reasons = append(reasons, fmt.Sprintf("high retransmissions: %.0f", retrans))
-		case retrans >= 10:
-			score -= 10
+		case retrans >= cfg.TCPRetransThreshold/5:
+			score -= cfg.TCPRetransPenalty / 2
 			reasons = append(reasons, fmt.Sprintf("retransmissions elevated: %.0f", retrans))
 		}
 
+		// Packet Loss - now using configurable thresholds
 		switch {
-		case packetLoss >= 20:
-			score -= 20
+		case packetLoss >= cfg.PacketLossThreshold:
+			score -= cfg.PacketLossPenalty
 			reasons = append(reasons, fmt.Sprintf("high packet loss: %.0f", packetLoss))
-		case packetLoss >= 5:
-			score -= 10
+		case packetLoss >= cfg.PacketLossThreshold/4:
+			score -= cfg.PacketLossPenalty / 2
 			reasons = append(reasons, fmt.Sprintf("packet loss elevated: %.0f", packetLoss))
 		}
 
@@ -662,26 +794,32 @@ func evaluatePodHealthLevel(pod PodHealth, podMetrics map[string]interface{}) (H
 	dnsMetrics := asMap(podMetrics["dns_latency"])
 	if dnsMetrics != nil {
 		avgDNSNs := asFloat64(dnsMetrics["avg_latency_ns"])
+		avgDNSMs := avgDNSNs / 1_000_000 // Convert to milliseconds
+		
+		// DNS Latency - now using configurable thresholds
 		switch {
-		case avgDNSNs >= 100_000_000: // 100ms
-			score -= 20
-			reasons = append(reasons, fmt.Sprintf("dns latency high: %.1fms", avgDNSNs/1_000_000))
-		case avgDNSNs >= 20_000_000: // 20ms
-			score -= 10
-			reasons = append(reasons, fmt.Sprintf("dns latency elevated: %.1fms", avgDNSNs/1_000_000))
+		case avgDNSMs >= cfg.DNSLatencyThreshold*5:
+			score -= cfg.DNSLatencyPenalty
+			reasons = append(reasons, fmt.Sprintf("dns latency high: %.1fms", avgDNSMs))
+		case avgDNSMs >= cfg.DNSLatencyThreshold:
+			score -= cfg.DNSLatencyPenalty / 2
+			reasons = append(reasons, fmt.Sprintf("dns latency elevated: %.1fms", avgDNSMs))
 		}
 	}
 
 	rttMetrics := asMap(podMetrics["rtt"])
 	if rttMetrics != nil {
 		avgRTTNs := asFloat64(rttMetrics["avg_rtt_ns"])
+		avgRTTMs := avgRTTNs / 1_000_000 // Convert to milliseconds
+		
+		// RTT - now using configurable thresholds
 		switch {
-		case avgRTTNs >= 200_000_000: // 200ms
-			score -= 20
-			reasons = append(reasons, fmt.Sprintf("rtt high: %.1fms", avgRTTNs/1_000_000))
-		case avgRTTNs >= 50_000_000: // 50ms
-			score -= 10
-			reasons = append(reasons, fmt.Sprintf("rtt elevated: %.1fms", avgRTTNs/1_000_000))
+		case avgRTTMs >= cfg.RTTThreshold:
+			score -= cfg.RTTPenalty
+			reasons = append(reasons, fmt.Sprintf("rtt high: %.1fms", avgRTTMs))
+		case avgRTTMs >= cfg.RTTThreshold/4:
+			score -= cfg.RTTPenalty / 2
+			reasons = append(reasons, fmt.Sprintf("rtt elevated: %.1fms", avgRTTMs))
 		}
 	}
 

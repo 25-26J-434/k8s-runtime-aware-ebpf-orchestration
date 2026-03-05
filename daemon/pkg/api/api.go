@@ -12,6 +12,7 @@ import (
 
 
    "github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
+   "github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/config"
    "github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
    corev1 "k8s.io/api/core/v1"
    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -144,6 +145,8 @@ func StartServer() {
    http.HandleFunc("/api/scaling/namespaces", corsMiddleware(handleScalingNamespaces))
    http.HandleFunc("/api/scaling/metrics/latest", corsMiddleware(handleScalingLatestMetrics))
 
+   // Metrics configuration endpoints
+   http.HandleFunc("/api/metrics-config", corsMiddleware(handleMetricsConfig))
 
    // Component 2 (routing) endpoints
    http.HandleFunc("/api/probe/", corsMiddleware(handleProbe))
@@ -606,5 +609,17 @@ func updatePodIPMappingFromK8s() {
    tracker := telemetry.GetConnectionTracker()
    if tracker != nil {
       tracker.UpdatePodIPMapping(mapping)
+   }
+}
+
+// handleMetricsConfig handles GET and POST requests for metrics configuration
+func handleMetricsConfig(w http.ResponseWriter, r *http.Request) {
+   switch r.Method {
+   case http.MethodGet:
+      config.HandleGetMetricsConfig(w, r)
+   case http.MethodPost, http.MethodPut:
+      config.HandleSetMetricsConfig(w, r)
+   default:
+      http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
    }
 }
