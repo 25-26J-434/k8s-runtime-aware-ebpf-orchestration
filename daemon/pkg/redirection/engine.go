@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/loader"
@@ -39,6 +41,10 @@ type Engine struct {
 	dyn    dynamic.Interface
 	kube   *kubernetes.Clientset
 	logger *log.Logger
+
+	syncNamespace string
+	dnatSyncMu    sync.Mutex
+	dnatSyncKeys  map[string]dnatKey // configmap-key -> applied map key
 }
 
 // ApplyResult mirrors the response we return to the frontend.
@@ -62,7 +68,18 @@ func NewEngine(store *Store, dyn dynamic.Interface, kube *kubernetes.Clientset, 
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Engine{store: store, dyn: dyn, kube: kube, logger: logger}
+	syncNS := os.Getenv("POD_NAMESPACE")
+	if syncNS == "" {
+		syncNS = "ebpf-telemetry"
+	}
+	return &Engine{
+		store:         store,
+		dyn:           dyn,
+		kube:          kube,
+		logger:        logger,
+		syncNamespace: syncNS,
+		dnatSyncKeys:  map[string]dnatKey{},
+	}
 }
 
 // EvaluateAndApply loads a policy, checks telemetry, and creates the LRP if needed.
@@ -354,24 +371,10 @@ func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue f
 		return nil, err
 	}
 
-	// Cluster scope should be observable and consistent across nodes.
-	// Prefer EndpointSlice updates; fall back to eBPF DNAT if that fails.
-	if err := e.updateEndpointSlicesForService(ctx, p.Namespace, frontendSvc, winner, p.Action.BackendPort, p.PolicyName); err == nil {
-		msg := "Violation triggered. Cluster redirection applied via EndpointSlice."
-		return &ApplyResult{
-			Applied:       true,
-			Message:       msg,
-			TargetBackend: winnerPod,
-			TTLSeconds:    p.Action.TTLSeconds,
-			Details: []string{
-				"EndpointSlice updated",
-				fmt.Sprintf("Target backend: %s", winnerPod),
-				fmt.Sprintf("Metric avg: %.2f (threshold %.2f)", avgValue, p.Telemetry.ViolationThreshold),
-			},
-			Stdout: fmt.Sprintf("EndpointSlice updated for service %s", frontendSvc.Name),
-		}, nil
-	} else {
-		e.logger.Printf("[Routing] cluster EndpointSlice update failed for %s/%s: %v", p.Namespace, frontendSvc.Name, err)
+	// For cluster scope, distribute the redirect decision to every node and let each node program
+	// its local DNAT map. This avoids fighting Kubernetes EndpointSlice reconciliation.
+	if err := e.publishClusterDNAT(ctx, p, frontendSvc, winner); err != nil {
+		e.logger.Printf("[Routing] cluster DNAT publish failed for %s/%s: %v", p.Namespace, frontendSvc.Name, err)
 	}
 
 	if err := e.applyDNATRedirectWithPorts(ctx, frontendSvc, winner, uint16(p.Frontend.Port), uint16(p.Action.BackendPort)); err != nil {
@@ -386,6 +389,7 @@ func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue f
 		TTLSeconds:    p.Action.TTLSeconds,
 		Details: []string{
 			"DNAT map updated",
+			"Redirect published to all nodes",
 			fmt.Sprintf("Target backend: %s", winnerPod),
 			fmt.Sprintf("Metric avg: %.2f (threshold %.2f)", avgValue, p.Telemetry.ViolationThreshold),
 		},
@@ -468,15 +472,11 @@ func (e *Engine) restoreClusterRedirect(ctx context.Context, p *Policy, clearWin
 		return err
 	}
 
+	if err := e.removeClusterDNAT(ctx, p); err != nil {
+		e.logger.Printf("[Routing] cluster DNAT remove failed for %s/%s: %v", p.Namespace, frontendSvc.Name, err)
+	}
 	if err := e.deleteDNATRedirectWithPort(frontendSvc, uint16(p.Frontend.Port)); err != nil {
-		endpoints, err := e.buildEndpointsForService(ctx, p.Namespace, frontendSvc)
-		if err != nil {
-			return err
-		}
-
-		if err := e.updateEndpointSlicesWithEndpoints(ctx, p.Namespace, frontendSvc, endpoints, p.PolicyName); err != nil {
-			return err
-		}
+		e.logger.Printf("[Routing] cluster DNAT map delete failed for %s/%s: %v", p.Namespace, frontendSvc.Name, err)
 	}
 
 	if clearWinner && strings.ToLower(p.Action.Strategy) == "best_pod" && p.Action.WinnerLabel != "" {
