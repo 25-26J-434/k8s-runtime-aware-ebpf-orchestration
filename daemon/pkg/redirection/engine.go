@@ -384,6 +384,7 @@ func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue f
 	// its local DNAT map. This avoids fighting Kubernetes EndpointSlice reconciliation.
 	if err := e.publishClusterDNAT(ctx, p, frontendSvc, winner); err != nil {
 		e.logger.Printf("[Routing] cluster DNAT publish failed for %s/%s: %v", p.Namespace, frontendSvc.Name, err)
+		return nil, err
 	}
 
 	if err := e.applyDNATRedirectWithPorts(ctx, frontendSvc, winner, uint16(p.Frontend.Port), uint16(p.Action.BackendPort)); err != nil {

@@ -71,8 +71,11 @@ func (e *Engine) publishClusterDNAT(ctx context.Context, p *Policy, svc *corev1.
 			Data: map[string]string{},
 		}
 		cm.Data[dnatPolicyKey(p)] = string(raw)
-		_, err = cmClient.Create(ctx, cm, metav1.CreateOptions{})
-		return err
+		if _, err = cmClient.Create(ctx, cm, metav1.CreateOptions{}); err != nil {
+			return err
+		}
+		e.logger.Printf("[Routing] cluster DNAT published %s in %s (created)", dnatPolicyKey(p), e.syncNamespace)
+		return nil
 	}
 	if err != nil {
 		return err
@@ -82,8 +85,11 @@ func (e *Engine) publishClusterDNAT(ctx context.Context, p *Policy, svc *corev1.
 		cm.Data = map[string]string{}
 	}
 	cm.Data[dnatPolicyKey(p)] = string(raw)
-	_, err = cmClient.Update(ctx, cm, metav1.UpdateOptions{})
-	return err
+	if _, err = cmClient.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		return err
+	}
+	e.logger.Printf("[Routing] cluster DNAT published %s in %s (updated)", dnatPolicyKey(p), e.syncNamespace)
+	return nil
 }
 
 func (e *Engine) removeClusterDNAT(ctx context.Context, p *Policy) error {
@@ -121,6 +127,8 @@ func (e *Engine) StartClusterDNATSync(ctx context.Context) {
 				return
 			}
 
+			e.fetchAndReconcileClusterDNAT(ctx)
+
 			w, err := e.kube.CoreV1().ConfigMaps(e.syncNamespace).Watch(ctx, metav1.ListOptions{
 				FieldSelector: "metadata.name=" + dnatRedirectConfigMapName,
 			})
@@ -134,6 +142,21 @@ func (e *Engine) StartClusterDNATSync(ctx context.Context) {
 			time.Sleep(250 * time.Millisecond)
 		}
 	}()
+}
+
+func (e *Engine) fetchAndReconcileClusterDNAT(ctx context.Context) {
+	cm, err := e.kube.CoreV1().ConfigMaps(e.syncNamespace).Get(ctx, dnatRedirectConfigMapName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		e.reconcileDNATFromConfigMap(&corev1.ConfigMap{Data: map[string]string{}})
+		return
+	}
+	if err != nil || cm == nil {
+		if err != nil {
+			e.logger.Printf("[Routing] DNAT sync fetch failed: %v", err)
+		}
+		return
+	}
+	e.reconcileDNATFromConfigMap(cm)
 }
 
 func (e *Engine) consumeDNATWatch(ctx context.Context, w watch.Interface) {
