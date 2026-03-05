@@ -185,7 +185,9 @@ func (e *Engine) consumeDNATWatch(ctx context.Context, w watch.Interface) {
 func (e *Engine) reconcileDNATFromConfigMap(cm *corev1.ConfigMap) {
 	dnatMap := loader.DNATMapHandle()
 	if dnatMap == nil {
-		// DNAT program may be disabled on this node; don't spam logs.
+		if e.localNodeName != "" {
+			e.logger.Printf("[Routing] DNAT sync skipped: DNAT map not available on node %s", e.localNodeName)
+		}
 		return
 	}
 
