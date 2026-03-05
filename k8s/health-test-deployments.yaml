@@ -1,0 +1,227 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: health-test
+  labels:
+    name: health-test
+
+---
+# Test Service 1: Stable service (should stay healthy)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stable-test-service
+  namespace: health-test
+  labels:
+    app: stable-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: stable-test
+  template:
+    metadata:
+      labels:
+        app: stable-test
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 20
+
+---
+# Test Service 2: Flaky service (will restart occasionally) 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flaky-test-service
+  namespace: health-test
+  labels:
+    app: flaky-test
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: flaky-test
+  template:
+    metadata:
+      labels:
+        app: flaky-test
+    spec:
+      containers:
+      - name: flaky-app
+        image: alpine:latest
+        command: ["/bin/sh"]
+        args: ["-c", "while true; do sleep 30; if [ $((RANDOM % 20)) -eq 0 ]; then echo 'Simulated crash!'; exit 1; fi; echo 'Working...'; done"]
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 50m
+            memory: 64Mi
+        readinessProbe:
+          exec:
+            command: ["/bin/sh", "-c", "echo ready"]
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command: ["/bin/sh", "-c", "echo alive"]
+          initialDelaySeconds: 10
+          periodSeconds: 15
+
+---
+# Test Service 3: Resource hungry service (will hit CPU/memory limits)
+apiVersion: apps/v1  
+kind: Deployment
+metadata:
+  name: hungry-test-service
+  namespace: health-test
+  labels:
+    app: hungry-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hungry-test
+  template:
+    metadata:
+      labels:
+        app: hungry-test
+    spec:
+      containers:
+      - name: cpu-hungry
+        image: alpine:latest
+        command: ["/bin/sh"]
+        args: ["-c", "while true; do timeout 10s sh -c 'while true; do :; done' || true; sleep 20; done"]
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        readinessProbe:
+          exec:
+            command: ["/bin/sh", "-c", "echo ready"]
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+---
+# Test Service 4: Network intensive service (generates TCP traffic)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-test-service
+  namespace: health-test
+  labels:
+    app: network-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: network-test
+  template:
+    metadata:
+      labels:
+        app: network-test
+    spec:
+      containers:
+      - name: network-app
+        image: alpine:latest
+        command: ["/bin/sh"]
+        args: ["-c", "apk add --no-cache curl; while true; do curl -s google.com > /dev/null || true; sleep 5; done"]
+        resources:
+          requests:
+            cpu: 20m
+            memory: 32Mi
+          limits:
+            cpu: 50m
+            memory: 64Mi
+
+---
+# Test Service 5: Slow startup service (will be in Pending/NotReady state initially)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slow-startup-service
+  namespace: health-test
+  labels:
+    app: slow-startup
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: slow-startup
+  template:
+    metadata:
+      labels:
+        app: slow-startup
+    spec:
+      containers:
+      - name: slow-app
+        image: alpine:latest
+        command: ["/bin/sh"]
+        args: ["-c", "echo 'Starting up...'; sleep 60; echo 'Ready!'; while true; do sleep 30; done"]
+        readinessProbe:
+          exec:
+            command: ["/bin/sh", "-c", "test -f /tmp/ready"]
+          initialDelaySeconds: 65
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command: ["/bin/sh", "-c", "echo alive"]
+          initialDelaySeconds: 70
+          periodSeconds: 30
+
+---
+# Service to expose the stable app
+apiVersion: v1
+kind: Service
+metadata:
+  name: stable-test-service
+  namespace: health-test
+spec:
+  selector:
+    app: stable-test
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP
+
+---
+# ConfigMap with test data
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: health-test-config
+  namespace: health-test
+data:
+  test-description: |
+    Health Test Services:
+    1. stable-test-service: Should remain healthy
+    2. flaky-test-service: Will restart occasionally (random crashes)
+    3. hungry-test-service: High CPU usage, may hit resource limits
+    4. network-test-service: Generates network traffic for TCP metrics
+    5. slow-startup-service: Takes 60 seconds to start, tests startup delays
