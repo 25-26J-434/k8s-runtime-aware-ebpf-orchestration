@@ -3,338 +3,438 @@ import {
   ClusterHealthResponse,
   HealthAlert,
   HealthStats,
-  NodeHealthUpdate,
   PodHealth,
 } from "../types/health";
 import { healthService } from "../services/health";
+import { FiRefreshCw, FiAlertTriangle, FiSettings } from "react-icons/fi";
 import "./HealthMonitoring.css";
 
 export const HealthMonitoring: React.FC = () => {
-  const [healthData, setHealthData] = useState<ClusterHealthResponse | null>(
-    null,
-  );
+  // Data states
+  const [healthData, setHealthData] = useState<ClusterHealthResponse | null>(null);
   const [healthStats, setHealthStats] = useState<HealthStats | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [recentAlerts, setRecentAlerts] = useState<HealthAlert[]>([]);
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  
+  // Filter states
+  const [selectedCluster, setSelectedCluster] = useState<string>("local");
+  const [filterNamespace, setFilterNamespace] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [searchPod, setSearchPod] = useState<string>("");
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Configuration states
+  const [showConfig, setShowConfig] = useState(false);
+  const [metricsConfig, setMetricsConfig] = useState({
+    dns_latency_threshold: 20, // ms
+    dns_latency_penalty: 20,
+    tcp_retrans_threshold: 50,
+    tcp_retrans_penalty: 20,
+    packet_loss_threshold: 20,
+    packet_loss_penalty: 20,
+    rtt_threshold: 200, // ms
+    rtt_penalty: 20,
+    restart_count_threshold: 5,
+    restart_count_penalty: 30,
+  });
 
   useEffect(() => {
-    // Set up WebSocket connection
-    healthService.onConnect(() => {
-      setIsConnected(true);
-    });
-
-    healthService.onDisconnect(() => {
-      setIsConnected(false);
-    });
-
+    healthService.onConnect(() => setIsConnected(true));
+    healthService.onDisconnect(() => setIsConnected(false));
     healthService.onClusterHealthUpdate((data) => {
       setHealthData(data);
       setHealthStats(healthService.calculateHealthStats(data));
     });
-
     healthService.onAlert((alert) => {
-      setRecentAlerts((prev) => [alert, ...prev.slice(0, 9)]); // Keep last 10 alerts
+      setRecentAlerts((prev) => [alert, ...prev.slice(0, 9)]);
     });
 
     healthService.connect();
-
-    // Initial data fetch
     handleRefreshData();
 
-    return () => {
-      healthService.disconnect();
-    };
+    return () => healthService.disconnect();
   }, []);
 
   const handleRefreshData = async () => {
+    setRefreshing(true);
     try {
       const data = await healthService.getClusterHealth();
       setHealthData(data);
       setHealthStats(healthService.calculateHealthStats(data));
-
       if (data.alerts) {
         setRecentAlerts(data.alerts.slice(0, 10));
       }
     } catch (error) {
       console.error("Failed to fetch health data:", error);
+    } finally {
+      setRefreshing(false);
     }
   };
 
-  const renderStatsOverview = () => {
+  // Get all pods across all nodes
+  const getAllPods = (): { pod: PodHealth; node: string }[] => {
+    if (!healthData) return [];
+    const allPods: { pod: PodHealth; node: string }[] = [];
+    Object.entries(healthData.nodes).forEach(([nodeName, nodeData]) => {
+      (nodeData.pods || []).forEach((pod) => {
+        allPods.push({ pod, node: nodeName });
+      });
+    });
+    return allPods;
+  };
+
+  // Filter pods based on search and filters
+  const getFilteredPods = (): { pod: PodHealth; node: string }[] => {
+    let pods = getAllPods();
+    
+    if (filterNamespace !== "all") {
+      pods = pods.filter((p) => p.pod.namespace === filterNamespace);
+    }
+    
+    if (filterStatus !== "all") {
+      pods = pods.filter((p) => {
+        if (filterStatus === "healthy") return p.pod.health_level === "healthy";
+        if (filterStatus === "unhealthy") return p.pod.health_level !== "healthy";
+        if (filterStatus === "ready") return p.pod.ready;
+        if (filterStatus === "not-ready") return !p.pod.ready;
+        return true;
+      });
+    }
+    
+    if (searchPod) {
+      const search = searchPod.toLowerCase();
+      pods = pods.filter((p) => p.pod.name.toLowerCase().includes(search));
+    }
+    
+    return pods;
+  };
+
+  const getNamespaces = (): string[] => {
+    const namespaces = new Set<string>();
+    getAllPods().forEach((p) => namespaces.add(p.pod.namespace));
+    return Array.from(namespaces).sort();
+  };
+
+  const filteredPods = getFilteredPods();
+  const namespaces = getNamespaces();
+
+  // Render config modal
+  const renderConfigModal = () => {
+    if (!showConfig) return null;
+
+    return (
+      <div className="modal-overlay" onClick={() => setShowConfig(false)}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header">
+            <h2>Metrics Thresholds Configuration</h2>
+            <button className="modal-close" onClick={() => setShowConfig(false)}>✕</button>
+          </div>
+          
+          <div className="config-grid">
+            {/* DNS Latency */}
+            <div className="config-section">
+              <h3>DNS Latency</h3>
+              <div className="config-item">
+                <label>Threshold (ms):</label>
+                <input 
+                  type="number" 
+                  value={metricsConfig.dns_latency_threshold}
+                  onChange={(e) => setMetricsConfig({...metricsConfig, dns_latency_threshold: Number(e.target.value)})}
+                />
+              </div>
+              <div className="config-item">
+                <label>Score Penalty:</label>
+                <input 
+                  type="number" 
+                  value={metricsConfig.dns_latency_penalty}
+                  onChange={(e) => setMetricsConfig({...metricsConfig, dns_latency_penalty: Number(e.target.value)})}
+                />
+              </div>
+            </div>
+
+            {/* TCP Retransmissions */}
+            <div className="config-section">
+              <h3>TCP Retransmissions</h3>
+              <div className="config-item">
+                <label>Threshold:</label>
+                <input 
+                  type="number" 
+                  value={metricsConfig.tcp_retrans_threshold}
+                  onChange={(e) => setMetricsConfig({...metricsConfig, tcp_retrans_threshold: Number(e.target.value)})}
+                />
+              </div>
+              <div className="config-item">
+                <label>Score Penalty:</label>
+                <input 
+                  type="number" 
+                  value={metricsConfig.tcp_retrans_penalty}
+                  onChange={(e) => setMetricsConfig({...metricsConfig, tcp_retrans_penalty: Number(e.target.value)})}
+                />
+              </div>
+            </div>
+
+            {/* Packet Loss */}
+            <div className="config-section">
+              <h3>Packet Loss</h3>
+              <div className="config-item">
+                <label>Threshold (%):</label>
+                <input 
+                  type="number" 
+                  value={metricsConfig.packet_loss_threshold}
+                  onChange={(e) => setMetricsConfig({...metricsConfig, packet_loss_threshold: Number(e.target.value)})}
+                />
+              </div>
+              <div className="config-item">
+                <label>Score Penalty:</label>
+                <input 
+                  type="number" 
+                  value={metricsConfig.packet_loss_penalty}
+                  onChange={(e) => setMetricsConfig({...metricsConfig, packet_loss_penalty: Number(e.target.value)})}
+                />
+              </div>
+            </div>
+
+            {/* RTT */}
+            <div className="config-section">
+              <h3>Round-Trip Time (RTT)</h3>
+              <div className="config-item">
+                <label>Threshold (ms):</label>
+                <input 
+                  type="number" 
+                  value={metricsConfig.rtt_threshold}
+                  onChange={(e) => setMetricsConfig({...metricsConfig, rtt_threshold: Number(e.target.value)})}
+                />
+              </div>
+              <div className="config-item">
+                <label>Score Penalty:</label>
+                <input 
+                  type="number" 
+                  value={metricsConfig.rtt_penalty}
+                  onChange={(e) => setMetricsConfig({...metricsConfig, rtt_penalty: Number(e.target.value)})}
+                />
+              </div>
+            </div>
+
+            {/* Restart Count */}
+            <div className="config-section">
+              <h3>Restart Count</h3>
+              <div className="config-item">
+                <label>Threshold:</label>
+                <input 
+                  type="number" 
+                  value={metricsConfig.restart_count_threshold}
+                  onChange={(e) => setMetricsConfig({...metricsConfig, restart_count_threshold: Number(e.target.value)})}
+                />
+              </div>
+              <div className="config-item">
+                <label>Score Penalty:</label>
+                <input 
+                  type="number" 
+                  value={metricsConfig.restart_count_penalty}
+                  onChange={(e) => setMetricsConfig({...metricsConfig, restart_count_penalty: Number(e.target.value)})}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="modal-footer">
+            <button className="btn-save" onClick={() => setShowConfig(false)}>Save & Close</button>
+            <button className="btn-reset" onClick={() => location.reload()}>Reset to Defaults</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render stats cards with compact size
+  const renderStatsCards = () => {
     if (!healthStats) return null;
 
     return (
-      <div className="health-stats-grid">
-        <div className="stat-card nodes">
-          <h3>🖥️ Nodes</h3>
-          <div className="stat-number">{healthStats.totalNodes}</div>
-          <div className="stat-breakdown">
-            <span className="healthy">🟢 {healthStats.healthyNodes}</span>
-            <span className="degraded">🟡 {healthStats.degradedNodes}</span>
-            <span className="unhealthy">🔴 {healthStats.unhealthyNodes}</span>
+      <div className="compact-stats">
+        <div className="mini-stat">
+          <div className="mini-stat-value">{healthStats.totalPods}</div>
+          <div className="mini-stat-label">Total Pods</div>
+          <div className="mini-stat-sub">{healthStats.healthyPods}✓ {healthStats.unhealthyPods}✕</div>
+        </div>
+
+        <div className="mini-stat">
+          <div className="mini-stat-value">{healthStats.totalNodes}</div>
+          <div className="mini-stat-label">Nodes</div>
+          <div className="mini-stat-sub">{healthStats.healthyNodes}✓ {healthStats.degradedNodes}⚠</div>
+        </div>
+
+        <div className="mini-stat">
+          <div className="mini-stat-value">{healthStats.criticalAlerts + healthStats.warningAlerts}</div>
+          <div className="mini-stat-label">Alerts</div>
+          <div className="mini-stat-sub">{healthStats.criticalAlerts} Critical</div>
+        </div>
+
+        <div className="mini-stat">
+          <div className={`mini-stat-value status-${isConnected ? "connected" : "disconnected"}`}>
+            {isConnected ? "◉" : "○"}
+          </div>
+          <div className="mini-stat-label">Status</div>
+          <div className="mini-stat-sub">{isConnected ? "Live" : "Offline"}</div>
+        </div>
+      </div>
+    );
+  };
+
+  // Render pod item
+  const renderPodItem = (podData: { pod: PodHealth; node: string }) => {
+    const { pod, node } = podData;
+    const healthIcon = healthService.getHealthLevelIcon(pod.health_level);
+    const healthColor = healthService.getHealthLevelColor(pod.health_level);
+
+    return (
+      <div key={`${pod.namespace}/${pod.name}`} className="pod-item-compact">
+        <div className="pod-compact-left">
+          <span className="pod-health-icon">{healthIcon}</span>
+          <div>
+            <div className="pod-compact-name">{pod.name}</div>
+            <div className="pod-compact-meta">{pod.namespace} • {node}</div>
           </div>
         </div>
 
-        <div className="stat-card pods">
-          <h3>📦 Pods</h3>
-          <div className="stat-number">{healthStats.totalPods}</div>
-          <div className="stat-breakdown">
-            <span className="healthy">🟢 {healthStats.healthyPods}</span>
-            <span className="unhealthy">🔴 {healthStats.unhealthyPods}</span>
-            <span className="unknown">⚪ {healthStats.unknownPods}</span>
-          </div>
+        <div className="pod-compact-middle">
+          <span className={`badge-mini phase-${pod.phase.toLowerCase()}`}>{pod.phase}</span>
+          <span className={`badge-mini ready-${pod.ready ? "true" : "false"}`}>
+            {pod.ready ? "Ready" : "NotReady"}
+          </span>
         </div>
 
-        <div className="stat-card alerts">
-          <h3>🚨 Active Alerts</h3>
-          <div className="stat-number">
-            {healthStats.criticalAlerts + healthStats.warningAlerts}
-          </div>
-          <div className="stat-breakdown">
-            <span className="critical">
-              🔴 {healthStats.criticalAlerts} Critical
+        <div className="pod-compact-right">
+          {pod.restart_count > 0 && <span className="restart-badge">{pod.restart_count}↻</span>}
+          {pod.health_score !== undefined && (
+            <span className="score-badge" style={{ color: healthColor }}>
+              {pod.health_score}
             </span>
-            <span className="warning">
-              🟡 {healthStats.warningAlerts} Warning
-            </span>
-          </div>
-        </div>
-
-        <div className="stat-card connection">
-          <h3>🔗 Connection</h3>
-          <div
-            className={`connection-status ${isConnected ? "connected" : "disconnected"}`}
-          >
-            {isConnected ? "🟢 Connected" : "🔴 Disconnected"}
-          </div>
-          <div className="last-update">
-            {healthData
-              ? `Updated: ${new Date(healthData.timestamp).toLocaleTimeString()}`
-              : "No data"}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderNodeHealth = (nodeName: string, nodeData: NodeHealthUpdate) => {
-    const healthIcon = healthService.getHealthLevelIcon(nodeData.health_level);
-    const healthColor = healthService.getHealthLevelColor(
-      nodeData.health_level,
-    );
-
-    return (
-      <div
-        key={nodeName}
-        className={`node-card ${selectedNode === nodeName ? "selected" : ""}`}
-        onClick={() =>
-          setSelectedNode(selectedNode === nodeName ? null : nodeName)
-        }
-      >
-        <div className="node-header">
-          <div className="node-title">
-            <span className="node-icon">{healthIcon}</span>
-            <strong>{nodeName}</strong>
-            {nodeData.health_score !== undefined && (
-              <span className="health-score" style={{ color: healthColor }}>
-                ({nodeData.health_score}/100)
-              </span>
-            )}
-          </div>
-          <div className="node-status" style={{ color: healthColor }}>
-            {nodeData.health_level || nodeData.status}
-          </div>
-        </div>
-
-        <div className="node-stats">
-          <span>📦 Pods: {nodeData.total_pods}</span>
-          <span>✅ Healthy: {nodeData.healthy_pods}</span>
-          <span>❌ Unhealthy: {nodeData.unhealthy_pods}</span>
-          {nodeData.unknown_pods > 0 && (
-            <span>⚪ Unknown: {nodeData.unknown_pods}</span>
           )}
-        </div>
-
-        {nodeData.health_reasons && nodeData.health_reasons.length > 0 && (
-          <div className="health-reasons">
-            <strong>Issues:</strong>
-            {nodeData.health_reasons.map((reason, idx) => (
-              <div key={idx} className="health-reason">
-                ⚠️ {reason}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {nodeData.error && (
-          <div className="node-error">
-            <strong>Error:</strong> {nodeData.error}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderPodDetails = () => {
-    if (!selectedNode || !healthData?.nodes[selectedNode]) {
-      return (
-        <div className="pod-details-placeholder">
-          <h3>📦 Pod Details</h3>
-          <p>Select a node to view pod details</p>
-        </div>
-      );
-    }
-
-    const nodeData = healthData.nodes[selectedNode];
-    const pods = nodeData.pods || [];
-
-    return (
-      <div className="pod-details">
-        <h3>
-          📦 Pods on {selectedNode} ({pods.length})
-        </h3>
-        <div className="pods-grid">
-          {pods.map((pod: PodHealth) => (
-            <div key={`${pod.namespace}/${pod.name}`} className="pod-card">
-              <div className="pod-header">
-                <span className="pod-icon">
-                  {healthService.getHealthLevelIcon(pod.health_level)}
-                </span>
-                <div className="pod-info">
-                  <strong>{pod.name}</strong>
-                  <span className="pod-namespace">📁 {pod.namespace}</span>
-                </div>
-                {pod.health_score !== undefined && (
-                  <span
-                    className="pod-score"
-                    style={{
-                      color: healthService.getHealthLevelColor(
-                        pod.health_level,
-                      ),
-                    }}
-                  >
-                    {pod.health_score}/100
-                  </span>
-                )}
-              </div>
-
-              <div className="pod-status">
-                <span className={`phase-badge ${pod.phase.toLowerCase()}`}>
-                  {pod.phase}
-                </span>
-                <span
-                  className={`ready-badge ${pod.ready ? "ready" : "not-ready"}`}
-                >
-                  {pod.ready ? "Ready" : "Not Ready"}
-                </span>
-              </div>
-
-              {pod.restart_count > 0 && (
-                <div className="restart-count">
-                  🔄 Restarts: {pod.restart_count}
-                </div>
-              )}
-
-              {pod.health_reasons && pod.health_reasons.length > 0 && (
-                <div className="pod-health-reasons">
-                  {pod.health_reasons.map((reason, idx) => (
-                    <div key={idx} className="pod-reason">
-                      ⚠️ {reason}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  const renderRecentAlerts = () => {
-    return (
-      <div className="recent-alerts">
-        <div className="alerts-header">
-          <h3>🚨 Recent Alerts</h3>
-          {recentAlerts.length === 0 && (
-            <span className="no-alerts">No recent alerts</span>
-          )}
-        </div>
-
-        <div className="alerts-list">
-          {recentAlerts.map((alert, idx) => (
-            <div key={idx} className={`alert-item ${alert.severity}`}>
-              <div className="alert-header">
-                <span className="alert-icon">
-                  {healthService.getSeverityIcon(alert.severity)}
-                </span>
-                <strong>{alert.severity.toUpperCase()}</strong>
-                <span className="alert-source">({alert.source})</span>
-                <span className="alert-time">
-                  {new Date(alert.timestamp).toLocaleTimeString()}
-                </span>
-              </div>
-              <div className="alert-message">{alert.message}</div>
-              {alert.node_name && (
-                <div className="alert-location">
-                  🖥️ {alert.node_name}
-                  {alert.pod_name &&
-                    ` → 📦 ${alert.namespace}/${alert.pod_name}`}
-                </div>
-              )}
-            </div>
-          ))}
         </div>
       </div>
     );
   };
 
   return (
-    <div className="health-monitoring">
-      <div className="health-header">
-        <h1>🏥 Cluster Health Monitoring</h1>
-        <div className="health-controls">
-          <button onClick={handleRefreshData} className="refresh-btn">
-            🔄 Refresh
-          </button>
-          <label className="auto-refresh">
-            <input
-              type="checkbox"
-              checked={autoRefresh}
-              onChange={(e) => setAutoRefresh(e.target.checked)}
-            />
-            Auto-refresh
-          </label>
-          <span
-            className={`connection-indicator ${isConnected ? "connected" : "disconnected"}`}
+    <div className="health-monitoring-compact">
+      {/* Header with Controls */}
+      <div className="health-header-compact">
+        <div className="header-left">
+          <h1>⚕️ Cluster Health</h1>
+        </div>
+        <div className="header-right">
+          <select 
+            value={selectedCluster} 
+            onChange={(e) => setSelectedCluster(e.target.value)}
+            className="cluster-select"
           >
-            {isConnected ? "🟢 Live" : "🔴 Offline"}
-          </span>
+            <option value="local">Local Cluster</option>
+            <option value="prod">Production</option>
+            <option value="staging">Staging</option>
+            <option value="dev">Development</option>
+          </select>
+
+          <button 
+            onClick={handleRefreshData} 
+            className={`btn-icon ${refreshing ? "refreshing" : ""}`}
+            disabled={refreshing}
+            title="Refresh data"
+          >
+            <FiRefreshCw size={18} />
+          </button>
+
+          <button 
+            onClick={() => setShowConfig(!showConfig)} 
+            className="btn-icon"
+            title="Configure metrics"
+          >
+            <FiSettings size={18} />
+          </button>
         </div>
       </div>
 
-      {renderStatsOverview()}
+      {/* Compact Stats */}
+      {renderStatsCards()}
 
-      <div className="health-content">
-        <div className="left-panel">
-          <div className="nodes-section">
-            <h2>🖥️ Nodes Health</h2>
-            <div className="nodes-grid">
-              {healthData &&
-                Object.entries(healthData.nodes).map(([nodeName, nodeData]) =>
-                  renderNodeHealth(nodeName, nodeData),
-                )}
+      {/* Main Content - 2 Column Layout */}
+      <div className="health-layout-2col">
+        {/* Left: Pods List */}
+        <div className="pods-container">
+          {/* Filters */}
+          <div className="filters-compact">
+            <input
+              type="text"
+              placeholder="Search pods..."
+              value={searchPod}
+              onChange={(e) => setSearchPod(e.target.value)}
+              className="search-tiny"
+            />
+            
+            <select 
+              value={filterNamespace} 
+              onChange={(e) => setFilterNamespace(e.target.value)}
+              className="filter-tiny"
+            >
+              <option value="all">All NS</option>
+              {namespaces.map((ns) => (
+                <option key={ns} value={ns}>{ns}</option>
+              ))}
+            </select>
+
+            <select 
+              value={filterStatus} 
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="filter-tiny"
+            >
+              <option value="all">All Status</option>
+              <option value="healthy">Healthy</option>
+              <option value="unhealthy">Issues</option>
+              <option value="ready">Ready</option>
+              <option value="not-ready">NotReady</option>
+            </select>
+
+            <div className="filter-count">
+              {filteredPods.length} / {getAllPods().length}
             </div>
           </div>
+
+          {/* Pods List */}
+          {filteredPods.length === 0 ? (
+            <div className="no-pods-msg">No pods found</div>
+          ) : (
+            <div className="pods-list-compact">
+              {filteredPods.map((podData) => renderPodItem(podData))}
+            </div>
+          )}
         </div>
 
-        <div className="right-panel">
-          {renderPodDetails()}
-          {renderRecentAlerts()}
+        {/* Right: Alerts */}
+        <div className="alerts-container">
+          <div className="alerts-header-compact">
+            <FiAlertTriangle size={18} />
+            <span>Recent Alerts ({recentAlerts.length})</span>
+          </div>
+
+          {recentAlerts.length === 0 ? (
+            <div className="no-alerts-msg">✓ All systems operational</div>
+          ) : (
+            <div className="alerts-list-compact">
+              {recentAlerts.slice(0, 12).map((alert, idx) => (
+                <div key={idx} className={`alert-item-tiny alert-${alert.severity}`}>
+                  <div className="alert-msg-tiny">{alert.message}</div>
+                  <div className="alert-time-tiny">
+                    {new Date(alert.timestamp).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Configuration Modal */}
+      {renderConfigModal()}
     </div>
   );
 };
