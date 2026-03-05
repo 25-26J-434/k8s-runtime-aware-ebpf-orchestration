@@ -192,6 +192,7 @@ func (e *Engine) reconcileDNATFromConfigMap(cm *corev1.ConfigMap) {
 	now := time.Now().UTC()
 	seen := map[string]dnatKey{}
 
+	applyCount := 0
 	for k, v := range cm.Data {
 		var spec dnatRedirectSpec
 		if err := json.Unmarshal([]byte(v), &spec); err != nil {
@@ -221,6 +222,7 @@ func (e *Engine) reconcileDNATFromConfigMap(cm *corev1.ConfigMap) {
 			continue
 		}
 		seen[k] = key
+		applyCount++
 	}
 
 	// Remove mappings that were previously applied from the ConfigMap but are no longer present.
@@ -237,5 +239,12 @@ func (e *Engine) reconcileDNATFromConfigMap(cm *corev1.ConfigMap) {
 	}
 	for k, newKey := range seen {
 		e.dnatSyncKeys[k] = newKey
+	}
+	if applyCount > 0 {
+		nodeLabel := e.localNodeName
+		if nodeLabel == "" {
+			nodeLabel = "unknown"
+		}
+		e.logger.Printf("[Routing] DNAT sync applied %d entries on node %s", applyCount, nodeLabel)
 	}
 }
