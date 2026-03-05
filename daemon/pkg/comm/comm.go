@@ -908,6 +908,11 @@ func listPeerIPs(excludeSelf bool) []string {
 	return peers
 }
 
+// ListPeerIPs returns known peer IPs. When excludeSelf is true, the local node IP is omitted.
+func ListPeerIPs(excludeSelf bool) []string {
+   return listPeerIPs(excludeSelf)
+}
+
 func fetchLogsFromPeer(ip string, limit int) ([]CommLogEntry, error) {
 	client := &http.Client{Timeout: 4 * time.Second}
 	url := fmt.Sprintf("http://%s:8080/api/comm/logs?scope=local", ip)
