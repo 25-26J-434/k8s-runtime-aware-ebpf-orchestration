@@ -63,6 +63,9 @@ func AttachDNATCgroup() error {
 	cgroupPath := os.Getenv("EBPF_CGROUP_PATH")
 	if cgroupPath == "" {
 		cgroupPath = "/sys/fs/cgroup"
+		if _, err := os.Stat("/sys/fs/cgroup/kubepods.slice"); err == nil {
+			cgroupPath = "/sys/fs/cgroup/kubepods.slice"
+		}
 	}
 
 	lnk, err := link.AttachCgroup(link.CgroupOptions{
