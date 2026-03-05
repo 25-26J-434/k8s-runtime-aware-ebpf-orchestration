@@ -20,6 +20,10 @@ func NormalizeCreatePayload(body map[string]interface{}) (*Policy, error) {
 		body["frontend_port"],
 		body["frontend_service_port"],
 	))
+	scope := coalesce(
+		str(body["scope"]),
+		"local",
+	)
 
 	metric := coalesce(
 		nestedStr(body, "telemetry", "metric"),
@@ -46,6 +50,10 @@ func NormalizeCreatePayload(body map[string]interface{}) (*Policy, error) {
 		nestedStr(body, "action", "backend_selector"),
 		str(body["redirect_backend_label"]),
 		str(body["backend_selector"]),
+	)
+	backendService := coalesce(
+		nestedStr(body, "action", "backend_service"),
+		str(body["backend_service"]),
 	)
 	backendPort, bpSet := intVal(coalesceRaw(
 		nested(body, "action", "backend_port"),
@@ -121,6 +129,9 @@ func NormalizeCreatePayload(body map[string]interface{}) (*Policy, error) {
 	if threshold <= 0 {
 		return nil, fmt.Errorf("violation_threshold must be a positive number")
 	}
+	if err := validateScope(scope); err != nil {
+		return nil, err
+	}
 	if ttlSeconds <= 0 {
 		return nil, fmt.Errorf("ttl_seconds must be a positive number")
 	}
@@ -134,6 +145,7 @@ func NormalizeCreatePayload(body map[string]interface{}) (*Policy, error) {
 	p := &Policy{
 		PolicyName: policyName,
 		Namespace:  namespace,
+		Scope:      scope,
 		Frontend: Frontend{
 			Service: frontendService,
 			Port:    frontendPort,
@@ -146,6 +158,7 @@ func NormalizeCreatePayload(body map[string]interface{}) (*Policy, error) {
 		Action: ActionConfig{
 			Type:                      actionType,
 			BackendSelector:           backendSelector,
+			BackendService:            backendService,
 			BackendPort:               backendPort,
 			Protocol:                  strings.ToUpper(protocol),
 			TTLSeconds:                ttlSeconds,
@@ -163,6 +176,12 @@ func NormalizeCreatePayload(body map[string]interface{}) (*Policy, error) {
 func ApplyUpdatePayload(p *Policy, body map[string]interface{}) error {
 	if ns := str(body["namespace"]); ns != "" {
 		p.Namespace = ns
+	}
+	if scope := str(body["scope"]); scope != "" {
+		if err := validateScope(scope); err != nil {
+			return err
+		}
+		p.Scope = scope
 	}
 
 	// frontend
@@ -228,6 +247,12 @@ func ApplyUpdatePayload(p *Policy, body map[string]interface{}) error {
 			return err
 		}
 		p.Action.BackendSelector = bs
+	}
+	if bs := coalesce(
+		nestedStr(body, "action", "backend_service"),
+		str(body["backend_service"]),
+	); bs != "" {
+		p.Action.BackendService = bs
 	}
 	if bpRaw := coalesceRaw(
 		nested(body, "action", "backend_port"),
@@ -306,6 +331,9 @@ func applyDefaults(p *Policy) {
 	if p.Action.Strategy == "" {
 		p.Action.Strategy = "all"
 	}
+	if p.Scope == "" {
+		p.Scope = "local"
+	}
 }
 
 func validateMetric(metric string) error {
@@ -341,6 +369,15 @@ func validateStrategy(strategy, candidates, winner string) error {
 		return nil
 	default:
 		return fmt.Errorf("strategy must be one of: all, best_pod")
+	}
+}
+
+func validateScope(scope string) error {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "", "local", "cluster":
+		return nil
+	default:
+		return fmt.Errorf("scope must be one of: local, cluster")
 	}
 }
 

@@ -7,7 +7,7 @@
 set -euo pipefail
 
 NAMESPACE="ebpf-telemetry"
-SERVICE="ebpf-daemon"
+TARGET="svc/ebpf-daemon"
 LOCAL_PORT="8080"
 REMOTE_PORT="8080"
 LOG_FILE="/tmp/port-forward-watchdog.log"
@@ -27,7 +27,7 @@ log() {
 
 # Check if port-forward is running
 is_port_forward_running() {
-    pgrep -f "kubectl.*port-forward.*${SERVICE}.*${LOCAL_PORT}" > /dev/null 2>&1
+    pgrep -f "kubectl.*port-forward.*${TARGET}.*${LOCAL_PORT}" > /dev/null 2>&1
 }
 
 # Check if port is actually accessible
@@ -40,18 +40,18 @@ start_port_forward() {
     log "${GREEN}Starting port-forward...${NC}"
     
     # Kill any existing port-forwards first
-    pkill -f "kubectl.*port-forward.*${SERVICE}.*${LOCAL_PORT}" 2>/dev/null || true
+    pkill -f "kubectl.*port-forward.*${TARGET}.*${LOCAL_PORT}" 2>/dev/null || true
     sleep 0.2
     
     # Start new port-forward in background
-    kubectl -n "$NAMESPACE" port-forward "svc/${SERVICE}" "${LOCAL_PORT}:${REMOTE_PORT}" > "$PF_LOG_FILE" 2>&1 &
+    kubectl -n "$NAMESPACE" port-forward "${TARGET}" "${LOCAL_PORT}:${REMOTE_PORT}" > "$PF_LOG_FILE" 2>&1 &
     
     # Wait a moment for it to start
     sleep 0.5
     
     # Verify it started
     if is_port_forward_running; then
-        log "${GREEN}✓ Port-forward started successfully (PID: $(pgrep -f "kubectl.*port-forward.*${SERVICE}.*${LOCAL_PORT}"))${NC}"
+        log "${GREEN}✓ Port-forward started successfully (PID: $(pgrep -f "kubectl.*port-forward.*${TARGET}.*${LOCAL_PORT}"))${NC}"
         return 0
     else
         log "${RED}✗ Failed to start port-forward${NC}"
@@ -62,7 +62,7 @@ start_port_forward() {
 # Stop port-forward
 stop_port_forward() {
     log "${YELLOW}Stopping port-forward...${NC}"
-    pkill -f "kubectl.*port-forward.*${SERVICE}.*${LOCAL_PORT}" 2>/dev/null || true
+    pkill -f "kubectl.*port-forward.*${TARGET}.*${LOCAL_PORT}" 2>/dev/null || true
     sleep 0.2
 }
 
@@ -80,7 +80,7 @@ trap cleanup SIGINT SIGTERM
 main() {
     log "${GREEN}═══════════════════════════════════════════════════════════${NC}"
     log "${GREEN}Port-Forward Watchdog Started${NC}"
-    log "${GREEN}Monitoring: ${NAMESPACE}/${SERVICE}:${REMOTE_PORT} -> localhost:${LOCAL_PORT}${NC}"
+    log "${GREEN}Monitoring: ${NAMESPACE}/${TARGET}:${REMOTE_PORT} -> localhost:${LOCAL_PORT}${NC}"
     log "${GREEN}Check interval: ${CHECK_INTERVAL} second(s)${NC}"
     log "${GREEN}═══════════════════════════════════════════════════════════${NC}"
     
@@ -128,5 +128,4 @@ main() {
 
 # Run main function
 main
-
 

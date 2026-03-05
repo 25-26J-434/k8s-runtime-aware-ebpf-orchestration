@@ -8,6 +8,7 @@ type PolicyRecord = {
     id?: string;
     policy_name?: string;
     namespace?: string;
+    scope?: string;
     frontend_service?: string;
     frontend_service_port?: string | number;
     redirect_backend_label?: string;
@@ -34,6 +35,16 @@ type PolicyRecord = {
     backend_selector?: string;
     backend_candidates_selector?: string;
     winner_label?: string;
+};
+
+type ProbeResult = {
+    raw: string;
+    service?: string;
+    pod?: string;
+    node?: string;
+    winnerLabel?: string;
+    winnerLabelPresent?: boolean;
+    podLabels?: Record<string, string>;
 };
 
 export function Routing() {
@@ -63,6 +74,11 @@ export function Routing() {
     const [clusterLoading, setClusterLoading] = useState(false);
     const [clusterError, setClusterError] = useState<string | null>(null);
     const [selectedNode, setSelectedNode] = useState<string>('');
+    const [probeLoading, setProbeLoading] = useState(false);
+    const [probeError, setProbeError] = useState<string | null>(null);
+    const [probeResult, setProbeResult] = useState<ProbeResult | null>(null);
+    const [probeTs, setProbeTs] = useState<string | null>(null);
+    const [lastApplyResult, setLastApplyResult] = useState<any>(null);
 
     const fetchClusterSummary = async () => {
         setClusterLoading(true);
@@ -72,8 +88,10 @@ export function Routing() {
             setClusterSummary(data || {});
             const firstNode = data?.nodes?.[0]?.name || '';
             setSelectedNode(firstNode);
+            return data || {};
         } catch (err: any) {
             setClusterError(err?.message || 'Failed to fetch cluster summary');
+            return null;
         } finally {
             setClusterLoading(false);
         }
@@ -81,6 +99,7 @@ export function Routing() {
     const defaultCreateForm = {
         policy_name: '',
         namespace: 'test-services',
+        scope: 'local',
         frontend_service: '',
         frontend_port: '',
         action_target_namespace: '',
@@ -140,6 +159,37 @@ export function Routing() {
         return policy.frontend?.service || policy.frontend_service || (policy as any).source_service || '—';
     };
 
+    const resolveWinnerLabel = (policy: PolicyRecord) => {
+        const actionObj = typeof policy.action === 'object' ? (policy.action as any) : {};
+        return actionObj.winner_label || policy.winner_label || 'redirect-winner=yes';
+    };
+
+    const parseWinnerLabel = (label: string) => {
+        const parts = String(label || '').split('=');
+        if (parts.length < 2) return { key: label, value: '' };
+        return { key: parts[0], value: parts.slice(1).join('=') };
+    };
+
+    const parseWhoami = (text: string) => {
+        const match = text.match(/Hi,\s*I am\s*([^\n(]+)\s*\(([^)]+)\)/i);
+        if (!match) return { service: 'unknown', pod: '' };
+        let service = match[1].trim();
+        let pod = match[2].trim();
+        if (pod.startsWith('pod=')) pod = pod.slice('pod='.length);
+        return { service, pod };
+    };
+
+    const getFrontendInfo = (policy: PolicyRecord) => {
+        const service = policy.frontend?.service || policy.frontend_service || '';
+        const port =
+            policy.frontend?.port ||
+            policy.frontend_service_port ||
+            (policy as any).frontend_port ||
+            5000;
+        const namespace = policy.namespace || 'default';
+        return { service, port, namespace };
+    };
+
     const resolveMetric = (policy: PolicyRecord) => {
         return policy.telemetry?.metric || policy.metric || '—';
     };
@@ -158,11 +208,31 @@ export function Routing() {
         return actionObj.ttl_seconds || policy.ttl_seconds || '—';
     };
 
+    const policyStatusLabel = (policy: PolicyRecord) => {
+        const status = (policy as any).status || {};
+        const lastDecision = status.last_decision || status.lastDecision || (policy as any).last_decision || (policy as any).lastDecision;
+        const lastExpired =
+            status.last_expired_at || status.lastExpiredAt || (policy as any).last_expired_at || (policy as any).lastExpiredAt;
+        const lastApplied =
+            status.last_applied_at || status.lastAppliedAt || (policy as any).last_applied_at || (policy as any).lastAppliedAt;
+        const appliedAt = lastApplied ? new Date(lastApplied).getTime() : 0;
+        const expiredAt = lastExpired ? new Date(lastExpired).getTime() : 0;
+        if (appliedAt > 0 && appliedAt >= expiredAt) {
+            return 'active';
+        }
+        if (String(lastDecision || '').toUpperCase() === 'EXPIRED' || !!lastExpired) {
+            return 'expired';
+        }
+        if (String(lastDecision || '').toUpperCase() === 'APPLIED' || !!lastApplied) return 'active';
+        return 'unknown';
+    };
+
     const hydrateEditForm = (policy: PolicyRecord) => {
         const actionObj = typeof policy.action === 'object' ? (policy.action as any) : {};
         return {
             policy_name: policy.policy_name || '',
             namespace: policy.namespace || '',
+            scope: policy.scope || 'local',
             action_target_namespace: (policy as any).action_target_namespace || policy.namespace || '',
             frontend_service: policy.frontend?.service || policy.frontend_service || '',
             frontend_port: policy.frontend?.port || policy.frontend_service_port || '',
@@ -213,6 +283,9 @@ export function Routing() {
         setDrawerOpen(true);
         setDrawerError(null);
         setDrawerSuccess(null);
+        if (!clusterSummary && !clusterLoading) {
+            fetchClusterSummary();
+        }
     };
 
     const openEdit = (policy: PolicyRecord) => {
@@ -251,12 +324,58 @@ export function Routing() {
             const res = await api.applyPolicy(policy.policy_name);
             const statusText = res.applied ? 'Redirect applied' : 'Policy evaluated';
             setApplyStatus(statusText);
-            setApplyToastMessage(res.message || statusText);
+            const targetText = res.target_backend ? `Target: ${res.target_backend}` : '';
+            setApplyToastMessage(res.message || targetText || statusText);
             setApplyToastTs(new Date().toLocaleTimeString());
+            setLastApplyResult({ policy: policy.policy_name, ...res });
+            if (res.applied) {
+                await runProbe(policy);
+            }
         } catch (err: any) {
             setApplyError(err?.message || `Failed to apply ${policy.policy_name}`);
         } finally {
             setApplyingPolicy(null);
+        }
+    };
+
+    const runProbe = async (policy: PolicyRecord) => {
+        const { service, port, namespace } = getFrontendInfo(policy);
+        if (!service) {
+            setProbeError('Frontend service missing in policy.');
+            return;
+        }
+        setProbeLoading(true);
+        setProbeError(null);
+        try {
+            let summary = clusterSummary;
+            if (!summary && !clusterLoading) {
+                summary = await fetchClusterSummary();
+            }
+            const text = await api.probeService(service, namespace, port, '/whoami');
+            const parsed = parseWhoami(text);
+            const pods = summary?.pods || [];
+            const podEntry =
+                pods.find((p: any) => p.name === parsed.pod && p.namespace === namespace) ||
+                pods.find((p: any) => p.name === parsed.pod);
+            const labels = (podEntry?.labels || {}) as Record<string, string>;
+            const winnerLabel = resolveWinnerLabel(policy);
+            const { key, value } = parseWinnerLabel(winnerLabel);
+            const winnerLabelPresent =
+                key && value ? labels?.[key] === value : key ? Object.prototype.hasOwnProperty.call(labels || {}, key) : false;
+            setProbeResult({
+                raw: text,
+                service: parsed.service,
+                pod: parsed.pod,
+                node: podEntry?.node || '',
+                podLabels: labels,
+                winnerLabel,
+                winnerLabelPresent,
+            });
+            setProbeTs(new Date().toLocaleTimeString());
+        } catch (err: any) {
+            setProbeError(err?.message || 'Failed to probe service');
+        } finally {
+            setProbeLoading(false);
         }
     };
 
@@ -290,6 +409,7 @@ export function Routing() {
             const body = {
                 policy_name: editForm.policy_name,
                 namespace: editForm.namespace,
+                scope: editForm.scope || 'local',
                 frontend: {
                     service: editForm.frontend_service,
                     port: numOrString(editForm.frontend_port),
@@ -341,6 +461,7 @@ export function Routing() {
         const body: any = {};
 
         addIfValue(body, 'namespace', editForm.namespace);
+        addIfValue(body, 'scope', editForm.scope);
 
         // frontend
         if (
@@ -506,6 +627,111 @@ export function Routing() {
         );
     };
 
+    const renderPolicyTable = (list: PolicyRecord[], showLoadingRow: boolean, emptyLabel: string) => {
+        return (
+            <div className="policy-table-wrapper">
+                <table className="policy-table">
+                    <thead>
+                        <tr>
+                            <th>Policy</th>
+                            <th>Traffic Entry Serivce</th>
+                            <th>Target Service</th>
+                            <th>Scope</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                            <th>Metric</th>
+                            <th>Threshold</th>
+                            <th>Protocol</th>
+                            <th>TTL (s)</th>
+                            <th>Actions</th>
+                            <th>POLICY ACTION</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {showLoadingRow && (
+                            <tr>
+                                <td colSpan={12} className="table-loading">
+                                    Loading…
+                                </td>
+                            </tr>
+                        )}
+                        {!showLoadingRow && list.length === 0 && (
+                            <tr>
+                                <td colSpan={12} className="table-loading">
+                                    {emptyLabel}
+                                </td>
+                            </tr>
+                        )}
+                        {!showLoadingRow &&
+                            list.map((policy) => {
+                                const source = resolveFrontend(policy);
+                                const target = resolveTarget(policy);
+                                const status = policyStatusLabel(policy);
+
+                                return (
+                                    <tr key={policy.id || policy.policy_name}>
+                                        <td>
+                                            <div className="cell-main">{policy.policy_name || '—'}</div>
+                                        </td>
+                                        <td>{source || '—'}</td>
+                                        <td>{target || '—'}</td>
+                                        <td>{policy.scope || 'local'}</td>
+                                        <td>
+                                            <span className={`status-pill ${status}`}>{status}</span>
+                                        </td>
+                                        <td>{formatAction(policy.action)}</td>
+                                        <td>{resolveMetric(policy)}</td>
+                                        <td>{resolveThreshold(policy)}</td>
+                                        <td>{resolveProtocol(policy)}</td>
+                                        <td>{resolveTtl(policy)}</td>
+                                        <td className="table-actions">
+                                            <button
+                                                type="button"
+                                                className="icon-button"
+                                                aria-label="View policy"
+                                                onClick={() => openView(policy)}
+                                            >
+                                                <FiEye />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="icon-button"
+                                                aria-label="Edit policy"
+                                                onClick={() => openEdit(policy)}
+                                            >
+                                                <FiEdit2 />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="icon-button danger"
+                                                aria-label="Delete policy"
+                                                onClick={() => {
+                                                    setDeleteTarget(policy);
+                                                    setShowDeleteConfirm(true);
+                                                }}
+                                            >
+                                                <FiTrash2 />
+                                            </button>
+                                        </td>
+                                        <td className="policy-action-cell">
+                                            <button
+                                                type="button"
+                                                className="apply-button"
+                                                onClick={() => handleApplyPolicy(policy)}
+                                                disabled={applyingPolicy === policy.policy_name}
+                                            >
+                                                {applyingPolicy === policy.policy_name ? 'Applying…' : 'Apply'}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                    </tbody>
+                </table>
+            </div>
+        );
+    };
+
     const namespacesForNode = useMemo(() => {
         if (!selectedNode || !clusterSummary?.pods) return clusterSummary?.namespaces || [];
         const nsSet = new Set<string>();
@@ -582,92 +808,7 @@ export function Routing() {
                     </div>
                 )}
 
-                <div className="policy-table-wrapper">
-                    <table className="policy-table">
-                        <thead>
-                            <tr>
-                                <th>Policy</th>
-                                <th>Traffic Entry Serivce</th>
-                                <th>Target Service</th>
-                                <th>Action</th>
-                                <th>Metric</th>
-                                <th>Threshold</th>
-                                <th>Protocol</th>
-                                <th>TTL (s)</th>
-                                <th>Actions</th>
-                                <th>POLICY ACTION</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading && (
-                                <tr>
-                                    <td colSpan={10} className="table-loading">
-                                        Loading…
-                                    </td>
-                                </tr>
-                            )}
-                            {!loading &&
-                                policies.map((policy) => {
-                                    const source = resolveFrontend(policy);
-                                    const target = resolveTarget(policy);
-
-                                    return (
-                                        <tr key={policy.id || policy.policy_name}>
-                                            <td>
-                                                <div className="cell-main">{policy.policy_name || '—'}</div>
-                                            </td>
-                                            <td>{source || '—'}</td>
-                                            <td>{target || '—'}</td>
-                                            <td>{formatAction(policy.action)}</td>
-                                            <td>{resolveMetric(policy)}</td>
-                                            <td>{resolveThreshold(policy)}</td>
-                                            <td>{resolveProtocol(policy)}</td>
-                                            <td>{resolveTtl(policy)}</td>
-                                            <td className="table-actions">
-                                                <button
-                                                    type="button"
-                                                    className="icon-button"
-                                                    aria-label="View policy"
-                                                    onClick={() => openView(policy)}
-                                                >
-                                                    <FiEye />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="icon-button"
-                                                    aria-label="Edit policy"
-                                                    onClick={() => openEdit(policy)}
-                                                >
-                                                    <FiEdit2 />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="icon-button danger"
-                                                    aria-label="Delete policy"
-                                                    onClick={() => {
-                                                        setDeleteTarget(policy);
-                                                        setShowDeleteConfirm(true);
-                                                    }}
-                                                >
-                                                    <FiTrash2 />
-                                                </button>
-                                            </td>
-                                            <td className="policy-action-cell">
-                                                <button
-                                                    type="button"
-                                                    className="apply-button"
-                                                    onClick={() => handleApplyPolicy(policy)}
-                                                    disabled={applyingPolicy === policy.policy_name}
-                                                >
-                                                    {applyingPolicy === policy.policy_name ? 'Applying…' : 'Apply'}
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                        </tbody>
-                    </table>
-                </div>
+                {renderPolicyTable(policies, loading, 'No policies found.')}
             </div>
 
             {drawerOpen && <div className="drawer-overlay" onClick={() => setDrawerOpen(false)} />}
@@ -770,6 +911,16 @@ export function Routing() {
                                             </option>
                                         )
                                     )}
+                                </select>
+                            </label>
+                            <label className="form-field">
+                                <span className="form-label">Scope</span>
+                                <select
+                                    value={editForm.scope || 'local'}
+                                    onChange={(e) => setEditForm((prev: any) => ({ ...prev, scope: e.target.value }))}
+                                >
+                                    <option value="local">Local</option>
+                                    <option value="cluster">Cluster</option>
                                 </select>
                             </label>
                             <label className="form-field">
@@ -1081,6 +1232,16 @@ export function Routing() {
                                 </select>
                             </label>
                             <label className="form-field">
+                                <span className="form-label">Scope</span>
+                                <select
+                                    value={editForm.scope || 'local'}
+                                    onChange={(e) => setEditForm((prev: any) => ({ ...prev, scope: e.target.value }))}
+                                >
+                                    <option value="local">Local</option>
+                                    <option value="cluster">Cluster</option>
+                                </select>
+                            </label>
+                            <label className="form-field">
                                 <span className="form-label">Traffic Entrypoint Service *</span>
                                 <select
                                     value={editForm.frontend_service || ''}
@@ -1330,37 +1491,104 @@ export function Routing() {
                         </div>
                     </form>
                 ) : (
-                    <div className="detail-grid">
-                        {selectedPolicy ? (
-                            <>
-                                {[
-                                    { label: 'Frontend', value: selectedPolicy.frontend || selectedPolicy.frontend_service },
-                                    { label: 'Monitor', value: selectedPolicy.telemetry?.monitor_pod_contains || selectedPolicy.monitor_pod_contains },
-                                    { label: 'Target selector', value: resolveTarget(selectedPolicy) },
-                                    { label: 'Backend candidates', value: (selectedPolicy as any).backend_candidates_selector || (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).backend_candidates_selector : '') },
-                                    { label: 'Action', value: selectedPolicy.action },
-                                    { label: 'Strategy', value: (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).strategy : (selectedPolicy as any).strategy) },
-                                    { label: 'Winner Pod Label', value: (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).winner_label : (selectedPolicy as any).winner_label) },
-                                    { label: 'Protocol', value: resolveProtocol(selectedPolicy) },
-                                    { label: 'TTL seconds', value: resolveTtl(selectedPolicy) },
-                                    { label: 'Metric', value: resolveMetric(selectedPolicy) },
-                                    { label: 'Threshold', value: resolveThreshold(selectedPolicy) },
-                                    { label: 'Notes', value: selectedPolicy.notes },
-                                    { label: 'Created', value: formatDate(selectedPolicy.createdAt) },
-                                    { label: 'Updated', value: formatDate(selectedPolicy.updatedAt) },
-                                    { label: 'Action payload', value: typeof selectedPolicy.action === 'object' ? selectedPolicy.action : undefined },
-                                    { label: 'Frontend payload', value: selectedPolicy.frontend },
-                                    { label: 'Telemetry payload', value: selectedPolicy.telemetry },
-                                    { label: 'Raw policy', value: selectedPolicy },
-                                ].map((item) => (
-                                    <div key={item.label} className="detail-item">
-                                        <div className="detail-label">{item.label}</div>
-                                        <div className="detail-value">{renderValue(item.value)}</div>
+                    <div className="detail-stack">
+                        <div className="detail-grid">
+                            {selectedPolicy ? (
+                                <>
+                                    {[
+                                        { label: 'Frontend', value: selectedPolicy.frontend || selectedPolicy.frontend_service },
+                                        { label: 'Monitor', value: selectedPolicy.telemetry?.monitor_pod_contains || selectedPolicy.monitor_pod_contains },
+                                        { label: 'Target selector', value: resolveTarget(selectedPolicy) },
+                                        { label: 'Scope', value: selectedPolicy.scope || 'local' },
+                                        { label: 'Backend candidates', value: (selectedPolicy as any).backend_candidates_selector || (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).backend_candidates_selector : '') },
+                                        { label: 'Action', value: selectedPolicy.action },
+                                        { label: 'Strategy', value: (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).strategy : (selectedPolicy as any).strategy) },
+                                        { label: 'Winner Pod Label', value: (typeof selectedPolicy.action === 'object' ? (selectedPolicy.action as any).winner_label : (selectedPolicy as any).winner_label) },
+                                        { label: 'Protocol', value: resolveProtocol(selectedPolicy) },
+                                        { label: 'TTL seconds', value: resolveTtl(selectedPolicy) },
+                                        { label: 'Metric', value: resolveMetric(selectedPolicy) },
+                                        { label: 'Threshold', value: resolveThreshold(selectedPolicy) },
+                                        { label: 'Notes', value: selectedPolicy.notes },
+                                        { label: 'Created', value: formatDate(selectedPolicy.createdAt) },
+                                        { label: 'Updated', value: formatDate(selectedPolicy.updatedAt) },
+                                        { label: 'Action payload', value: typeof selectedPolicy.action === 'object' ? selectedPolicy.action : undefined },
+                                        { label: 'Frontend payload', value: selectedPolicy.frontend },
+                                        { label: 'Telemetry payload', value: selectedPolicy.telemetry },
+                                        { label: 'Raw policy', value: selectedPolicy },
+                                    ].map((item) => (
+                                        <div key={item.label} className="detail-item">
+                                            <div className="detail-label">{item.label}</div>
+                                            <div className="detail-value">{renderValue(item.value)}</div>
+                                        </div>
+                                    ))}
+                                </>
+                            ) : (
+                                <div className="empty-state">Select a policy to view details.</div>
+                            )}
+                        </div>
+                        {selectedPolicy && (
+                            <div className="probe-card">
+                                <div className="probe-header">
+                                    <div>
+                                        <div className="probe-title">Redirect Confirmation</div>
+                                        <div className="probe-subtitle">Probe {resolveFrontend(selectedPolicy)} /whoami to see the actual backend</div>
                                     </div>
-                                ))}
-                            </>
-                        ) : (
-                            <div className="empty-state">Select a policy to view details.</div>
+                                    <button
+                                        type="button"
+                                        className="ghost-button"
+                                        onClick={() => runProbe(selectedPolicy)}
+                                        disabled={probeLoading}
+                                    >
+                                        {probeLoading ? 'Checking…' : 'Check Traffic'}
+                                    </button>
+                                </div>
+                                {probeError && (
+                                    <div className="probe-error">
+                                        <FiAlertTriangle /> {probeError}
+                                    </div>
+                                )}
+                                {!probeResult && !probeError && (
+                                    <div className="probe-empty">No probe run yet.</div>
+                                )}
+                                {probeResult && (
+                                    <div className="probe-grid">
+                                        <div className="probe-item">
+                                            <div className="probe-label">Served By</div>
+                                            <div className="probe-value">{probeResult.service || 'unknown'}</div>
+                                        </div>
+                                        <div className="probe-item">
+                                            <div className="probe-label">Pod Name</div>
+                                            <div className="probe-value">{probeResult.pod || 'unknown'}</div>
+                                        </div>
+                                        <div className="probe-item">
+                                            <div className="probe-label">Node Name</div>
+                                            <div className="probe-value">{probeResult.node || 'unknown'}</div>
+                                        </div>
+                                        <div className="probe-item">
+                                            <div className="probe-label">Winner Label</div>
+                                            <div className="probe-value">
+                                                {probeResult.winnerLabel
+                                                    ? `${probeResult.winnerLabel} (${probeResult.winnerLabelPresent ? 'present' : 'missing'})`
+                                                    : 'unknown'}
+                                            </div>
+                                        </div>
+                                        <div className="probe-item probe-raw">
+                                            <div className="probe-label">Raw /whoami</div>
+                                            <div className="probe-value">{probeResult.raw || '—'}</div>
+                                        </div>
+                                    </div>
+                                )}
+                                {lastApplyResult?.policy === selectedPolicy.policy_name && (
+                                    <div className="probe-meta">
+                                        Last apply: {lastApplyResult.applied ? 'applied' : 'evaluated'}
+                                        {lastApplyResult.target_backend ? ` • target ${lastApplyResult.target_backend}` : ''}
+                                        {typeof lastApplyResult.metric_average === 'number'
+                                            ? ` • avg ${lastApplyResult.metric_average.toFixed(2)}`
+                                            : ''}
+                                    </div>
+                                )}
+                                {probeTs && <div className="probe-meta">Last checked: {probeTs}</div>}
+                            </div>
                         )}
                     </div>
                 )}
