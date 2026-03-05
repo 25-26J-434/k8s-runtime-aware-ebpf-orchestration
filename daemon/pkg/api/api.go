@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/extensions/notification"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -74,6 +75,22 @@ func StartServer() {
 	initRoutingBackend()
 
 	initMetricsStreaming()
+
+	// Wire cluster-wide metrics into the notification extension so it evaluates
+	// thresholds for ALL nodes, not only the local daemon's own eBPF telemetry.
+	notification.SetClusterMetricsProvider(func() []notification.ClusterNodeSnapshot {
+		snap := GetClusterMetricsSnapshot()
+		out := make([]notification.ClusterNodeSnapshot, 0, len(snap))
+		for _, m := range snap {
+			out = append(out, notification.ClusterNodeSnapshot{
+				NodeName:   m.NodeName,
+				Node:       m.Node,
+				Pods:       m.Pods,
+				Containers: m.Containers,
+			})
+		}
+		return out
+	})
 
 	// Initialize WebSocket hub
 	InitWebSocket()
@@ -149,14 +166,9 @@ func StartServer() {
 	}))
 	http.HandleFunc("/api/cluster/summary", corsMiddleware(handleClusterSummary))
 
-	// Extensions (SPI) endpoints (list at /api/extensions and /api/extensions/)
+	// Extensions (SPI): list at /api/extensions and /api/extensions/; config/trigger/test/ui under /api/extensions/:name/...
 	http.HandleFunc("/api/extensions", corsMiddleware(handleExtensionsList))
-	http.HandleFunc("/api/extensions/", corsMiddleware(handleExtensionsListSlash))
-	http.HandleFunc("/api/extensions/notification/config", corsMiddleware(handleNotificationConfig))
-	http.HandleFunc("/api/extensions/notification/trigger", corsMiddleware(handleNotificationTrigger))
-	http.HandleFunc("/api/extensions/notification/test", corsMiddleware(handleNotificationTest))
-	http.HandleFunc("/api/extensions/notification/test/", corsMiddleware(handleNotificationTest))
-	http.HandleFunc("/api/extensions/notification/ui", corsMiddleware(handleExtensionUI))
+	http.HandleFunc("/api/extensions/", corsMiddleware(handleExtensionsSubpath))
 
 	// WebSocket endpoints
 	http.HandleFunc("/ws/metrics", corsMiddleware(handleWebSocketMetrics))
