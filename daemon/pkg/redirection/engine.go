@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"os"
 	"net/http"
 	"net/netip"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +45,7 @@ type Engine struct {
 	syncNamespace string
 	dnatSyncMu    sync.Mutex
 	dnatSyncKeys  map[string]dnatKey // configmap-key -> applied map key
+	localNodeName string
 }
 
 // ApplyResult mirrors the response we return to the frontend.
@@ -72,6 +73,12 @@ func NewEngine(store *Store, dyn dynamic.Interface, kube *kubernetes.Clientset, 
 	if syncNS == "" {
 		syncNS = "ebpf-telemetry"
 	}
+	localNode := os.Getenv("NODE_NAME")
+	if localNode == "" {
+		if host, err := os.Hostname(); err == nil {
+			localNode = host
+		}
+	}
 	return &Engine{
 		store:         store,
 		dyn:           dyn,
@@ -79,6 +86,7 @@ func NewEngine(store *Store, dyn dynamic.Interface, kube *kubernetes.Clientset, 
 		logger:        logger,
 		syncNamespace: syncNS,
 		dnatSyncKeys:  map[string]dnatKey{},
+		localNodeName: localNode,
 	}
 }
 
@@ -90,6 +98,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 	}
 
 	now := time.Now().UTC()
+	metricUsed := healthMetricForScope(policy.Scope)
 	avgValue, count := e.averageMetric(policy)
 	violation := count > 0 && avgValue >= policy.Telemetry.ViolationThreshold
 
@@ -105,7 +114,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 			Applied:    false,
 			Message:    "Action type not redirect; nothing to apply",
 			Violation:  violation,
-			Metric:     policy.Telemetry.Metric,
+			Metric:     metricUsed,
 			StatusCode: http.StatusOK,
 		}, nil
 	}
@@ -113,7 +122,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 	if !violation {
 		policy.Status.LastDecision = "SKIPPED"
 		policy.AddHistory("SKIPPED", "No violation detected", map[string]interface{}{
-			"metric":    policy.Telemetry.Metric,
+			"metric":    metricUsed,
 			"avg_value": avgValue,
 			"threshold": policy.Telemetry.ViolationThreshold,
 			"pod_count": count,
@@ -123,7 +132,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 			Applied:       false,
 			Message:       "Violation not triggered. No redirect applied.",
 			Details:       []string{"No redirect applied"},
-			Metric:        policy.Telemetry.Metric,
+			Metric:        metricUsed,
 			MetricAverage: avgValue,
 			Violation:     false,
 			StatusCode:    http.StatusOK,
@@ -151,7 +160,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 	policy.Status.LastHelperStderr = res.Stderr
 	policy.AddHistory("APPLIED", "LocalRedirectPolicy applied", map[string]interface{}{
 		"target_backend": res.TargetBackend,
-		"metric":         policy.Telemetry.Metric,
+		"metric":         metricUsed,
 		"avg_value":      avgValue,
 	})
 
@@ -160,7 +169,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 	}
 
 	res.Applied = true
-	res.Metric = policy.Telemetry.Metric
+	res.Metric = metricUsed
 	res.MetricAverage = avgValue
 	res.Violation = true
 	return policy, res, nil
@@ -417,7 +426,7 @@ func (e *Engine) selectBackend(ctx context.Context, p *Policy) (string, string, 
 			candidateSelector = p.Action.BackendSelector
 		}
 
-		winner, _, err := e.pickBestPod(ctx, targetNS, candidateSelector, p.Telemetry.Metric, p.Scope)
+		winner, _, err := e.pickBestPod(ctx, targetNS, candidateSelector, podHealthMetric(), p.Scope)
 		if err != nil {
 			return "", "", "", fmt.Errorf("choose best pod: %w", err)
 		}
@@ -910,6 +919,21 @@ func boolPtr(v bool) *bool {
 	return &v
 }
 
+func healthMetricForScope(scope string) string {
+	if strings.EqualFold(scope, "cluster") {
+		return nodeHealthMetric()
+	}
+	return podHealthMetric()
+}
+
+func podHealthMetric() string {
+	return "dns_latency"
+}
+
+func nodeHealthMetric() string {
+	return "disk_io"
+}
+
 // clearWinnerLabel removes the winner label from all candidate pods.
 func (e *Engine) clearWinnerLabel(ctx context.Context, ns string, action ActionConfig) error {
 	selector := action.BackendCandidatesSelector
@@ -959,11 +983,29 @@ func (e *Engine) pickBestPod(ctx context.Context, ns, selector, metric, scope st
 	best := ""
 	bestNode := ""
 	bestValue := math.MaxFloat64
+	bestNodeValue := math.MaxFloat64
 	for _, pod := range pods.Items {
+		nodeValue := bestNodeValue
+		if strings.EqualFold(scope, "cluster") {
+			if value, ok := e.nodeMetricValue(nodeHealthMetric(), pod.Spec.NodeName, "cluster"); ok {
+				nodeValue = value
+			}
+		}
+
 		value, ok := metricValueForPodWithScope(metric, ns, pod.Name, scope)
 		if !ok {
 			continue
 		}
+		if strings.EqualFold(scope, "cluster") {
+			if nodeValue < bestNodeValue || (nodeValue == bestNodeValue && value < bestValue) {
+				bestNodeValue = nodeValue
+				bestValue = value
+				best = pod.Name
+				bestNode = pod.Spec.NodeName
+			}
+			continue
+		}
+
 		if value < bestValue {
 			bestValue = value
 			best = pod.Name
@@ -1001,15 +1043,20 @@ func (e *Engine) applyWinnerLabel(ctx context.Context, ns, selector, winner, lab
 
 // averageMetric computes the mean microsecond value for pods in the namespace that match the substring.
 func (e *Engine) averageMetric(p *Policy) (float64, int) {
+	metric := healthMetricForScope(p.Scope)
+	if metric == nodeHealthMetric() {
+		return e.averageNodeMetric(metric)
+	}
+
 	monitor := p.Telemetry.MonitorPodContains
 	if monitor == "" {
 		monitor = p.Frontend.Service
 	}
 	namespace := p.Namespace
 	if strings.EqualFold(p.Scope, "cluster") {
-		return e.averageMetricForPodsCluster(p.Telemetry.Metric, namespace, monitor)
+		return e.averageMetricForPodsCluster(metric, namespace, monitor)
 	}
-	return averageMetricForPods(p.Telemetry.Metric, namespace, monitor)
+	return averageMetricForPods(metric, namespace, monitor)
 }
 
 func (e *Engine) averageMetricForPodsCluster(metric, namespace, nameContains string) (float64, int) {
@@ -1040,11 +1087,38 @@ func (e *Engine) averageMetricForPodsCluster(metric, namespace, nameContains str
 	return sum / float64(count), count
 }
 
+func (e *Engine) averageNodeMetric(metric string) (float64, int) {
+	if e.localNodeName == "" {
+		return 0, 0
+	}
+	if value, ok := e.nodeMetricValue(metric, e.localNodeName, "cluster"); ok {
+		return value, 1
+	}
+	return 0, 0
+}
+
+func (e *Engine) nodeMetricValue(metric, nodeName, scope string) (float64, bool) {
+	switch strings.ToLower(metric) {
+	case nodeHealthMetric():
+		if strings.EqualFold(scope, "cluster") {
+			if nodeMetric, ok := telemetry.GetClusterNodeMetric(nodeName, telemetry.MetricType("disk_io")); ok {
+				return extractDiskIOValue(nodeMetric.Value)
+			}
+		}
+		if nodeName == "" || !strings.EqualFold(nodeName, e.localNodeName) {
+			return 0, false
+		}
+		return extractDiskIOValue(telemetry.GetDiskIOMetrics())
+	default:
+		return 0, false
+	}
+}
+
 // metricValueForPod returns the metric value for a specific pod (microseconds).
 func metricValueForPod(metric, namespace, podName string) (float64, bool) {
 	key := namespace + "/" + podName
 	switch strings.ToLower(metric) {
-	case "dns_us":
+	case "dns_us", "dns_latency", "dns":
 		if data, ok := telemetry.GetPodDNSMetrics()[key]; ok && data.TotalEvents > 0 {
 			return float64(data.TotalLatencyNs) / float64(data.TotalEvents) / 1000.0, true
 		}
@@ -1072,7 +1146,7 @@ func metricValueForPodWithScope(metric, namespace, podName, scope string) (float
 func clusterMetricValueForPod(metric, namespace, podName string) (float64, bool) {
 	key := namespace + "/" + podName
 	switch strings.ToLower(metric) {
-	case "dns_us":
+	case "dns_us", "dns_latency", "dns":
 		if podMetric, ok := telemetry.GetClusterPodMetric(key, telemetry.MetricTypeDNS); ok {
 			return extractDNSValue(podMetric.Value)
 		}
@@ -1159,6 +1233,29 @@ func extractSchedLatencyValue(value interface{}) (float64, bool) {
 	}
 }
 
+func extractDiskIOValue(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case telemetry.DiskIOMetrics:
+		if v.AvgIOLatencyNs == 0 {
+			return 0, false
+		}
+		return float64(v.AvgIOLatencyNs) / 1000.0, true
+	case *telemetry.DiskIOMetrics:
+		if v == nil || v.AvgIOLatencyNs == 0 {
+			return 0, false
+		}
+		return float64(v.AvgIOLatencyNs) / 1000.0, true
+	case map[string]interface{}:
+		avg, ok := toUint64(v["avg_io_latency_ns"])
+		if !ok || avg == 0 {
+			return 0, false
+		}
+		return float64(avg) / 1000.0, true
+	default:
+		return 0, false
+	}
+}
+
 func toUint64(v interface{}) (uint64, bool) {
 	switch t := v.(type) {
 	case uint64:
@@ -1217,7 +1314,7 @@ func averageMetricForPods(metric, namespace, nameContains string) (float64, int)
 	var count int
 	nameContains = strings.ToLower(nameContains)
 	switch strings.ToLower(metric) {
-	case "dns_us":
+	case "dns_us", "dns_latency", "dns":
 		for _, data := range telemetry.GetPodDNSMetrics() {
 			if data.Namespace != namespace || !strings.Contains(strings.ToLower(data.PodName), nameContains) {
 				continue

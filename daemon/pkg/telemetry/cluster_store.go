@@ -7,8 +7,10 @@ import (
 )
 
 var (
-	clusterPodMetricsMu sync.RWMutex
-	clusterPodMetrics   = make(map[string]map[MetricType]PodMetric)
+	clusterPodMetricsMu  sync.RWMutex
+	clusterPodMetrics    = make(map[string]map[MetricType]PodMetric)
+	clusterNodeMetricsMu sync.RWMutex
+	clusterNodeMetrics   = make(map[string]map[MetricType]NodeMetric)
 )
 
 // StoreClusterPodMetric stores a pod-level metric coming from any node.
@@ -53,5 +55,41 @@ func GetClusterPodMetric(podKey string, metricType MetricType) (PodMetric, bool)
 	}
 	metric, ok := entry[metricType]
 	clusterPodMetricsMu.RUnlock()
+	return metric, ok
+}
+
+// StoreClusterNodeMetric stores a node-level metric coming from any node.
+func StoreClusterNodeMetric(nodeName string, metricType MetricType, value interface{}) {
+	if nodeName == "" || metricType == "" {
+		return
+	}
+
+	metric := NodeMetric{
+		Type:      metricType,
+		Timestamp: time.Now().UTC(),
+		NodeName:  nodeName,
+		Value:     value,
+	}
+
+	clusterNodeMetricsMu.Lock()
+	entry := clusterNodeMetrics[nodeName]
+	if entry == nil {
+		entry = make(map[MetricType]NodeMetric)
+		clusterNodeMetrics[nodeName] = entry
+	}
+	entry[metricType] = metric
+	clusterNodeMetricsMu.Unlock()
+}
+
+// GetClusterNodeMetric returns the most recent cluster-wide node metric.
+func GetClusterNodeMetric(nodeName string, metricType MetricType) (NodeMetric, bool) {
+	clusterNodeMetricsMu.RLock()
+	entry := clusterNodeMetrics[nodeName]
+	if entry == nil {
+		clusterNodeMetricsMu.RUnlock()
+		return NodeMetric{}, false
+	}
+	metric, ok := entry[metricType]
+	clusterNodeMetricsMu.RUnlock()
 	return metric, ok
 }
