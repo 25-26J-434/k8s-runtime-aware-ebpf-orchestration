@@ -151,6 +151,7 @@ func StartServer() {
    http.HandleFunc("/api/scaling/deployments", corsMiddleware(handleScalingDeployments))
    http.HandleFunc("/api/scaling/namespaces", corsMiddleware(handleScalingNamespaces))
    http.HandleFunc("/api/scaling/metrics/latest", corsMiddleware(handleScalingLatestMetrics))
+   http.HandleFunc("/api/scaling/pods", corsMiddleware(handleScalingPods))
 
 
    // Component 2 (routing) endpoints
@@ -203,6 +204,7 @@ func StartServer() {
    log.Println("[API]   GET /api/rtt/pods            - Per-pod RTT metrics")
    log.Println("[API]   GET /api/cluster/topology    - Cluster topology")
    log.Println("[API]   GET /api/cluster/services    - Services info")
+   log.Println("[API]   GET /api/scaling/pods        - Pod placement for a deployment")
 
 
    if err := http.ListenAndServe(":8080", nil); err != nil {
