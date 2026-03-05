@@ -25,6 +25,15 @@ const (
 	AlertInfo     AlertSeverity = "info"
 )
 
+type HealthLevel string
+
+const (
+	HealthLevelHealthy   HealthLevel = "healthy"
+	HealthLevelDegraded  HealthLevel = "degraded"
+	HealthLevelUnhealthy HealthLevel = "unhealthy"
+	HealthLevelUnknown   HealthLevel = "unknown"
+)
+
 type HealthAlert struct {
 	Timestamp   string        `json:"timestamp"`
 	Severity    AlertSeverity `json:"severity"`
@@ -37,12 +46,15 @@ type HealthAlert struct {
 }
 
 type PodHealth struct {
-	Name         string `json:"name"`
-	Namespace    string `json:"namespace"`
-	Node         string `json:"node"`
-	Phase        string `json:"phase"`
-	Ready        bool   `json:"ready"`
-	RestartCount int32  `json:"restart_count"`
+	Name          string      `json:"name"`
+	Namespace     string      `json:"namespace"`
+	Node          string      `json:"node"`
+	Phase         string      `json:"phase"`
+	Ready         bool        `json:"ready"`
+	RestartCount  int32       `json:"restart_count"`
+	HealthLevel   HealthLevel `json:"health_level,omitempty"`
+	HealthScore   int         `json:"health_score,omitempty"`
+	HealthReasons []string    `json:"health_reasons,omitempty"`
 }
 
 type NodeHealthUpdate struct {
@@ -50,6 +62,9 @@ type NodeHealthUpdate struct {
 	NodeName      string      `json:"node_name"`
 	NodeIP        string      `json:"node_ip,omitempty"`
 	Status        string      `json:"status"`
+	HealthLevel   HealthLevel `json:"health_level,omitempty"`
+	HealthScore   int         `json:"health_score,omitempty"`
+	HealthReasons []string    `json:"health_reasons,omitempty"`
 	TotalPods     int         `json:"total_pods"`
 	HealthyPods   int         `json:"healthy_pods"`
 	UnhealthyPods int         `json:"unhealthy_pods"`
@@ -180,6 +195,8 @@ func collectLocalNodeHealth() NodeHealthUpdate {
 		update.Status = "healthy"
 	}
 
+	applyMetricsBasedHealthLevels(&update, buildUnifiedMetricsResponse("", ""))
+
 	return update
 }
 
@@ -274,6 +291,28 @@ func storeNodeHealth(nodeKey string, update NodeHealthUpdate) {
 	clusterNodeHealthMu.Lock()
 	clusterNodeHealth[nodeKey] = update
 	clusterNodeHealthMu.Unlock()
+}
+
+func getNodeHealthForMetrics(nodeName, nodeIP, explicitKey string) (NodeHealthUpdate, bool) {
+	clusterNodeHealthMu.RLock()
+	defer clusterNodeHealthMu.RUnlock()
+
+	if explicitKey != "" {
+		if h, ok := clusterNodeHealth[explicitKey]; ok {
+			return h, true
+		}
+	}
+	if nodeName != "" {
+		if h, ok := clusterNodeHealth[nodeName]; ok {
+			return h, true
+		}
+	}
+	if nodeIP != "" {
+		if h, ok := clusterNodeHealth[nodeIP]; ok {
+			return h, true
+		}
+	}
+	return NodeHealthUpdate{}, false
 }
 
 func handleClusterNodeHealth(w http.ResponseWriter, _ *http.Request) {
@@ -541,3 +580,301 @@ func nodeHealthWebSocketBroadcaster() {
 	}
 }
 
+func applyMetricsBasedHealthLevels(update *NodeHealthUpdate, metrics UnifiedMetricsResponse) {
+	for i := range update.Pods {
+		podKey := update.Pods[i].Namespace + "/" + update.Pods[i].Name
+		level, score, reasons := evaluatePodHealthLevel(update.Pods[i], metrics.Pods[podKey])
+		update.Pods[i].HealthLevel = level
+		update.Pods[i].HealthScore = score
+		update.Pods[i].HealthReasons = reasons
+	}
+
+	nodeLevel, nodeScore, nodeReasons := evaluateNodeHealthLevel(*update, metrics.Node)
+	update.HealthLevel = nodeLevel
+	update.HealthScore = nodeScore
+	update.HealthReasons = nodeReasons
+}
+
+func evaluatePodHealthLevel(pod PodHealth, podMetrics map[string]interface{}) (HealthLevel, int, []string) {
+	if pod.Phase == string(corev1.PodFailed) {
+		return HealthLevelUnhealthy, 0, []string{"pod phase is Failed"}
+	}
+
+	score := 100
+	reasons := make([]string, 0, 8)
+
+	if pod.Phase == string(corev1.PodPending) {
+		score -= 20
+		reasons = append(reasons, "pod phase is Pending")
+	}
+	if pod.Phase == string(corev1.PodUnknown) {
+		score -= 40
+		reasons = append(reasons, "pod phase is Unknown")
+	}
+	if pod.Phase == string(corev1.PodRunning) && !pod.Ready {
+		score -= 35
+		reasons = append(reasons, "pod is running but not Ready")
+	}
+
+	switch {
+	case pod.RestartCount >= 5:
+		score -= 30
+		reasons = append(reasons, fmt.Sprintf("high restart count: %d", pod.RestartCount))
+	case pod.RestartCount >= 2:
+		score -= 15
+		reasons = append(reasons, fmt.Sprintf("restart count elevated: %d", pod.RestartCount))
+	}
+
+	tcpMetrics := asMap(podMetrics["tcp_metrics"])
+	if tcpMetrics != nil {
+		retrans := asFloat64(tcpMetrics["retransmissions"])
+		packetLoss := asFloat64(tcpMetrics["packet_loss"])
+		badHandshakes := asFloat64(tcpMetrics["bad_handshakes"])
+
+		switch {
+		case retrans >= 50:
+			score -= 20
+			reasons = append(reasons, fmt.Sprintf("high retransmissions: %.0f", retrans))
+		case retrans >= 10:
+			score -= 10
+			reasons = append(reasons, fmt.Sprintf("retransmissions elevated: %.0f", retrans))
+		}
+
+		switch {
+		case packetLoss >= 20:
+			score -= 20
+			reasons = append(reasons, fmt.Sprintf("high packet loss: %.0f", packetLoss))
+		case packetLoss >= 5:
+			score -= 10
+			reasons = append(reasons, fmt.Sprintf("packet loss elevated: %.0f", packetLoss))
+		}
+
+		switch {
+		case badHandshakes >= 5:
+			score -= 15
+			reasons = append(reasons, fmt.Sprintf("bad handshakes high: %.0f", badHandshakes))
+		case badHandshakes > 0:
+			score -= 8
+			reasons = append(reasons, fmt.Sprintf("bad handshakes detected: %.0f", badHandshakes))
+		}
+	}
+
+	dnsMetrics := asMap(podMetrics["dns_latency"])
+	if dnsMetrics != nil {
+		avgDNSNs := asFloat64(dnsMetrics["avg_latency_ns"])
+		switch {
+		case avgDNSNs >= 100_000_000: // 100ms
+			score -= 20
+			reasons = append(reasons, fmt.Sprintf("dns latency high: %.1fms", avgDNSNs/1_000_000))
+		case avgDNSNs >= 20_000_000: // 20ms
+			score -= 10
+			reasons = append(reasons, fmt.Sprintf("dns latency elevated: %.1fms", avgDNSNs/1_000_000))
+		}
+	}
+
+	rttMetrics := asMap(podMetrics["rtt"])
+	if rttMetrics != nil {
+		avgRTTNs := asFloat64(rttMetrics["avg_rtt_ns"])
+		switch {
+		case avgRTTNs >= 200_000_000: // 200ms
+			score -= 20
+			reasons = append(reasons, fmt.Sprintf("rtt high: %.1fms", avgRTTNs/1_000_000))
+		case avgRTTNs >= 50_000_000: // 50ms
+			score -= 10
+			reasons = append(reasons, fmt.Sprintf("rtt elevated: %.1fms", avgRTTNs/1_000_000))
+		}
+	}
+
+	schedMetrics := asMap(podMetrics["sched_latency"])
+	if schedMetrics != nil {
+		avgRunqueueUs := asFloat64(schedMetrics["avg_runqueue_latency_us"])
+		starvationCount := asFloat64(schedMetrics["cpu_starvation_count"])
+		switch {
+		case avgRunqueueUs >= 15_000:
+			score -= 20
+			reasons = append(reasons, fmt.Sprintf("runqueue latency high: %.0fus", avgRunqueueUs))
+		case avgRunqueueUs >= 5_000:
+			score -= 10
+			reasons = append(reasons, fmt.Sprintf("runqueue latency elevated: %.0fus", avgRunqueueUs))
+		}
+		if starvationCount >= 5 {
+			score -= 15
+			reasons = append(reasons, fmt.Sprintf("cpu starvation events high: %.0f", starvationCount))
+		} else if starvationCount > 0 {
+			score -= 8
+			reasons = append(reasons, fmt.Sprintf("cpu starvation events detected: %.0f", starvationCount))
+		}
+	}
+
+	diskIOMetrics := asMap(podMetrics["disk_io"])
+	if diskIOMetrics != nil {
+		avgIOLatencyNs := asFloat64(diskIOMetrics["avg_io_latency_ns"])
+		switch {
+		case avgIOLatencyNs >= 200_000_000: // 200ms
+			score -= 15
+			reasons = append(reasons, fmt.Sprintf("disk I/O latency high: %.1fms", avgIOLatencyNs/1_000_000))
+		case avgIOLatencyNs >= 50_000_000: // 50ms
+			score -= 8
+			reasons = append(reasons, fmt.Sprintf("disk I/O latency elevated: %.1fms", avgIOLatencyNs/1_000_000))
+		}
+	}
+
+	level := levelFromScore(score)
+	if !pod.Ready && level == HealthLevelHealthy {
+		level = HealthLevelDegraded
+	}
+	return level, clampScore(score), reasons
+}
+
+func evaluateNodeHealthLevel(update NodeHealthUpdate, nodeMetrics map[string]interface{}) (HealthLevel, int, []string) {
+	if update.Error != "" {
+		return HealthLevelUnhealthy, 0, []string{fmt.Sprintf("node error: %s", update.Error)}
+	}
+
+	score := 100
+	reasons := make([]string, 0, 8)
+
+	if update.TotalPods > 0 {
+		unhealthyRatio := float64(update.UnhealthyPods) / float64(update.TotalPods)
+		switch {
+		case update.UnhealthyPods >= 3 || unhealthyRatio >= 0.30:
+			score -= 40
+			reasons = append(reasons, fmt.Sprintf("unhealthy pods high: %d/%d", update.UnhealthyPods, update.TotalPods))
+		case update.UnhealthyPods > 0:
+			score -= 20
+			reasons = append(reasons, fmt.Sprintf("unhealthy pods detected: %d/%d", update.UnhealthyPods, update.TotalPods))
+		}
+
+		if update.UnknownPods > 0 {
+			score -= 8
+			reasons = append(reasons, fmt.Sprintf("pods in unknown state: %d", update.UnknownPods))
+		}
+	}
+
+	nodeSystem := asMap(nodeMetrics["node_system"])
+	if nodeSystem != nil {
+		cpuUsage := asFloat64(nodeSystem["cpu_usage_percent"])
+		memUsage := asFloat64(nodeSystem["memory_usage_percent"])
+
+		switch {
+		case cpuUsage >= 92:
+			score -= 25
+			reasons = append(reasons, fmt.Sprintf("cpu usage high: %.1f%%", cpuUsage))
+		case cpuUsage >= 80:
+			score -= 12
+			reasons = append(reasons, fmt.Sprintf("cpu usage elevated: %.1f%%", cpuUsage))
+		}
+
+		switch {
+		case memUsage >= 95:
+			score -= 25
+			reasons = append(reasons, fmt.Sprintf("memory usage high: %.1f%%", memUsage))
+		case memUsage >= 85:
+			score -= 12
+			reasons = append(reasons, fmt.Sprintf("memory usage elevated: %.1f%%", memUsage))
+		}
+	}
+
+	nodeTCP := asMap(nodeMetrics["tcp_metrics"])
+	if nodeTCP != nil {
+		retrans := asFloat64(nodeTCP["retransmissions"])
+		packetLoss := asFloat64(nodeTCP["packet_loss"])
+
+		if retrans >= 100 {
+			score -= 15
+			reasons = append(reasons, fmt.Sprintf("node retransmissions high: %.0f", retrans))
+		}
+		if packetLoss >= 20 {
+			score -= 15
+			reasons = append(reasons, fmt.Sprintf("node packet loss high: %.0f", packetLoss))
+		}
+	}
+
+	nodeSched := asMap(nodeMetrics["sched_latency"])
+	if nodeSched != nil {
+		avgRunqueueUs := asFloat64(nodeSched["avg_runqueue_latency_us"])
+		starvationCount := asFloat64(nodeSched["cpu_starvation_count"])
+
+		if avgRunqueueUs >= 15_000 {
+			score -= 15
+			reasons = append(reasons, fmt.Sprintf("node runqueue latency high: %.0fus", avgRunqueueUs))
+		}
+		if starvationCount >= 10 {
+			score -= 15
+			reasons = append(reasons, fmt.Sprintf("node CPU starvation high: %.0f", starvationCount))
+		}
+	}
+
+	level := levelFromScore(score)
+	if update.Status == "unhealthy" && level == HealthLevelHealthy {
+		level = HealthLevelDegraded
+	}
+	if update.Status == "degraded" && level == HealthLevelHealthy {
+		level = HealthLevelDegraded
+	}
+	return level, clampScore(score), reasons
+}
+
+func levelFromScore(score int) HealthLevel {
+	s := clampScore(score)
+	switch {
+	case s <= 40:
+		return HealthLevelUnhealthy
+	case s <= 70:
+		return HealthLevelDegraded
+	default:
+		return HealthLevelHealthy
+	}
+}
+
+func clampScore(score int) int {
+	switch {
+	case score < 0:
+		return 0
+	case score > 100:
+		return 100
+	default:
+		return score
+	}
+}
+
+func asMap(v interface{}) map[string]interface{} {
+	if v == nil {
+		return nil
+	}
+	if m, ok := v.(map[string]interface{}); ok {
+		return m
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func asFloat64(v interface{}) float64 {
+	switch value := v.(type) {
+	case float64:
+		return value
+	case float32:
+		return float64(value)
+	case int:
+		return float64(value)
+	case int32:
+		return float64(value)
+	case int64:
+		return float64(value)
+	case uint:
+		return float64(value)
+	case uint32:
+		return float64(value)
+	case uint64:
+		return float64(value)
+	default:
+		return 0
+	}
+}
