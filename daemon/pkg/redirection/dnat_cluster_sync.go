@@ -27,7 +27,7 @@ type dnatRedirectSpec struct {
 }
 
 func dnatPolicyKey(p *Policy) string {
-	return fmt.Sprintf("%s/%s:%d", p.Namespace, p.Frontend.Service, p.Frontend.Port)
+	return fmt.Sprintf("%s_%s_%d", p.Namespace, p.Frontend.Service, p.Frontend.Port)
 }
 
 func (e *Engine) publishClusterDNAT(ctx context.Context, p *Policy, svc *corev1.Service, winner *corev1.Pod) error {
