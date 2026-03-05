@@ -56,26 +56,67 @@ type uiInput struct {
 	} `json:"options,omitempty"`
 }
 
-// handleExtensionsListSlash handles GET /api/extensions/ (trailing slash); only responds for exact path.
-func handleExtensionsListSlash(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/api/extensions/" {
+// handleExtensionsSubpath dispatches /api/extensions/:name/config, :name/trigger, :name/test, :name/ui (SPI-driven).
+// This allows the frontend to call GET/POST /api/extensions/${name}/config generically; only extensions that
+// register config/trigger handlers (e.g. notification) respond.
+func handleExtensionsSubpath(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/extensions/")
+	if path == "" {
+		handleExtensionsList(w, r)
+		return
+	}
+	parts := strings.SplitN(path, "/", 2)
+	name := parts[0]
+	if name == "" {
 		http.NotFound(w, r)
 		return
 	}
-	handleExtensionsList(w, r)
+	rest := ""
+	if len(parts) == 2 {
+		rest = strings.TrimSuffix(parts[1], "/")
+	}
+	switch rest {
+	case "config":
+		if name == "notification" {
+			handleNotificationConfig(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	case "trigger":
+		if name == "notification" {
+			handleNotificationTrigger(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	case "test":
+		if name == "notification" {
+			handleNotificationTest(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	case "ui":
+		handleExtensionUI(w, r)
+	default:
+		http.NotFound(w, r)
+	}
 }
 
-// handleExtensionsList returns all registered extensions with their UI spec.
+// extensionWithUI is the optional interface for extensions that provide ui.json (SPI-driven UI).
+type extensionWithUI interface {
+	UIJSON() []byte
+}
+
+// handleExtensionsList returns all registered extensions with their UI spec from ui.json (SPI-driven).
+// Each extension that implements UIJSON() has its label, description, and inputs filled from that JSON.
 func handleExtensionsList(w http.ResponseWriter, r *http.Request) {
 	all := registry.All()
 	list := make([]ExtensionInfo, 0, len(all))
 	for _, ext := range all {
 		info := ExtensionInfo{Name: ext.Name()}
-		switch ext.Name() {
-		case "notification":
+		if uiExt, ok := ext.(extensionWithUI); ok {
 			var ui uiJSONSchema
-			if err := json.Unmarshal(notification.UIJSON, &ui); err != nil {
-				log.Printf("[API] extensions: parse notification ui.json: %v", err)
+			if err := json.Unmarshal(uiExt.UIJSON(), &ui); err != nil {
+				log.Printf("[API] extensions: parse ui.json for %s: %v", ext.Name(), err)
 			} else {
 				info.Label = ui.Label
 				info.Description = ui.Description
@@ -88,7 +129,7 @@ func handleExtensionsList(w http.ResponseWriter, r *http.Request) {
 					info.Inputs = append(info.Inputs, ctrl)
 				}
 			}
-		default:
+		} else {
 			info.Label = ext.Name()
 		}
 		list = append(list, info)
@@ -97,7 +138,7 @@ func handleExtensionsList(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"extensions": list})
 }
 
-// handleExtensionUI returns the raw ui.json for an extension by name.
+// handleExtensionUI returns the raw ui.json for an extension by name (SPI-driven: lookup from registry).
 func handleExtensionUI(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/extensions/")
 	name := strings.TrimSuffix(path, "/ui")
@@ -105,13 +146,18 @@ func handleExtensionUI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "extension name required", http.StatusBadRequest)
 		return
 	}
-	switch name {
-	case "notification":
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(notification.UIJSON)
-	default:
-		http.NotFound(w, r)
+	for _, ext := range registry.All() {
+		if ext.Name() != name {
+			continue
+		}
+		if uiExt, ok := ext.(extensionWithUI); ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(uiExt.UIJSON())
+			return
+		}
+		break
 	}
+	http.NotFound(w, r)
 }
 
 // handleNotificationConfig gets or sets the notification extension config (persisted in MongoDB).
@@ -129,6 +175,13 @@ func handleNotificationConfig(w http.ResponseWriter, r *http.Request) {
 		cfg := notification.GetConfig()
 		if cfg.Config == nil {
 			cfg.Config = make(map[string]interface{})
+		}
+		// Ensure webhooks and thresholds are always arrays so the frontend never gets undefined
+		if cfg.Config["webhooks"] == nil {
+			cfg.Config["webhooks"] = []interface{}{}
+		}
+		if cfg.Config["thresholds"] == nil {
+			cfg.Config["thresholds"] = []interface{}{}
 		}
 		json.NewEncoder(w).Encode(cfg.Config)
 		return
