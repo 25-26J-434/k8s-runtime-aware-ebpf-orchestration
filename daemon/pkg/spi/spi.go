@@ -2,7 +2,11 @@
 // Extensions implement Extension and are registered in extensions/registry.
 package spi
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"strings"
+)
 
 // Extension is the interface all Component 01 extensions must implement.
 // Extensions run in the application lifecycle and can subscribe to metrics,
@@ -22,18 +26,27 @@ type ExtensionParams struct {
 	Config map[string]interface{}
 }
 
-// GetString returns a string config value.
+// GetString returns a string config value. Coerces non-string types via fmt.Sprintf
+// so values loaded from MongoDB/BSON work (e.g. for email SMTP fields).
 func (p ExtensionParams) GetString(key string) string {
-	if v, ok := p.Config[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
+	if p.Config == nil {
+		return ""
 	}
-	return ""
+	v, ok := p.Config[key]
+	if !ok || v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return strings.TrimSpace(fmt.Sprintf("%v", v))
 }
 
 // GetFloat returns a float64 config value (from JSON/BSON number).
 func (p ExtensionParams) GetFloat(key string) float64 {
+	if p.Config == nil {
+		return 0
+	}
 	if v, ok := p.Config[key]; ok {
 		switch n := v.(type) {
 		case float64:
@@ -51,12 +64,37 @@ func (p ExtensionParams) GetFloat(key string) float64 {
 	return 0
 }
 
-// GetBool returns a boolean config value.
+// GetBool returns a boolean config value. Accepts bool, string "true"/"1"/"yes", or non-zero number
+// so config from MongoDB (after BSON decode) works for email_enabled, enabled, etc.
 func (p ExtensionParams) GetBool(key string) bool {
-	if v, ok := p.Config[key]; ok {
-		if b, ok := v.(bool); ok {
-			return b
+	if p.Config == nil {
+		return false
+	}
+	v, ok := p.Config[key]
+	if !ok || v == nil {
+		return false
+	}
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	if s, ok := v.(string); ok {
+		switch strings.ToLower(strings.TrimSpace(s)) {
+		case "true", "1", "yes":
+			return true
 		}
+		return false
+	}
+	switch n := v.(type) {
+	case float64:
+		return n != 0
+	case float32:
+		return n != 0
+	case int:
+		return n != 0
+	case int32:
+		return n != 0
+	case int64:
+		return n != 0
 	}
 	return false
 }
