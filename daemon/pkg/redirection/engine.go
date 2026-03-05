@@ -354,11 +354,9 @@ func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue f
 		return nil, err
 	}
 
-	if err := e.applyDNATRedirectWithPorts(ctx, frontendSvc, winner, uint16(p.Frontend.Port), uint16(p.Action.BackendPort)); err != nil {
-		if err := e.updateEndpointSlicesForService(ctx, p.Namespace, frontendSvc, winner, p.PolicyName); err != nil {
-			return nil, err
-		}
-
+	// Cluster scope should be observable and consistent across nodes.
+	// Prefer EndpointSlice updates; fall back to eBPF DNAT if that fails.
+	if err := e.updateEndpointSlicesForService(ctx, p.Namespace, frontendSvc, winner, p.Action.BackendPort, p.PolicyName); err == nil {
 		msg := "Violation triggered. Cluster redirection applied via EndpointSlice."
 		return &ApplyResult{
 			Applied:       true,
@@ -372,6 +370,12 @@ func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue f
 			},
 			Stdout: fmt.Sprintf("EndpointSlice updated for service %s", frontendSvc.Name),
 		}, nil
+	} else {
+		e.logger.Printf("[Routing] cluster EndpointSlice update failed for %s/%s: %v", p.Namespace, frontendSvc.Name, err)
+	}
+
+	if err := e.applyDNATRedirectWithPorts(ctx, frontendSvc, winner, uint16(p.Frontend.Port), uint16(p.Action.BackendPort)); err != nil {
+		return nil, err
 	}
 
 	msg := "Violation triggered. Cluster redirection applied via eBPF DNAT."
@@ -574,7 +578,11 @@ func ensureServicePortExists(svc *corev1.Service, port int) error {
 	return fmt.Errorf("service %s does not expose port %d", svc.Name, port)
 }
 
-func (e *Engine) updateEndpointSlicesForService(ctx context.Context, ns string, svc *corev1.Service, winner *corev1.Pod, policyName string) error {
+func (e *Engine) updateEndpointSlicesForService(ctx context.Context, ns string, svc *corev1.Service, winner *corev1.Pod, targetPort int, policyName string) error {
+	if targetPort <= 0 {
+		return fmt.Errorf("target port must be a positive number")
+	}
+
 	endpoint := discoveryv1.Endpoint{
 		Addresses: []string{winner.Status.PodIP},
 		Conditions: discoveryv1.EndpointConditions{
@@ -587,10 +595,18 @@ func (e *Engine) updateEndpointSlicesForService(ctx context.Context, ns string, 
 			UID:       winner.UID,
 		},
 	}
-	return e.updateEndpointSlicesWithEndpoints(ctx, ns, svc, []discoveryv1.Endpoint{endpoint}, policyName)
+	return e.updateEndpointSlicesWithEndpointsAndPort(ctx, ns, svc, []discoveryv1.Endpoint{endpoint}, targetPort, policyName)
 }
 
 func (e *Engine) updateEndpointSlicesWithEndpoints(ctx context.Context, ns string, svc *corev1.Service, endpoints []discoveryv1.Endpoint, policyName string) error {
+	if svc == nil || len(svc.Spec.Ports) == 0 {
+		return fmt.Errorf("service has no ports")
+	}
+	targetPort := int(resolveTargetPort(svc.Spec.Ports[0]))
+	return e.updateEndpointSlicesWithEndpointsAndPort(ctx, ns, svc, endpoints, targetPort, policyName)
+}
+
+func (e *Engine) updateEndpointSlicesWithEndpointsAndPort(ctx context.Context, ns string, svc *corev1.Service, endpoints []discoveryv1.Endpoint, targetPort int, policyName string) error {
 	if svc == nil {
 		return fmt.Errorf("service is nil")
 	}
@@ -615,6 +631,14 @@ func (e *Engine) updateEndpointSlicesWithEndpoints(ctx context.Context, ns strin
 			slice.Labels = map[string]string{}
 		}
 		slice.Labels["ebpf-daemon/redirect-policy"] = policyName
+
+		// EndpointSlice ports represent the backend port that kube-proxy forwards to. This enables
+		// service-port (frontend) -> pod-port (backend) translation.
+		tp := int32(targetPort)
+		for j := range slice.Ports {
+			slice.Ports[j].Port = &tp
+		}
+
 		slice.Endpoints = endpoints
 		if _, err := e.kube.DiscoveryV1().EndpointSlices(ns).Update(ctx, &slice, metav1.UpdateOptions{}); err != nil {
 			return err
