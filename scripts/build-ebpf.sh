@@ -229,6 +229,22 @@ if [ -f "$COMPONENT_DIR/tcp_metrics.c" ]; then
     fi
 fi
 
+# Build DNAT connect4 eBPF program (if exists)
+if [ -f "$COMPONENT_DIR/dnat_connect4.c" ]; then
+    echo "[BUILD] Compiling dnat_connect4.c..."
+    clang $CLANG_FLAGS \
+        -c "$COMPONENT_DIR/dnat_connect4.c" \
+        -o "$COMPONENT_DIR/dnat_connect4.o" 2>&1 || {
+        echo "[WARN] DNAT connect4 program compilation failed"
+        echo "[WARN] Continuing without DNAT..."
+    }
+
+    if [ -f "$COMPONENT_DIR/dnat_connect4.o" ]; then
+        cp "$COMPONENT_DIR/dnat_connect4.o" "$OUTPUT_DIR/dnat_connect4.o"
+        echo "[OK] Copied dnat_connect4.o to $OUTPUT_DIR"
+    fi
+fi
+
 # Build Scheduler Latency eBPF program (if exists)
 if [ -f "$COMPONENT_DIR/sched_latency.c" ]; then
     echo "[BUILD] Compiling sched_latency.c..."

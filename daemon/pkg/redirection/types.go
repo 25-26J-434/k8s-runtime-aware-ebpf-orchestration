@@ -32,6 +32,7 @@ type TelemetryConfig struct {
 type ActionConfig struct {
 	Type                      string `bson:"type" json:"type"`
 	BackendSelector           string `bson:"backend_selector" json:"backend_selector"`
+	BackendService            string `bson:"backend_service,omitempty" json:"backend_service,omitempty"`
 	BackendPort               int    `bson:"backend_port" json:"backend_port"`
 	Protocol                  string `bson:"protocol" json:"protocol"`
 	TTLSeconds                int    `bson:"ttl_seconds" json:"ttl_seconds"`
@@ -60,6 +61,7 @@ type Policy struct {
 	ID         primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
 	PolicyName string             `bson:"policy_name" json:"policy_name"`
 	Namespace  string             `bson:"namespace" json:"namespace"`
+	Scope      string             `bson:"scope,omitempty" json:"scope,omitempty"`
 
 	Frontend  Frontend        `bson:"frontend" json:"frontend"`
 	Telemetry TelemetryConfig `bson:"telemetry" json:"telemetry"`

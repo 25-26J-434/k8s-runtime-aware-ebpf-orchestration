@@ -16,6 +16,13 @@ const SCALING_API_BASE = (import.meta as any).env?.VITE_SCALING_API_BASE || API_
 
 type ApplyResponse = {
     message: string;
+    applied?: boolean;
+    target_backend?: string;
+    ttl_seconds?: number;
+    details?: string[];
+    metric_average?: number;
+    metric?: string;
+    violation?: boolean;
     stdout?: string;
     stderr?: string;
     helper?: string;
@@ -157,6 +164,28 @@ export const api = {
         if (!response.ok) {
             const text = await response.text();
             throw new Error(`Failed to fetch service-a whoami: ${response.status} ${response.statusText} - ${text}`);
+        }
+        return response.text();
+    },
+
+    async probeService(service: string, namespace?: string, port?: number | string, path?: string): Promise<string> {
+        const params = new URLSearchParams();
+        if (namespace) params.set('namespace', namespace);
+        if (port) params.set('port', String(port));
+        if (path) params.set('path', path);
+        const query = params.toString();
+        const response = await fetch(
+            `${ROUTING_API_BASE}/api/probe/${encodeURIComponent(service)}${query ? `?${query}` : ''}`,
+            {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            },
+        );
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Failed to probe ${service}: ${response.status} ${response.statusText} - ${text}`);
         }
         return response.text();
     },
