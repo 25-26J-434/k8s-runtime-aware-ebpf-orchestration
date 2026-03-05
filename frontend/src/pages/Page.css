@@ -778,6 +778,47 @@
   font-weight: 500;
   animation: ext-fade-in 0.35s ease;
 }
+
+/* Configuration saved popup alert */
+.extensions-save-success-popup {
+  position: fixed;
+  top: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  animation: ext-popup-in 0.35s ease;
+  pointer-events: none;
+}
+.extensions-save-success-popup-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.9rem 1.5rem;
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.95) 0%, rgba(16, 185, 129, 0.9) 100%);
+  border: 1px solid rgba(52, 211, 153, 0.5);
+  border-radius: 10px;
+  color: #022c22;
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+.extensions-save-success-popup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  color: #059669;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+@keyframes ext-popup-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 @keyframes ext-fade-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 .extensions-pods-on-node {
   margin-top: 1.25rem;
@@ -847,18 +888,149 @@
   transition: color 0.2s ease;
 }
 .ext-notif-section.info-card:hover .ext-notif-section-icon { color: rgba(59, 130, 246, 0.85); }
-.ext-notif-checkbox { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; color: #e4e4e7; font-weight: 500; }
-.ext-notif-checkbox input { width: 1.1rem; height: 1.1rem; accent-color: #3b82f6; }
+
+/* Section header with icon + text block */
+.ext-notif-section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  position: relative;
+}
+.ext-notif-section-header .ext-notif-section-icon {
+  position: static;
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
 .ext-notif-interval { margin: 0; min-width: 180px; }
-.ext-notif-section-title { font-size: 1.25rem; font-weight: 700; color: #e4e4e7; margin: 0 0 0.4rem; letter-spacing: -0.02em; }
-.ext-notif-section-desc { font-size: 0.95rem; color: #94a3b8; margin: 0 0 1rem; line-height: 1.5; }
+.ext-notif-section-title { font-size: 1.2rem; font-weight: 700; color: #e4e4e7; margin: 0 0 0.3rem; letter-spacing: -0.02em; }
+.ext-notif-section-desc { font-size: 0.9rem; color: #94a3b8; margin: 0; line-height: 1.5; }
 .ext-notif-table { margin-bottom: 0.75rem; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.2); }
 .ext-notif-empty { color: #64748b; font-style: italic; margin: 0.75rem 0; font-size: 0.95rem; }
 .ext-notif-checkbox-inline { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; font-size: 0.9rem; color: #94a3b8; }
-.ext-notif-add-webhook { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; margin-top: 1rem; }
+
+/* ── Enable toggle switch ───────────────────────── */
+.ext-notif-enable-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.ext-notif-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  user-select: none;
+}
+.ext-notif-toggle {
+  position: relative;
+  width: 2.75rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: rgba(71, 85, 105, 0.6);
+  border: 1px solid rgba(255,255,255,0.1);
+  transition: background 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+  flex-shrink: 0;
+}
+.ext-notif-toggle:focus { outline: 2px solid rgba(59,130,246,0.5); outline-offset: 2px; }
+.ext-notif-toggle-on {
+  background: rgba(34, 197, 94, 0.35);
+  border-color: rgba(34, 197, 94, 0.5);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.3);
+}
+.ext-notif-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: #64748b;
+  transition: transform 0.22s ease, background 0.22s ease;
+}
+.ext-notif-toggle-on .ext-notif-toggle-thumb {
+  transform: translateX(1.25rem);
+  background: #22c55e;
+}
+.ext-notif-toggle-text { font-size: 0.9rem; font-weight: 600; color: #cbd5e1; }
+
+/* Status badge */
+.ext-notif-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ext-notif-status-active {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  color: #4ade80;
+}
+.ext-notif-status-paused {
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #94a3b8;
+}
+
+/* ── Unit + Optional badges ─────────────────────── */
+.ext-notif-unit-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+}
+.ext-notif-optional-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #64748b;
+  vertical-align: middle;
+}
+
+/* ── Field hints ────────────────────────────────── */
+.ext-notif-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+.ext-notif-hint strong { color: #94a3b8; }
+.ext-notif-hint-icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: #475569;
+}
+
+/* ── Webhook form ───────────────────────────────── */
+.ext-notif-add-webhook { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.6rem 1rem; margin-top: 1rem; }
+.ext-notif-url-wrap { display: flex; flex-direction: column; flex: 1; min-width: 220px; }
 .ext-notif-url-input {
-  flex: 1;
-  min-width: 220px;
+  width: 100%;
   padding: 0.6rem 0.9rem;
   border-radius: 10px;
   border: 1px solid rgba(59, 130, 246, 0.25);
@@ -879,10 +1051,190 @@
   background: rgba(15, 23, 42, 0.6);
   color: #e4e4e7;
   font-weight: 500;
+  flex-shrink: 0;
 }
-.ext-notif-add-threshold { margin-top: 1.25rem; }
+
+/* Email summary card (when saved, before Edit) – ordered layout */
+.ext-notif-email-summary {
+  margin-top: 1rem;
+  padding: 1.25rem 1.25rem;
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 10px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+.ext-notif-email-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.5rem;
+  margin-bottom: 0;
+}
+.ext-notif-email-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.ext-notif-email-summary-item.ext-notif-email-summary-to { grid-column: 1 / -1; }
+.ext-notif-email-summary-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.9rem;
+}
+.ext-notif-email-summary-row:last-of-type { margin-bottom: 0; }
+.ext-notif-email-summary-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+}
+.ext-notif-email-summary-value { color: #e2e8f0; word-break: break-all; font-size: 0.95rem; }
+.ext-notif-email-summary-to-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+.ext-notif-email-chip {
+  display: inline-block;
+  padding: 0.35rem 0.65rem;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #e2e8f0;
+}
+.ext-notif-email-summary-actions { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06); }
+@media (max-width: 520px) {
+  .ext-notif-email-summary-grid { grid-template-columns: 1fr; }
+}
+
+/* Email form – blocks (Server / Auth / Recipients) */
+.ext-notif-email-form { margin-top: 1rem; }
+.ext-notif-email-form-block {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.ext-notif-email-form-block:last-of-type { border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
+.ext-notif-email-form-block-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  margin: 0 0 0.75rem;
+}
+.ext-notif-email-form .ext-notif-email-grid { margin-top: 0; }
+.ext-notif-email-to-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.ext-notif-email-to-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ext-notif-email-to-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.ext-notif-email-to-row input { width: 100%; }
+.ext-notif-email-to-add { margin-top: 0.25rem; }
+.ext-notif-email-to-add .btn { flex-shrink: 0; }
+
+/* Email validation (aligned with backend / SPI expectation) */
+.ext-notif-input-invalid { border-color: rgba(239, 68, 68, 0.6); background: rgba(239, 68, 68, 0.06); }
+.ext-notif-input-invalid:focus { border-color: rgba(239, 68, 68, 0.8); box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15); }
+.ext-notif-validation-err,
+.ext-notif-validation-err-inline {
+  font-size: 0.8rem;
+  color: #fca5a5;
+}
+
+/* Webhook form: editing badge (own row so it never overlaps Add Channel dropdown) */
+.ext-notif-editing-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #60a5fa;
+  width: 100%;
+  margin-bottom: 0.25rem;
+  box-sizing: border-box;
+}
+
+/* Email (SMTP) form */
+.ext-notif-email-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.5rem;
+  margin-top: 1rem;
+}
+.ext-notif-email-grid .extensions-form-row { min-width: 0; }
+.ext-notif-email-grid .ext-rule-full { grid-column: 1 / -1; }
+.ext-notif-email-save { margin-top: 0.5rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; }
+.ext-notif-email-save-hint { margin-top: 0; margin-left: 0.5rem; }
+.ext-notif-email-note { font-size: 0.85rem; color: #64748b; margin: 0.75rem 0 0; padding: 0.5rem 0.75rem; background: rgba(59, 130, 246, 0.08); border-radius: 8px; border-left: 3px solid rgba(59, 130, 246, 0.4); }
+.ext-notif-checkbox-row { align-items: center; }
+@media (max-width: 600px) {
+  .ext-notif-email-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Threshold form ─────────────────────────────── */
+/* ── Alert rule form: 2-column grid, button always on its own full row ── */
+.ext-notif-rule-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.5rem;
+  margin-top: 1.25rem;
+}
+/* Metric row + actions row span both columns */
+.ext-rule-full { grid-column: 1 / -1; }
+
+/* Actions row: separator + right-aligned buttons */
+.ext-rule-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  margin-top: 0.25rem;
+}
+
+/* Responsive: single column on narrow screens */
+@media (max-width: 600px) {
+  .ext-notif-rule-form { grid-template-columns: 1fr; }
+  .ext-rule-full { grid-column: 1; }
+  .ext-rule-actions { justify-content: flex-start; }
+}
+
+/* ── Sticky Save & Test (always visible when scrolling) ───────────────── */
+.ext-notif-sticky-save.info-card {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1.25rem;
+  border-left: 3px solid rgba(59, 130, 246, 0.5);
+  background: rgba(30, 41, 59, 0.6);
+}
+.ext-notif-sticky-save .ext-notif-save-inner { gap: 1rem; }
+
+/* ── Save section ───────────────────────────────── */
 .ext-notif-save.info-card { margin-bottom: 0.5rem; }
 .ext-notif-save-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.ext-notif-save-btn { min-width: 170px; justify-content: center; }
+.ext-notif-email-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }
+.ext-notif-save-hint {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
 
 /* Webhook type pills (Teams / Slack / Discord) */
 .ext-webhook-pill {
@@ -930,3 +1282,4 @@
 .extensions-form-hint { margin: 0 0 1rem; padding: 0.6rem 0.75rem; border-radius: 6px; font-size: 0.95rem; }
 .extensions-form-hint-required { background: rgba(251, 191, 36, 0.15); color: #fcd34d; border: 1px solid rgba(251, 191, 36, 0.4); }
 .extensions-saved-link:hover { text-decoration: underline; }
+
