@@ -412,19 +412,20 @@ func detectHealthAlerts(nodeKey string, current NodeHealthUpdate) []HealthAlert 
 			podKey := pod.Namespace + "/" + pod.Name
 			prevPod, existed := previousPods[podKey]
 
-			// Pod became unhealthy
+			// CRITICAL: Pod became unhealthy (not ready)
 			if existed && prevPod.Ready && !pod.Ready {
 				alertID := "pod:" + nodeKey + ":" + podKey
 				alert := HealthAlert{
 					Timestamp: current.Timestamp,
-					Severity:  AlertWarning,
+					Severity:  AlertCritical,  // 🔴 CRITICAL - pod lost ready status
 					Source:    "pod",
 					NodeName:  current.NodeName,
 					PodName:   pod.Name,
 					Namespace: pod.Namespace,
-					Message:   fmt.Sprintf("Pod %s/%s became unhealthy", pod.Namespace, pod.Name),
+					Message:   fmt.Sprintf("Pod %s/%s became UNHEALTHY (NOT READY)", pod.Namespace, pod.Name),
 					Details: map[string]interface{}{
 						"phase":         pod.Phase,
+						"ready":         pod.Ready,
 						"restart_count": pod.RestartCount,
 					},
 				}
@@ -542,20 +543,41 @@ func detectHealthAlerts(nodeKey string, current NodeHealthUpdate) []HealthAlert 
 				alerts = append(alerts, alert)
 			}
 			
-			// Alert on not-ready pods
-			if pod.Phase == "Running" && !pod.Ready {
+			// CRITICAL: Alert on not-ready pods (highest priority)
+			if !pod.Ready {
 				alertID := "pod:" + nodeKey + ":" + podKey + ":notready"
 				alert := HealthAlert{
 					Timestamp: current.Timestamp,
-					Severity:  AlertWarning,
+					Severity:  AlertCritical,  // 🔴 CRITICAL - pod not ready is highest priority
 					Source:    "pod",
 					NodeName:  current.NodeName,
 					PodName:   pod.Name,
 					Namespace: pod.Namespace,
-					Message:   fmt.Sprintf("Pod %s/%s is running but not ready", pod.Namespace, pod.Name),
+					Message:   fmt.Sprintf("Pod %s/%s is NOT READY (phase: %s)", pod.Namespace, pod.Name, pod.Phase),
 					Details: map[string]interface{}{
 						"phase": pod.Phase,
 						"ready": pod.Ready,
+					},
+				}
+				storeAlert(alertID, alert)
+				alerts = append(alerts, alert)
+			}
+
+			// CRITICAL: Alert on any pod not in Running phase (except Succeeded)
+			if pod.Phase != "Running" && pod.Phase != "Succeeded" {
+				alertID := "pod:" + nodeKey + ":" + podKey + ":badphase"
+				alert := HealthAlert{
+					Timestamp: current.Timestamp,
+					Severity:  AlertCritical,  // 🔴 CRITICAL - non-running phases are unhealthy
+					Source:    "pod",
+					NodeName:  current.NodeName,
+					PodName:   pod.Name,
+					Namespace: pod.Namespace,
+					Message:   fmt.Sprintf("Pod %s/%s is in %s state (unhealthy)", pod.Namespace, pod.Name, pod.Phase),
+					Details: map[string]interface{}{
+						"phase":         pod.Phase,
+						"ready":         pod.Ready,
+						"restart_count": pod.RestartCount,
 					},
 				}
 				storeAlert(alertID, alert)
