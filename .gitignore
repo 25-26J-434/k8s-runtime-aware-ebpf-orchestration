@@ -136,3 +136,5 @@ lerna-debug.log*
 # Cilium binary / tools
 .tools/cilium
 .tools/cilium/**
+
+daemon/daemo

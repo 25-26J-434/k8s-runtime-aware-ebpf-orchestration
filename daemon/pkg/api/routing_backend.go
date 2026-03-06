@@ -43,6 +43,7 @@ func initRoutingBackend() {
 	}
 
 	routingEngine = redirection.NewEngine(store, dynClient, GetK8sClient(), log.Default())
+	routingEngine.StartClusterDNATSync(context.Background())
 
 	ttlSweepMs, _ := strconv.Atoi(firstNonEmpty(os.Getenv("TTL_SWEEP_MS"), "30000"))
 	if ttlSweepMs > 0 {

@@ -165,7 +165,7 @@ rules:
     verbs: ["get", "list", "watch", "create", "update"]
   - apiGroups: [ "discovery.k8s.io" ]
     resources: [ "endpointslices" ]
-    verbs: [ "get", "list", "watch" ]
+    verbs: [ "get", "list", "watch", "patch", "update" ]
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "watch", "update", "patch"]

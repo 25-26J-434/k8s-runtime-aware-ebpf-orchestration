@@ -311,7 +311,18 @@ func storeClusterMetrics(nodeKey string, metrics UnifiedMetricsResponse) {
 	clusterMetrics[nodeKey] = metrics
 	clusterMetricsMu.Unlock()
 
+	storeClusterNodeMetrics(nodeKey, metrics)
 	storeClusterPodMetrics(metrics)
+}
+
+func storeClusterNodeMetrics(nodeKey string, metrics UnifiedMetricsResponse) {
+	if nodeKey == "" || len(metrics.Node) == 0 {
+		return
+	}
+
+	for metricName, value := range metrics.Node {
+		telemetry.StoreClusterNodeMetric(nodeKey, telemetry.MetricType(metricName), value)
+	}
 }
 
 func storeClusterPodMetrics(metrics UnifiedMetricsResponse) {
