@@ -20,6 +20,10 @@ type NodeTelemetry struct {
 	DiskWriteLatencyAvgNs float64
 	Complete              bool
 	LastUpdated           time.Time
+	HealthHealthy         bool
+	HealthStatus          string
+	HasHealth             bool
+	HealthUpdated         time.Time
 }
 
 type telemetryManager struct {
@@ -142,7 +146,9 @@ func (m *telemetryManager) updateNode(nodeName string, raw interface{}) {
 	}
 
 	var decoded struct {
-		Node map[string]interface{} `json:"node"`
+		Timestamp string                 `json:"timestamp"`
+		Node      map[string]interface{} `json:"node"`
+		Health    map[string]interface{} `json:"health"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return
@@ -154,6 +160,20 @@ func (m *telemetryManager) updateNode(nodeName string, raw interface{}) {
 	diskRead, diskReadOK := nestedFloat(decoded.Node, "disk_io", "avg_read_latency_ns")
 	diskWrite, diskWriteOK := nestedFloat(decoded.Node, "disk_io", "avg_write_latency_ns")
 
+	healthStatus, _ := nestedString(decoded.Health, "status")
+	healthStatus = strings.ToLower(strings.TrimSpace(healthStatus))
+
+	healthHealthy, healthHealthyOK := nestedBool(decoded.Health, "healthy")
+	hasHealth := healthHealthyOK
+
+	healthUpdated := parseRFC3339(toString(decoded.Health["timestamp"]))
+	if healthUpdated.IsZero() {
+		healthUpdated = parseRFC3339(decoded.Timestamp)
+	}
+	if healthUpdated.IsZero() {
+		healthUpdated = time.Now().UTC()
+	}
+
 	telemetry := NodeTelemetry{
 		DNSLatencyAvgNs:       dns,
 		RTTAvgNs:              rtt,
@@ -162,6 +182,10 @@ func (m *telemetryManager) updateNode(nodeName string, raw interface{}) {
 		DiskWriteLatencyAvgNs: diskWrite,
 		Complete:              dnsOK && rttOK && tcpOK && diskReadOK && diskWriteOK,
 		LastUpdated:           time.Now().UTC(),
+		HealthHealthy:         healthHealthy,
+		HealthStatus:          healthStatus,
+		HasHealth:             hasHealth,
+		HealthUpdated:         healthUpdated,
 	}
 
 	m.mu.Lock()
@@ -194,6 +218,38 @@ func nestedFloat(data map[string]interface{}, keys ...string) (float64, bool) {
 	return toFloat(current)
 }
 
+func nestedString(data map[string]interface{}, keys ...string) (string, bool) {
+	var current interface{} = data
+	for _, key := range keys {
+		next, ok := current.(map[string]interface{})
+		if !ok {
+			return "", false
+		}
+		value, ok := next[key]
+		if !ok {
+			return "", false
+		}
+		current = value
+	}
+	return toString(current), true
+}
+
+func nestedBool(data map[string]interface{}, keys ...string) (bool, bool) {
+	var current interface{} = data
+	for _, key := range keys {
+		next, ok := current.(map[string]interface{})
+		if !ok {
+			return false, false
+		}
+		value, ok := next[key]
+		if !ok {
+			return false, false
+		}
+		current = value
+	}
+	return toBool(current)
+}
+
 func toFloat(value interface{}) (float64, bool) {
 	switch v := value.(type) {
 	case float64:
@@ -224,6 +280,44 @@ func toString(value interface{}) string {
 		return s
 	}
 	return ""
+}
+
+func toBool(value interface{}) (bool, bool) {
+	switch v := value.(type) {
+	case bool:
+		return v, true
+	case int:
+		return v != 0, true
+	case int32:
+		return v != 0, true
+	case int64:
+		return v != 0, true
+	case float64:
+		return v != 0, true
+	case float32:
+		return v != 0, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			return true, true
+		case "0", "false", "no", "off":
+			return false, true
+		}
+	}
+	return false, false
+}
+
+func parseRFC3339(value string) time.Time {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Time{}
+	}
+
+	parsed, err := time.Parse(time.RFC3339, trimmed)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed.UTC()
 }
 
 func nextBackoff(current time.Duration) time.Duration {

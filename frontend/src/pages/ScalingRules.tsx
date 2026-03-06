@@ -200,6 +200,9 @@ export function ScalingRules() {
             .map(([node, count]) => `${node}:${count}`)
             .join(', ')
         : '';
+    const placementNodeRows = currentPlacementData
+        ? Object.entries(currentPlacementData.nodeCounts).sort((a, b) => a[0].localeCompare(b[0]))
+        : [];
     const placementPods = currentPlacementData?.pods || [];
     const latestPlacementPods = [...placementPods]
         .sort((a, b) => {
@@ -252,9 +255,19 @@ export function ScalingRules() {
                             </div>
                             <div className="scheduling-detail-card">
                                 <div className="summary-title">Node Placement</div>
-                                <div className="placement-summary-text">
-                                    {placementLoading && !currentPlacementSummary ? 'Loading placement...' : (currentPlacementSummary || 'No scheduled pods yet')}
-                                </div>
+                                {placementLoading && !currentPlacementSummary ? (
+                                    <div className="placement-summary-text">Loading placement...</div>
+                                ) : placementNodeRows.length > 0 ? (
+                                    <div className="placement-node-list">
+                                        {placementNodeRows.map(([node, count]) => (
+                                            <div key={node} className="placement-node-item">
+                                                <span>{node}: {count}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="placement-summary-text">No scheduled pods yet</div>
+                                )}
                             </div>
                         </div>
                         {placementError && <div className="error">{placementError}</div>}
