@@ -219,12 +219,12 @@ func buildPodHealth(pod corev1.Pod) PodHealth {
 		Namespace:    pod.Namespace,
 		Node:         pod.Spec.NodeName,
 		Phase:        string(pod.Status.Phase),
-		Ready:        isPodReady(pod),
+		Ready:        isPodReadyStatus(pod),
 		RestartCount: restartCount,
 	}
 }
 
-func isPodReady(pod corev1.Pod) bool {
+func isPodReadyStatus(pod corev1.Pod) bool {
 	for _, condition := range pod.Status.Conditions {
 		if condition.Type == corev1.PodReady {
 			return condition.Status == corev1.ConditionTrue
@@ -234,14 +234,14 @@ func isPodReady(pod corev1.Pod) bool {
 }
 
 func isPodHealthy(pod corev1.Pod) bool {
-	return pod.Status.Phase == corev1.PodRunning && isPodReady(pod)
+	return pod.Status.Phase == corev1.PodRunning && isPodReadyStatus(pod)
 }
 
 func isPodUnhealthy(pod corev1.Pod) bool {
 	if pod.Status.Phase == corev1.PodFailed {
 		return true
 	}
-	if pod.Status.Phase == corev1.PodRunning && !isPodReady(pod) {
+	if pod.Status.Phase == corev1.PodRunning && !isPodReadyStatus(pod) {
 		return true
 	}
 	return false
