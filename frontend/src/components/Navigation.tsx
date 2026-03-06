@@ -134,15 +134,6 @@ export function Navigation() {
                 </Link>
                 
                 <Link 
-                    to="/scheduling" 
-                    className={`side-nav-link ${isActive('/scheduling') ? 'active' : ''}`}
-                    title="Scheduling Intelligence"
-                >
-                    <FiClock className="nav-icon" />
-                    <span className="nav-link-text">Scheduling</span>
-                </Link>
-
-                <Link 
                     to="/scaling" 
                     className={`side-nav-link ${isActive('/scaling') ? 'active' : ''}`}
                     title="Autoscaling Rules"

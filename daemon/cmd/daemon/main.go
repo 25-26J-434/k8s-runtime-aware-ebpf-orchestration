@@ -68,6 +68,16 @@ func main() {
 		}
 	}
 
+	log.Println("[Main] Loading DNAT connect4 BPF program...")
+	if err := loader.LoadDNATBPF(); err != nil {
+		log.Printf("[Main] WARNING: Failed to load DNAT BPF: %v", err)
+		log.Println("[Main] Continuing without DNAT redirect support...")
+	} else {
+		if err := loader.AttachDNATCgroup(); err != nil {
+			log.Printf("[Main] WARNING: Failed to attach DNAT cgroup program: %v", err)
+		}
+	}
+
 	nodeName := os.Getenv("NODE_NAME")
 	if nodeName == "" {
 		nodeName = "unknown"

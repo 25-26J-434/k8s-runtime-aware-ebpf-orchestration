@@ -1,21 +1,24 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ScalingRule, LatestMetric, DeploymentInfo } from '../types/scaling';
 import { api } from '../services/api';
 
-export function useScalingRules(refreshInterval = 5000) {
+export function useScalingRules(node?: string, refreshInterval = 15000) {
     const [rules, setRules] = useState<ScalingRule[] | null>(null);
     const [deployments, setDeployments] = useState<Record<string, DeploymentInfo>>({});
     const [latestMetrics, setLatestMetrics] = useState<Record<string, LatestMetric>>({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const initialLoadRef = useRef(true);
 
     const fetchAll = useCallback(async () => {
-        setLoading(true);
+        if (initialLoadRef.current) {
+            setLoading(true);
+        }
         try {
             const [rulesRes, depsRes, metricsRes] = await Promise.allSettled([
-                api.getScalingRules(),
-                api.getDeployments(),
-                api.getLatestMetrics(),
+                api.getScalingRules(node),
+                api.getDeployments(undefined, node),
+                api.getLatestMetrics(node),
             ]);
 
             if (rulesRes.status === 'fulfilled') {
@@ -44,14 +47,20 @@ export function useScalingRules(refreshInterval = 5000) {
             console.error('[useScalingRules] fetch error', err);
             setError(err.message || 'Unknown error');
         } finally {
-            setLoading(false);
+            if (initialLoadRef.current) {
+                setLoading(false);
+                initialLoadRef.current = false;
+            }
         }
-    }, []);
+    }, [node]);
 
     useEffect(() => {
         fetchAll();
-        const id = setInterval(fetchAll, refreshInterval);
-        return () => clearInterval(id);
+        if (refreshInterval > 0) {
+            const id = setInterval(fetchAll, refreshInterval);
+            return () => clearInterval(id);
+        }
+        return undefined;
     }, [fetchAll, refreshInterval]);
 
     const createRule = useCallback(async (rule: Partial<ScalingRule>) => {

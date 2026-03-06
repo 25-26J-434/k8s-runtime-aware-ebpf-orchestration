@@ -17,8 +17,9 @@ COPY . .
 # Add build argument to bust cache
 ARG CACHEBUST=1
 
-# Build the daemon (with -a to force rebuild all packages)
+# Build the daemon and scheduler binaries
 RUN CGO_ENABLED=0 GOOS=linux go build -a -o ebpf-daemon ./cmd/daemon
+RUN CGO_ENABLED=0 GOOS=linux go build -a -o kerneleye-scheduler ./cmd/scheduler
 
 # Final runtime image
 FROM ubuntu:22.04
@@ -33,6 +34,7 @@ WORKDIR /app
 
 # Copy the compiled daemon
 COPY --from=builder /build/ebpf-daemon .
+COPY --from=builder /build/kerneleye-scheduler .
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

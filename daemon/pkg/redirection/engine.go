@@ -8,13 +8,19 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/loader"
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
+	"github.com/cilium/ebpf"
+	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
@@ -228,7 +234,11 @@ func (e *Engine) sweepTTL(ctx context.Context) {
 }
 
 func (e *Engine) applyRedirect(ctx context.Context, p *Policy, avgValue float64) (*ApplyResult, error) {
-	labelKey, labelVal, err := splitSelector(p.Action.BackendSelector)
+	if strings.EqualFold(p.Scope, "cluster") {
+		return e.applyClusterRedirect(ctx, p, avgValue)
+	}
+
+	appliedLabelKey, appliedLabelVal, winnerPod, err := e.selectBackend(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -236,33 +246,6 @@ func (e *Engine) applyRedirect(ctx context.Context, p *Policy, avgValue float64)
 	targetNS := p.Namespace
 	if p.Action.TargetNamespace != "" {
 		targetNS = p.Action.TargetNamespace
-	}
-
-	appliedLabelKey, appliedLabelVal := labelKey, labelVal
-	var winnerPod string
-
-	if strings.ToLower(p.Action.Strategy) == "best_pod" {
-		candidateSelector := p.Action.BackendCandidatesSelector
-		if candidateSelector == "" {
-			candidateSelector = p.Action.BackendSelector
-		}
-
-		winner, err := e.pickBestPod(ctx, targetNS, candidateSelector, p.Telemetry.Metric)
-		if err != nil {
-			return nil, fmt.Errorf("choose best pod: %w", err)
-		}
-
-		if winner != "" && p.Action.WinnerLabel != "" {
-			winKey, winVal, err := splitSelector(p.Action.WinnerLabel)
-			if err != nil {
-				return nil, fmt.Errorf("winner label: %w", err)
-			}
-			if err := e.applyWinnerLabel(ctx, targetNS, candidateSelector, winner, winKey, winVal); err != nil {
-				return nil, fmt.Errorf("apply winner label: %w", err)
-			}
-			appliedLabelKey, appliedLabelVal = winKey, winVal
-			winnerPod = winner
-		}
 	}
 
 	obj := &unstructured.Unstructured{
@@ -316,7 +299,7 @@ func (e *Engine) applyRedirect(ctx context.Context, p *Policy, avgValue float64)
 	}
 
 	msg := "Violation triggered. Redirection applied."
-	backendName := labelVal
+	backendName := appliedLabelVal
 	if winnerPod != "" {
 		backendName = winnerPod
 	}
@@ -335,7 +318,123 @@ func (e *Engine) applyRedirect(ctx context.Context, p *Policy, avgValue float64)
 	}, nil
 }
 
+func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue float64) (*ApplyResult, error) {
+	_, _, winnerPod, err := e.selectBackend(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+
+	targetNS := p.Namespace
+	if p.Action.TargetNamespace != "" {
+		targetNS = p.Action.TargetNamespace
+	}
+
+	if winnerPod == "" {
+		if winnerPod, err = e.pickAnyPod(ctx, targetNS, p.Action.BackendSelector); err != nil {
+			return nil, err
+		}
+	}
+	if winnerPod == "" {
+		return nil, fmt.Errorf("no backend pod found for selector %q", p.Action.BackendSelector)
+	}
+
+	winner, err := e.kube.CoreV1().Pods(targetNS).Get(ctx, winnerPod, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("load winner pod: %w", err)
+	}
+	if winner.Status.PodIP == "" {
+		return nil, fmt.Errorf("winner pod has no IP: %s", winnerPod)
+	}
+
+	frontendSvc, err := e.resolveFrontendService(ctx, p.Namespace, p.Frontend.Service)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureServicePortExists(frontendSvc, p.Frontend.Port); err != nil {
+		return nil, err
+	}
+
+	if err := e.applyDNATRedirectWithPorts(ctx, frontendSvc, winner, uint16(p.Frontend.Port), uint16(p.Action.BackendPort)); err != nil {
+		if err := e.updateEndpointSlicesForService(ctx, p.Namespace, frontendSvc, winner, p.PolicyName); err != nil {
+			return nil, err
+		}
+
+		msg := "Violation triggered. Cluster redirection applied via EndpointSlice."
+		return &ApplyResult{
+			Applied:       true,
+			Message:       msg,
+			TargetBackend: winnerPod,
+			TTLSeconds:    p.Action.TTLSeconds,
+			Details: []string{
+				"EndpointSlice updated",
+				fmt.Sprintf("Target backend: %s", winnerPod),
+				fmt.Sprintf("Metric avg: %.2f (threshold %.2f)", avgValue, p.Telemetry.ViolationThreshold),
+			},
+			Stdout: fmt.Sprintf("EndpointSlice updated for service %s", frontendSvc.Name),
+		}, nil
+	}
+
+	msg := "Violation triggered. Cluster redirection applied via eBPF DNAT."
+	return &ApplyResult{
+		Applied:       true,
+		Message:       msg,
+		TargetBackend: winnerPod,
+		TTLSeconds:    p.Action.TTLSeconds,
+		Details: []string{
+			"DNAT map updated",
+			fmt.Sprintf("Target backend: %s", winnerPod),
+			fmt.Sprintf("Metric avg: %.2f (threshold %.2f)", avgValue, p.Telemetry.ViolationThreshold),
+		},
+		Stdout: fmt.Sprintf("DNAT map updated for service %s", frontendSvc.Name),
+	}, nil
+}
+
+func (e *Engine) selectBackend(ctx context.Context, p *Policy) (string, string, string, error) {
+	labelKey, labelVal, err := splitSelector(p.Action.BackendSelector)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	targetNS := p.Namespace
+	if p.Action.TargetNamespace != "" {
+		targetNS = p.Action.TargetNamespace
+	}
+
+	appliedLabelKey, appliedLabelVal := labelKey, labelVal
+	var winnerPod string
+
+	if strings.ToLower(p.Action.Strategy) == "best_pod" {
+		candidateSelector := p.Action.BackendCandidatesSelector
+		if candidateSelector == "" {
+			candidateSelector = p.Action.BackendSelector
+		}
+
+		winner, _, err := e.pickBestPod(ctx, targetNS, candidateSelector, p.Telemetry.Metric, p.Scope)
+		if err != nil {
+			return "", "", "", fmt.Errorf("choose best pod: %w", err)
+		}
+
+		if winner != "" && p.Action.WinnerLabel != "" {
+			winKey, winVal, err := splitSelector(p.Action.WinnerLabel)
+			if err != nil {
+				return "", "", "", fmt.Errorf("winner label: %w", err)
+			}
+			if err := e.applyWinnerLabel(ctx, targetNS, candidateSelector, winner, winKey, winVal); err != nil {
+				return "", "", "", fmt.Errorf("apply winner label: %w", err)
+			}
+			appliedLabelKey, appliedLabelVal = winKey, winVal
+			winnerPod = winner
+		}
+	}
+
+	return appliedLabelKey, appliedLabelVal, winnerPod, nil
+}
+
 func (e *Engine) deleteRedirect(ctx context.Context, p *Policy, clearWinner bool) error {
+	if strings.EqualFold(p.Scope, "cluster") {
+		return e.restoreClusterRedirect(ctx, p, clearWinner)
+	}
+
 	targetNS := p.Namespace
 	if p.Action.TargetNamespace != "" {
 		targetNS = p.Action.TargetNamespace
@@ -352,6 +451,439 @@ func (e *Engine) deleteRedirect(ctx context.Context, p *Policy, clearWinner bool
 		}
 	}
 	return nil
+}
+
+func (e *Engine) restoreClusterRedirect(ctx context.Context, p *Policy, clearWinner bool) error {
+	targetNS := p.Namespace
+	if p.Action.TargetNamespace != "" {
+		targetNS = p.Action.TargetNamespace
+	}
+
+	frontendSvc, err := e.resolveFrontendService(ctx, p.Namespace, p.Frontend.Service)
+	if err != nil {
+		return err
+	}
+
+	if err := e.deleteDNATRedirectWithPort(frontendSvc, uint16(p.Frontend.Port)); err != nil {
+		endpoints, err := e.buildEndpointsForService(ctx, p.Namespace, frontendSvc)
+		if err != nil {
+			return err
+		}
+
+		if err := e.updateEndpointSlicesWithEndpoints(ctx, p.Namespace, frontendSvc, endpoints, p.PolicyName); err != nil {
+			return err
+		}
+	}
+
+	if clearWinner && strings.ToLower(p.Action.Strategy) == "best_pod" && p.Action.WinnerLabel != "" {
+		if err := e.clearWinnerLabel(ctx, targetNS, p.Action); err != nil {
+			e.logger.Printf("[Routing] failed to clear winner labels: %v", err)
+		}
+	}
+	return nil
+}
+
+func (e *Engine) resolveBackendService(ctx context.Context, ns string, action ActionConfig) (*corev1.Service, error) {
+	if action.BackendService != "" {
+		return e.kube.CoreV1().Services(ns).Get(ctx, action.BackendService, metav1.GetOptions{})
+	}
+
+	if action.BackendSelector == "" {
+		return nil, fmt.Errorf("backend_selector is required to resolve backend service")
+	}
+	key, val, err := splitSelector(action.BackendSelector)
+	if err != nil {
+		return nil, err
+	}
+
+	services, err := e.kube.CoreV1().Services(ns).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	candidates := []corev1.Service{}
+	for _, svc := range services.Items {
+		if svc.Spec.Selector == nil {
+			continue
+		}
+		if svc.Spec.Selector[key] != val {
+			continue
+		}
+		candidates = append(candidates, svc)
+	}
+
+	if len(candidates) == 1 {
+		return &candidates[0], nil
+	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no backend service matches selector %s=%s", key, val)
+	}
+
+	if action.BackendPort > 0 {
+		filtered := []corev1.Service{}
+		for _, svc := range candidates {
+			for _, port := range svc.Spec.Ports {
+				if int(port.Port) == action.BackendPort {
+					filtered = append(filtered, svc)
+					break
+				}
+				if port.TargetPort.IntVal != 0 && int(port.TargetPort.IntVal) == action.BackendPort {
+					filtered = append(filtered, svc)
+					break
+				}
+			}
+		}
+		if len(filtered) == 1 {
+			return &filtered[0], nil
+		}
+		if len(filtered) > 1 {
+			names := make([]string, 0, len(filtered))
+			for _, svc := range filtered {
+				names = append(names, svc.Name)
+			}
+			return nil, fmt.Errorf("multiple backend services match selector and port: %s", strings.Join(names, ", "))
+		}
+	}
+
+	names := make([]string, 0, len(candidates))
+	for _, svc := range candidates {
+		names = append(names, svc.Name)
+	}
+	return nil, fmt.Errorf("multiple backend services match selector: %s", strings.Join(names, ", "))
+}
+
+func (e *Engine) resolveFrontendService(ctx context.Context, ns, name string) (*corev1.Service, error) {
+	if name == "" {
+		return nil, fmt.Errorf("frontend service is required")
+	}
+	return e.kube.CoreV1().Services(ns).Get(ctx, name, metav1.GetOptions{})
+}
+
+func ensureServicePortExists(svc *corev1.Service, port int) error {
+	if svc == nil {
+		return fmt.Errorf("service is nil")
+	}
+	if port <= 0 {
+		return fmt.Errorf("frontend port must be a positive number")
+	}
+	for _, p := range svc.Spec.Ports {
+		if int(p.Port) == port {
+			return nil
+		}
+	}
+	return fmt.Errorf("service %s does not expose port %d", svc.Name, port)
+}
+
+func (e *Engine) updateEndpointSlicesForService(ctx context.Context, ns string, svc *corev1.Service, winner *corev1.Pod, policyName string) error {
+	endpoint := discoveryv1.Endpoint{
+		Addresses: []string{winner.Status.PodIP},
+		Conditions: discoveryv1.EndpointConditions{
+			Ready: boolPtr(true),
+		},
+		TargetRef: &corev1.ObjectReference{
+			Kind:      "Pod",
+			Namespace: winner.Namespace,
+			Name:      winner.Name,
+			UID:       winner.UID,
+		},
+	}
+	return e.updateEndpointSlicesWithEndpoints(ctx, ns, svc, []discoveryv1.Endpoint{endpoint}, policyName)
+}
+
+func (e *Engine) updateEndpointSlicesWithEndpoints(ctx context.Context, ns string, svc *corev1.Service, endpoints []discoveryv1.Endpoint, policyName string) error {
+	if svc == nil {
+		return fmt.Errorf("service is nil")
+	}
+
+	selector := labels.Set(map[string]string{
+		"kubernetes.io/service-name": svc.Name,
+	}).AsSelector().String()
+
+	slices, err := e.kube.DiscoveryV1().EndpointSlices(ns).List(ctx, metav1.ListOptions{
+		LabelSelector: selector,
+	})
+	if err != nil {
+		return err
+	}
+	if len(slices.Items) == 0 {
+		return fmt.Errorf("no EndpointSlices found for service %s", svc.Name)
+	}
+
+	for i := range slices.Items {
+		slice := slices.Items[i]
+		if slice.Labels == nil {
+			slice.Labels = map[string]string{}
+		}
+		slice.Labels["ebpf-daemon/redirect-policy"] = policyName
+		slice.Endpoints = endpoints
+		if _, err := e.kube.DiscoveryV1().EndpointSlices(ns).Update(ctx, &slice, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type dnatKey struct {
+	DstIP   uint32
+	DstPort uint16
+	Pad     uint16
+}
+
+type dnatVal struct {
+	TargetIP   uint32
+	TargetPort uint16
+	Pad        uint16
+}
+
+func (e *Engine) applyDNATRedirect(ctx context.Context, svc *corev1.Service, winner *corev1.Pod, p *Policy) error {
+	dnatMap := loader.DNATMapHandle()
+	if dnatMap == nil {
+		return fmt.Errorf("dnat map not available")
+	}
+	if svc == nil || winner == nil {
+		return fmt.Errorf("service or winner pod is nil")
+	}
+	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+		return fmt.Errorf("service %s has no cluster IP", svc.Name)
+	}
+	if winner.Status.PodIP == "" {
+		return fmt.Errorf("winner pod has no IP")
+	}
+
+	servicePort, targetPort, err := resolveServicePorts(svc, p.Action)
+	if err != nil {
+		return err
+	}
+
+	serviceIP, err := parseIPv4NetOrder(svc.Spec.ClusterIP)
+	if err != nil {
+		return err
+	}
+	targetIP, err := parseIPv4NetOrder(winner.Status.PodIP)
+	if err != nil {
+		return err
+	}
+
+	key := dnatKey{
+		DstIP:   serviceIP,
+		DstPort: htons(servicePort),
+	}
+	val := dnatVal{
+		TargetIP:   targetIP,
+		TargetPort: htons(targetPort),
+	}
+
+	return dnatMap.Update(&key, &val, ebpf.UpdateAny)
+}
+
+func (e *Engine) applyDNATRedirectWithPorts(ctx context.Context, svc *corev1.Service, winner *corev1.Pod, servicePort, targetPort uint16) error {
+	dnatMap := loader.DNATMapHandle()
+	if dnatMap == nil {
+		return fmt.Errorf("dnat map not available")
+	}
+	if svc == nil || winner == nil {
+		return fmt.Errorf("service or winner pod is nil")
+	}
+	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+		return fmt.Errorf("service %s has no cluster IP", svc.Name)
+	}
+	if winner.Status.PodIP == "" {
+		return fmt.Errorf("winner pod has no IP")
+	}
+	if servicePort == 0 || targetPort == 0 {
+		return fmt.Errorf("service and target ports must be set")
+	}
+
+	serviceIP, err := parseIPv4NetOrder(svc.Spec.ClusterIP)
+	if err != nil {
+		return err
+	}
+	targetIP, err := parseIPv4NetOrder(winner.Status.PodIP)
+	if err != nil {
+		return err
+	}
+
+	key := dnatKey{
+		DstIP:   serviceIP,
+		DstPort: htons(servicePort),
+	}
+	val := dnatVal{
+		TargetIP:   targetIP,
+		TargetPort: htons(targetPort),
+	}
+
+	return dnatMap.Update(&key, &val, ebpf.UpdateAny)
+}
+
+func (e *Engine) deleteDNATRedirect(svc *corev1.Service, p *Policy) error {
+	dnatMap := loader.DNATMapHandle()
+	if dnatMap == nil {
+		return fmt.Errorf("dnat map not available")
+	}
+	if svc == nil {
+		return fmt.Errorf("service is nil")
+	}
+	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+		return fmt.Errorf("service %s has no cluster IP", svc.Name)
+	}
+
+	servicePort, _, err := resolveServicePorts(svc, p.Action)
+	if err != nil {
+		return err
+	}
+
+	serviceIP, err := parseIPv4NetOrder(svc.Spec.ClusterIP)
+	if err != nil {
+		return err
+	}
+
+	key := dnatKey{
+		DstIP:   serviceIP,
+		DstPort: htons(servicePort),
+	}
+	if err := dnatMap.Delete(&key); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
+		return err
+	}
+	return nil
+}
+
+func (e *Engine) deleteDNATRedirectWithPort(svc *corev1.Service, servicePort uint16) error {
+	dnatMap := loader.DNATMapHandle()
+	if dnatMap == nil {
+		return fmt.Errorf("dnat map not available")
+	}
+	if svc == nil {
+		return fmt.Errorf("service is nil")
+	}
+	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+		return fmt.Errorf("service %s has no cluster IP", svc.Name)
+	}
+	if servicePort == 0 {
+		return fmt.Errorf("service port must be set")
+	}
+
+	serviceIP, err := parseIPv4NetOrder(svc.Spec.ClusterIP)
+	if err != nil {
+		return err
+	}
+
+	key := dnatKey{
+		DstIP:   serviceIP,
+		DstPort: htons(servicePort),
+	}
+	if err := dnatMap.Delete(&key); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
+		return err
+	}
+	return nil
+}
+
+func resolveServicePorts(svc *corev1.Service, action ActionConfig) (uint16, uint16, error) {
+	if svc == nil {
+		return 0, 0, fmt.Errorf("service is nil")
+	}
+	if len(svc.Spec.Ports) == 0 {
+		return 0, 0, fmt.Errorf("service %s has no ports", svc.Name)
+	}
+
+	if action.BackendPort > 0 {
+		for _, port := range svc.Spec.Ports {
+			if int(port.Port) == action.BackendPort || (port.TargetPort.IntVal != 0 && int(port.TargetPort.IntVal) == action.BackendPort) {
+				return uint16(port.Port), resolveTargetPort(port), nil
+			}
+		}
+	}
+
+	port := svc.Spec.Ports[0]
+	return uint16(port.Port), resolveTargetPort(port), nil
+}
+
+func resolveTargetPort(port corev1.ServicePort) uint16 {
+	if port.TargetPort.IntVal != 0 {
+		return uint16(port.TargetPort.IntVal)
+	}
+	return uint16(port.Port)
+}
+
+func parseIPv4NetOrder(ip string) (uint32, error) {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return 0, fmt.Errorf("invalid IP %q: %w", ip, err)
+	}
+	if !addr.Is4() {
+		return 0, fmt.Errorf("non-IPv4 address: %s", ip)
+	}
+	b := addr.As4()
+	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3]), nil
+}
+
+func htons(port uint16) uint16 {
+	return (port<<8)&0xff00 | port>>8
+}
+
+func (e *Engine) buildEndpointsForService(ctx context.Context, ns string, svc *corev1.Service) ([]discoveryv1.Endpoint, error) {
+	if svc == nil || len(svc.Spec.Selector) == 0 {
+		return nil, fmt.Errorf("service has no selector")
+	}
+
+	selector := labels.Set(svc.Spec.Selector).AsSelector().String()
+	pods, err := e.kube.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return nil, err
+	}
+
+	endpoints := make([]discoveryv1.Endpoint, 0, len(pods.Items))
+	for _, pod := range pods.Items {
+		if pod.Status.PodIP == "" {
+			continue
+		}
+		ready := isPodReady(&pod)
+		endpoints = append(endpoints, discoveryv1.Endpoint{
+			Addresses: []string{pod.Status.PodIP},
+			Conditions: discoveryv1.EndpointConditions{
+				Ready: &ready,
+			},
+			TargetRef: &corev1.ObjectReference{
+				Kind:      "Pod",
+				Namespace: pod.Namespace,
+				Name:      pod.Name,
+				UID:       pod.UID,
+			},
+		})
+	}
+
+	if len(endpoints) == 0 {
+		return nil, fmt.Errorf("no ready endpoints for service %s", svc.Name)
+	}
+	return endpoints, nil
+}
+
+func (e *Engine) pickAnyPod(ctx context.Context, ns, selector string) (string, error) {
+	if selector == "" {
+		return "", nil
+	}
+	pods, err := e.kube.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return "", err
+	}
+	for _, pod := range pods.Items {
+		if pod.Status.PodIP != "" {
+			return pod.Name, nil
+		}
+	}
+	return "", nil
+}
+
+func isPodReady(pod *corev1.Pod) bool {
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.PodReady {
+			return cond.Status == corev1.ConditionTrue
+		}
+	}
+	return false
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 // clearWinnerLabel removes the winner label from all candidate pods.
@@ -388,31 +920,33 @@ func (e *Engine) clearWinnerLabel(ctx context.Context, ns string, action ActionC
 }
 
 // pickBestPod chooses the pod with the lowest metric among candidates.
-func (e *Engine) pickBestPod(ctx context.Context, ns, selector, metric string) (string, error) {
+func (e *Engine) pickBestPod(ctx context.Context, ns, selector, metric, scope string) (string, string, error) {
 	if selector == "" {
-		return "", nil
+		return "", "", nil
 	}
 	pods, err := e.kube.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if len(pods.Items) == 0 {
-		return "", nil
+		return "", "", nil
 	}
 
 	best := ""
+	bestNode := ""
 	bestValue := math.MaxFloat64
 	for _, pod := range pods.Items {
-		value, ok := metricValueForPod(metric, ns, pod.Name)
+		value, ok := metricValueForPodWithScope(metric, ns, pod.Name, scope)
 		if !ok {
 			continue
 		}
 		if value < bestValue {
 			bestValue = value
 			best = pod.Name
+			bestNode = pod.Spec.NodeName
 		}
 	}
-	return best, nil
+	return best, bestNode, nil
 }
 
 func (e *Engine) applyWinnerLabel(ctx context.Context, ns, selector, winner, labelKey, labelVal string) error {
@@ -448,7 +982,38 @@ func (e *Engine) averageMetric(p *Policy) (float64, int) {
 		monitor = p.Frontend.Service
 	}
 	namespace := p.Namespace
+	if strings.EqualFold(p.Scope, "cluster") {
+		return e.averageMetricForPodsCluster(p.Telemetry.Metric, namespace, monitor)
+	}
 	return averageMetricForPods(p.Telemetry.Metric, namespace, monitor)
+}
+
+func (e *Engine) averageMetricForPodsCluster(metric, namespace, nameContains string) (float64, int) {
+	if e.kube == nil {
+		return averageMetricForPods(metric, namespace, nameContains)
+	}
+
+	pods, err := e.kube.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
+	if err != nil || len(pods.Items) == 0 {
+		return averageMetricForPods(metric, namespace, nameContains)
+	}
+
+	var sum float64
+	var count int
+	nameContains = strings.ToLower(nameContains)
+	for _, pod := range pods.Items {
+		if !strings.Contains(strings.ToLower(pod.Name), nameContains) {
+			continue
+		}
+		if value, ok := metricValueForPodWithScope(metric, namespace, pod.Name, "cluster"); ok {
+			sum += value
+			count++
+		}
+	}
+	if count == 0 {
+		return 0, 0
+	}
+	return sum / float64(count), count
 }
 
 // metricValueForPod returns the metric value for a specific pod (microseconds).
@@ -469,6 +1034,157 @@ func metricValueForPod(metric, namespace, podName string) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+func metricValueForPodWithScope(metric, namespace, podName, scope string) (float64, bool) {
+	if strings.EqualFold(scope, "cluster") {
+		if value, ok := clusterMetricValueForPod(metric, namespace, podName); ok {
+			return value, true
+		}
+	}
+	return metricValueForPod(metric, namespace, podName)
+}
+
+func clusterMetricValueForPod(metric, namespace, podName string) (float64, bool) {
+	key := namespace + "/" + podName
+	switch strings.ToLower(metric) {
+	case "dns_us":
+		if podMetric, ok := telemetry.GetClusterPodMetric(key, telemetry.MetricTypeDNS); ok {
+			return extractDNSValue(podMetric.Value)
+		}
+	case "rtt_us", "rtt":
+		if podMetric, ok := telemetry.GetClusterPodMetric(key, telemetry.MetricTypeRTT); ok {
+			return extractRTTValue(podMetric.Value)
+		}
+	case "sched_latency_us", "sched_us":
+		if podMetric, ok := telemetry.GetClusterPodMetric(key, telemetry.MetricType("sched_latency")); ok {
+			return extractSchedLatencyValue(podMetric.Value)
+		}
+	}
+	return 0, false
+}
+
+func extractDNSValue(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case telemetry.DNSMetricValue:
+		if v.TotalEvents == 0 {
+			return 0, false
+		}
+		return float64(v.TotalLatencyNs) / float64(v.TotalEvents) / 1000.0, true
+	case *telemetry.DNSMetricValue:
+		if v == nil || v.TotalEvents == 0 {
+			return 0, false
+		}
+		return float64(v.TotalLatencyNs) / float64(v.TotalEvents) / 1000.0, true
+	case map[string]interface{}:
+		totalEvents, ok1 := toUint64(v["total_events"])
+		totalLatency, ok2 := toUint64(v["total_latency_ns"])
+		if !ok1 || !ok2 || totalEvents == 0 {
+			return 0, false
+		}
+		return float64(totalLatency) / float64(totalEvents) / 1000.0, true
+	default:
+		return 0, false
+	}
+}
+
+func extractRTTValue(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case telemetry.RTTMetricValue:
+		if v.TotalEvents == 0 {
+			return 0, false
+		}
+		return float64(v.TotalRTTNs) / float64(v.TotalEvents) / 1000.0, true
+	case *telemetry.RTTMetricValue:
+		if v == nil || v.TotalEvents == 0 {
+			return 0, false
+		}
+		return float64(v.TotalRTTNs) / float64(v.TotalEvents) / 1000.0, true
+	case map[string]interface{}:
+		totalEvents, ok1 := toUint64(v["total_events"])
+		totalRTT, ok2 := toUint64(v["total_rtt_ns"])
+		if !ok1 || !ok2 || totalEvents == 0 {
+			return 0, false
+		}
+		return float64(totalRTT) / float64(totalEvents) / 1000.0, true
+	default:
+		return 0, false
+	}
+}
+
+func extractSchedLatencyValue(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case telemetry.PodSchedLatencyMetrics:
+		if v.EventCount == 0 {
+			return 0, false
+		}
+		return v.AvgRunqueueLatencyUs, true
+	case *telemetry.PodSchedLatencyMetrics:
+		if v == nil || v.EventCount == 0 {
+			return 0, false
+		}
+		return v.AvgRunqueueLatencyUs, true
+	case map[string]interface{}:
+		avg, ok := toFloat64(v["avg_runqueue_latency_us"])
+		if !ok {
+			return 0, false
+		}
+		return avg, true
+	default:
+		return 0, false
+	}
+}
+
+func toUint64(v interface{}) (uint64, bool) {
+	switch t := v.(type) {
+	case uint64:
+		return t, true
+	case uint32:
+		return uint64(t), true
+	case uint:
+		return uint64(t), true
+	case int:
+		if t < 0 {
+			return 0, false
+		}
+		return uint64(t), true
+	case int64:
+		if t < 0 {
+			return 0, false
+		}
+		return uint64(t), true
+	case float64:
+		if t < 0 {
+			return 0, false
+		}
+		return uint64(t), true
+	case float32:
+		if t < 0 {
+			return 0, false
+		}
+		return uint64(t), true
+	default:
+		return 0, false
+	}
+}
+
+func toFloat64(v interface{}) (float64, bool) {
+	switch t := v.(type) {
+	case float64:
+		return t, true
+	case float32:
+		return float64(t), true
+	case int:
+		return float64(t), true
+	case int64:
+		return float64(t), true
+	case uint64:
+		return float64(t), true
+	case uint32:
+		return float64(t), true
+	default:
+		return 0, false
+	}
 }
 
 // averageMetricForPods calculates the average metric across all matching pods in a namespace.

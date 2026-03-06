@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
+	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
 )
 
 const (
@@ -309,6 +310,20 @@ func storeClusterMetrics(nodeKey string, metrics UnifiedMetricsResponse) {
 	clusterMetricsMu.Lock()
 	clusterMetrics[nodeKey] = metrics
 	clusterMetricsMu.Unlock()
+
+	storeClusterPodMetrics(metrics)
+}
+
+func storeClusterPodMetrics(metrics UnifiedMetricsResponse) {
+	if len(metrics.Pods) == 0 {
+		return
+	}
+
+	for podKey, metricMap := range metrics.Pods {
+		for metricName, value := range metricMap {
+			telemetry.StoreClusterPodMetric(podKey, telemetry.MetricType(metricName), metrics.NodeName, value)
+		}
+	}
 }
 
 // GetClusterMetricsSnapshot returns a shallow copy of the current cluster-wide metrics map.
