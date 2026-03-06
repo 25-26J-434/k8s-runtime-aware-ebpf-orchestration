@@ -61,7 +61,8 @@ export function Routing() {
     const [drawerError, setDrawerError] = useState<string | null>(null);
     const [drawerSuccess, setDrawerSuccess] = useState<string | null>(null);
 
-    const metricOptions = ['rtt_us', 'dns_us', 'sched_latency_us'];
+    // Supported telemetry metrics (must stay in sync with backend validation)
+    const metricOptions = ['dns_latency', 'disk_io'];
     const strategyOptions = ['best_pod', 'all'];
     const [deleteTarget, setDeleteTarget] = useState<PolicyRecord | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
