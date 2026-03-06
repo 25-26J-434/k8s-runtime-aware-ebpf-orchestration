@@ -157,7 +157,6 @@ class HealthService {
         const stats: HealthStats = {
             totalNodes: 0,
             healthyNodes: 0,
-            degradedNodes: 0,
             unhealthyNodes: 0,
             totalPods: 0,
             healthyPods: 0,
@@ -171,16 +170,10 @@ class HealthService {
         Object.values(healthData.nodes).forEach(node => {
             stats.totalNodes++;
             
-            switch (node.health_level) {
-                case 'healthy':
-                    stats.healthyNodes++;
-                    break;
-                case 'degraded':
-                    stats.degradedNodes++;
-                    break;
-                case 'unhealthy':
-                    stats.unhealthyNodes++;
-                    break;
+            if (node.healthy) {
+                stats.healthyNodes++;
+            } else {
+                stats.unhealthyNodes++;
             }
 
             // Calculate pod stats
@@ -204,30 +197,12 @@ class HealthService {
         return stats;
     }
 
-    getHealthLevelColor(level?: string): string {
-        switch (level) {
-            case 'healthy':
-                return '#22c55e'; // green-500
-            case 'degraded':
-                return '#f59e0b'; // amber-500
-            case 'unhealthy':
-                return '#ef4444'; // red-500
-            default:
-                return '#6b7280'; // gray-500
-        }
+    getHealthColor(healthy: boolean): string {
+        return healthy ? '#22c55e' : '#ef4444';  // green or red
     }
 
-    getHealthLevelIcon(level?: string): string {
-        switch (level) {
-            case 'healthy':
-                return '🟢';
-            case 'degraded':
-                return '🟡';
-            case 'unhealthy':
-                return '🔴';
-            default:
-                return '⚪';
-        }
+    getHealthIcon(healthy: boolean): string {
+        return healthy ? '🟢' : '🔴';  // green circle or red circle
     }
 
     getSeverityIcon(severity: string): string {

@@ -11,7 +11,7 @@ export interface PodHealth {
   phase: string;
   ready: boolean;
   restart_count: number;
-  health_level?: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+  healthy: boolean;            // true = healthy, false = unhealthy
   health_score?: number;
   health_reasons?: string[];
 }
@@ -21,7 +21,7 @@ export interface NodeHealthUpdate {
   node_name: string;
   node_ip?: string;
   status: string;
-  health_level?: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+  healthy: boolean;            // true = healthy, false = unhealthy
   health_score?: number;
   health_reasons?: string[];
   total_pods: number;
@@ -62,7 +62,6 @@ export interface UnifiedMetricsResponse {
 export interface HealthStats {
   totalNodes: number;
   healthyNodes: number;
-  degradedNodes: number;
   unhealthyNodes: number;
   totalPods: number;
   healthyPods: number;

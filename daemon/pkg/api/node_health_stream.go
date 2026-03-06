@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,14 +27,7 @@ const (
 	AlertInfo     AlertSeverity = "info"
 )
 
-type HealthLevel string
-
-const (
-	HealthLevelHealthy   HealthLevel = "healthy"
-	HealthLevelDegraded  HealthLevel = "degraded"
-	HealthLevelUnhealthy HealthLevel = "unhealthy"
-	HealthLevelUnknown   HealthLevel = "unknown"
-)
+// Health is now a simple boolean: true = healthy, false = unhealthy
 
 type HealthAlert struct {
 	Timestamp   string        `json:"timestamp"`
@@ -47,15 +41,15 @@ type HealthAlert struct {
 }
 
 type PodHealth struct {
-	Name          string      `json:"name"`
-	Namespace     string      `json:"namespace"`
-	Node          string      `json:"node"`
-	Phase         string      `json:"phase"`
-	Ready         bool        `json:"ready"`
-	RestartCount  int32       `json:"restart_count"`
-	HealthLevel   HealthLevel `json:"health_level,omitempty"`
-	HealthScore   int         `json:"health_score,omitempty"`
-	HealthReasons []string    `json:"health_reasons,omitempty"`
+	Name          string   `json:"name"`
+	Namespace     string   `json:"namespace"`
+	Node          string   `json:"node"`
+	Phase         string   `json:"phase"`
+	Ready         bool     `json:"ready"`
+	RestartCount  int32    `json:"restart_count"`
+	Healthy       bool     `json:"healthy"`           // true = healthy, false = unhealthy
+	HealthScore   int      `json:"health_score,omitempty"`
+	HealthReasons []string `json:"health_reasons,omitempty"`
 }
 
 type NodeHealthUpdate struct {
@@ -63,7 +57,7 @@ type NodeHealthUpdate struct {
 	NodeName      string      `json:"node_name"`
 	NodeIP        string      `json:"node_ip,omitempty"`
 	Status        string      `json:"status"`
-	HealthLevel   HealthLevel `json:"health_level,omitempty"`
+	Healthy       bool        `json:"healthy"`          // true = healthy, false = unhealthy
 	HealthScore   int         `json:"health_score,omitempty"`
 	HealthReasons []string    `json:"health_reasons,omitempty"`
 	TotalPods     int         `json:"total_pods"`
@@ -472,6 +466,58 @@ func detectHealthAlerts(nodeKey string, current NodeHealthUpdate) []HealthAlert 
 				storeAlert(alertID, alert)
 				alerts = append(alerts, alert)
 			}
+
+			// Generate WARNING alerts for metrics issues (packet loss, retransmissions, latency)
+			// These trigger even if pod is Running+Ready
+			for _, reason := range pod.HealthReasons {
+				var alertID string
+				var shouldAlert bool
+
+				// High packet loss
+				if contains(reason, "packet loss high") {
+					alertID = "pod:" + nodeKey + ":" + podKey + ":packet-loss"
+					shouldAlert = true
+				}
+				// High retransmissions
+				if contains(reason, "retransmissions high") {
+					alertID = "pod:" + nodeKey + ":" + podKey + ":retransmissions"
+					shouldAlert = true
+				}
+				// High DNS latency
+				if contains(reason, "dns latency high") {
+					alertID = "pod:" + nodeKey + ":" + podKey + ":dns-latency"
+					shouldAlert = true
+				}
+				// High RTT
+				if contains(reason, "rtt high") {
+					alertID = "pod:" + nodeKey + ":" + podKey + ":rtt"
+					shouldAlert = true
+				}
+				// High disk I/O latency
+				if contains(reason, "disk I/O latency high") {
+					alertID = "pod:" + nodeKey + ":" + podKey + ":disk-io"
+					shouldAlert = true
+				}
+
+				if shouldAlert {
+					alert := HealthAlert{
+						Timestamp: current.Timestamp,
+						Severity:  AlertWarning,  // WARNING for metrics issues
+						Source:    "pod",
+						NodeName:  current.NodeName,
+						PodName:   pod.Name,
+						Namespace: pod.Namespace,
+						Message:   fmt.Sprintf("Pod %s/%s: %s", pod.Namespace, pod.Name, reason),
+						Details: map[string]interface{}{
+							"reason": reason,
+							"phase":  pod.Phase,
+							"ready":  pod.Ready,
+						},
+					}
+					storeAlert(alertID, alert)
+					alerts = append(alerts, alert)
+				}
+			}
 		}
 
 		// Check for missing pods (disappeared)
@@ -731,24 +777,24 @@ func nodeHealthWebSocketBroadcaster() {
 func applyMetricsBasedHealthLevels(update *NodeHealthUpdate, metrics UnifiedMetricsResponse) {
 	for i := range update.Pods {
 		podKey := update.Pods[i].Namespace + "/" + update.Pods[i].Name
-		level, score, reasons := evaluatePodHealthLevel(update.Pods[i], metrics.Pods[podKey])
-		update.Pods[i].HealthLevel = level
+		healthy, score, reasons := evaluatePodHealthLevel(update.Pods[i], metrics.Pods[podKey])
+		update.Pods[i].Healthy = healthy
 		update.Pods[i].HealthScore = score
 		update.Pods[i].HealthReasons = reasons
 	}
 
-	nodeLevel, nodeScore, nodeReasons := evaluateNodeHealthLevel(*update, metrics.Node)
-	update.HealthLevel = nodeLevel
+	nodeHealthy, nodeScore, nodeReasons := evaluateNodeHealthLevel(*update, metrics.Node)
+	update.Healthy = nodeHealthy
 	update.HealthScore = nodeScore
 	update.HealthReasons = nodeReasons
 }
 
-func evaluatePodHealthLevel(pod PodHealth, podMetrics map[string]interface{}) (HealthLevel, int, []string) {
+func evaluatePodHealthLevel(pod PodHealth, podMetrics map[string]interface{}) (bool, int, []string) {
 	// Get current metrics configuration
 	cfg := config.GetCurrentMetricsConfig()
 	
 	if pod.Phase == string(corev1.PodFailed) {
-		return HealthLevelUnhealthy, 0, []string{"pod phase is Failed"}
+		return false, 0, []string{"pod phase is Failed"}
 	}
 
 	score := 100
@@ -879,16 +925,15 @@ func evaluatePodHealthLevel(pod PodHealth, podMetrics map[string]interface{}) (H
 		}
 	}
 
-	level := levelFromScore(score)
-	if !pod.Ready && level == HealthLevelHealthy {
-		level = HealthLevelDegraded
-	}
-	return level, clampScore(score), reasons
+	// HEALTHY = Kubernetes API status ONLY (Running + Ready)
+	// Score and metrics are used ONLY for alerts and informational purposes
+	healthy := pod.Phase == string(corev1.PodRunning) && pod.Ready
+	return healthy, clampScore(score), reasons
 }
 
-func evaluateNodeHealthLevel(update NodeHealthUpdate, nodeMetrics map[string]interface{}) (HealthLevel, int, []string) {
+func evaluateNodeHealthLevel(update NodeHealthUpdate, nodeMetrics map[string]interface{}) (bool, int, []string) {
 	if update.Error != "" {
-		return HealthLevelUnhealthy, 0, []string{fmt.Sprintf("node error: %s", update.Error)}
+		return false, 0, []string{fmt.Sprintf("node error: %s", update.Error)}
 	}
 
 	score := 100
@@ -965,27 +1010,13 @@ func evaluateNodeHealthLevel(update NodeHealthUpdate, nodeMetrics map[string]int
 		}
 	}
 
-	level := levelFromScore(score)
-	if update.Status == "unhealthy" && level == HealthLevelHealthy {
-		level = HealthLevelDegraded
-	}
-	if update.Status == "degraded" && level == HealthLevelHealthy {
-		level = HealthLevelDegraded
-	}
-	return level, clampScore(score), reasons
+	// HEALTHY = Node has no unhealthy pods (based on Kubernetes API)
+	// Score and metrics are used ONLY for alerts and informational purposes
+	healthy := update.Status != "unhealthy"
+	return healthy, clampScore(score), reasons
 }
 
-func levelFromScore(score int) HealthLevel {
-	s := clampScore(score)
-	switch {
-	case s <= 40:
-		return HealthLevelUnhealthy
-	case s <= 70:
-		return HealthLevelDegraded
-	default:
-		return HealthLevelHealthy
-	}
-}
+// levelFromScore removed - now using boolean health (healthy = Kubernetes status only)
 
 func clampScore(score int) int {
 	switch {
@@ -997,6 +1028,12 @@ func clampScore(score int) int {
 		return score
 	}
 }
+
+// contains checks if a string contains a substring
+func contains(s, substr string) bool {
+	return strings.Contains(s, substr)
+}
+
 
 func asMap(v interface{}) map[string]interface{} {
 	if v == nil {

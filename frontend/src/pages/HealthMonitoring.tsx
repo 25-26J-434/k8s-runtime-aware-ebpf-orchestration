@@ -134,8 +134,8 @@ export const HealthMonitoring: React.FC = () => {
     
     if (filterStatus !== "all") {
       pods = pods.filter((p) => {
-        if (filterStatus === "healthy") return p.pod.health_level === "healthy";
-        if (filterStatus === "unhealthy") return p.pod.health_level !== "healthy";
+        if (filterStatus === "healthy") return p.pod.healthy === true;
+        if (filterStatus === "unhealthy") return p.pod.healthy === false;
         if (filterStatus === "ready") return p.pod.ready;
         if (filterStatus === "not-ready") return !p.pod.ready;
         return true;
@@ -324,7 +324,7 @@ export const HealthMonitoring: React.FC = () => {
         <div className="mini-stat">
           <div className="mini-stat-value">{healthStats.totalNodes}</div>
           <div className="mini-stat-label">Nodes</div>
-          <div className="mini-stat-sub">{healthStats.healthyNodes}✓ {healthStats.degradedNodes}⚠</div>
+          <div className="mini-stat-sub">{healthStats.healthyNodes}✓ {healthStats.unhealthyNodes}✕</div>
         </div>
 
         <div className="mini-stat">
@@ -347,8 +347,8 @@ export const HealthMonitoring: React.FC = () => {
   // Render pod item
   const renderPodItem = (podData: { pod: PodHealth; node: string }) => {
     const { pod, node } = podData;
-    const healthIcon = healthService.getHealthLevelIcon(pod.health_level);
-    const healthColor = healthService.getHealthLevelColor(pod.health_level);
+    const healthIcon = healthService.getHealthIcon(pod.healthy);
+    const healthColor = healthService.getHealthColor(pod.healthy);
 
     return (
       <div key={`${pod.namespace}/${pod.name}`} className="pod-item-compact">
