@@ -390,7 +390,10 @@ func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue f
 	if err := e.applyWinnerLabel(ctx, targetNS, p.Action.BackendSelector, winnerPod, winKey, winVal); err != nil {
 		return nil, fmt.Errorf("apply winner label: %w", err)
 	}
-	if err := e.switchServiceSelector(ctx, frontendSvc, map[string]string{winKey: winVal}, p.PolicyName); err != nil {
+	if p.Action.BackendPort <= 0 {
+		return nil, fmt.Errorf("backend_port is required for cluster redirection")
+	}
+	if err := e.switchServiceSelector(ctx, frontendSvc, map[string]string{winKey: winVal}, p.PolicyName, p.Frontend.Port, p.Action.BackendPort); err != nil {
 		return nil, err
 	}
 
@@ -496,12 +499,15 @@ func (e *Engine) restoreClusterRedirect(ctx context.Context, p *Policy, clearWin
 	return nil
 }
 
-func (e *Engine) switchServiceSelector(ctx context.Context, svc *corev1.Service, selector map[string]string, policyName string) error {
+func (e *Engine) switchServiceSelector(ctx context.Context, svc *corev1.Service, selector map[string]string, policyName string, frontendPort, backendPort int) error {
 	if svc == nil {
 		return fmt.Errorf("service is nil")
 	}
 	if len(selector) == 0 {
 		return fmt.Errorf("selector is empty")
+	}
+	if frontendPort <= 0 || backendPort <= 0 {
+		return fmt.Errorf("frontend and backend ports must be set")
 	}
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
@@ -510,8 +516,22 @@ func (e *Engine) switchServiceSelector(ctx context.Context, svc *corev1.Service,
 		data, _ := json.Marshal(svc.Spec.Selector)
 		svc.Annotations["ebpf-daemon/original-selector"] = string(data)
 	}
+	if _, ok := svc.Annotations["ebpf-daemon/original-ports"]; !ok {
+		data, _ := json.Marshal(svc.Spec.Ports)
+		svc.Annotations["ebpf-daemon/original-ports"] = string(data)
+	}
 	svc.Annotations["ebpf-daemon/redirect-policy"] = policyName
 	svc.Spec.Selector = selector
+	updated := false
+	for i := range svc.Spec.Ports {
+		if int(svc.Spec.Ports[i].Port) == frontendPort {
+			svc.Spec.Ports[i].TargetPort = intstr.FromInt(backendPort)
+			updated = true
+		}
+	}
+	if !updated {
+		return fmt.Errorf("service %s does not expose port %d", svc.Name, frontendPort)
+	}
 	_, err := e.kube.CoreV1().Services(svc.Namespace).Update(ctx, svc, metav1.UpdateOptions{})
 	return err
 }
@@ -532,7 +552,15 @@ func (e *Engine) restoreServiceSelector(ctx context.Context, svc *corev1.Service
 		return err
 	}
 	svc.Spec.Selector = selector
+	if portsRaw := svc.Annotations["ebpf-daemon/original-ports"]; portsRaw != "" {
+		var ports []corev1.ServicePort
+		if err := json.Unmarshal([]byte(portsRaw), &ports); err != nil {
+			return err
+		}
+		svc.Spec.Ports = ports
+	}
 	delete(svc.Annotations, "ebpf-daemon/original-selector")
+	delete(svc.Annotations, "ebpf-daemon/original-ports")
 	delete(svc.Annotations, "ebpf-daemon/redirect-policy")
 	_, err := e.kube.CoreV1().Services(svc.Namespace).Update(ctx, svc, metav1.UpdateOptions{})
 	return err
