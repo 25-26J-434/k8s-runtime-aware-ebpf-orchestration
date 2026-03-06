@@ -65,6 +65,10 @@ func handleDNATEntries(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, resp)
 }
 
+func handleDNATStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, loader.GetDNATStatus())
+}
+
 func ipv4FromNetOrder(v uint32) string {
 	b := make([]byte, 4)
 	binary.BigEndian.PutUint32(b, v)

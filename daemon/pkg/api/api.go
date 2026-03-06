@@ -129,6 +129,7 @@ func StartServer() {
 	http.HandleFunc("/api/disk/all", corsMiddleware(handleDiskIOAll))
 	http.HandleFunc("/api/sched/records", corsMiddleware(handleSchedLatencyRecords))
 	http.HandleFunc("/api/dnat/entries", corsMiddleware(handleDNATEntries))
+	http.HandleFunc("/api/dnat/status", corsMiddleware(handleDNATStatus))
 
 	// Scaling endpoints
 	http.HandleFunc("/api/scaling/rules", corsMiddleware(handleScalingRules))
