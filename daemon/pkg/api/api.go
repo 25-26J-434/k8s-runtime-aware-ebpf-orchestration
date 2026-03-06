@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
-	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/extensions/notification"
-	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+   "github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/comm"
+   "github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/config"
+   "github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/telemetry"
+   corev1 "k8s.io/api/core/v1"
+   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 
@@ -116,8 +116,8 @@ func StartServer() {
 	http.HandleFunc("/metrics", corsMiddleware(handlePrometheusMetrics))
 	http.HandleFunc("/api/metrics", corsMiddleware(handleUnifiedMetrics))
 	http.HandleFunc("/api/dns/pods", corsMiddleware(handlePodDNSMetrics))
-  http.HandleFunc("/api/dns/pods/all", corsMiddleware(handlePodDNSMetricsAll))
 	http.HandleFunc("/api/rtt/pods", corsMiddleware(handlePodRTTMetrics))
+   http.HandleFunc("/api/dns/pods/all", corsMiddleware(handlePodDNSMetricsAll))
 	http.HandleFunc("/api/cluster/topology", corsMiddleware(handleClusterTopology))
 	http.HandleFunc("/api/cluster/services", corsMiddleware(handleClusterServices))
 
@@ -156,20 +156,23 @@ func StartServer() {
    http.HandleFunc("/api/scaling/metrics/latest", corsMiddleware(handleScalingLatestMetrics))
    http.HandleFunc("/api/scaling/pods", corsMiddleware(handleScalingPods))
 
-	// Component 2 (routing) endpoints
-	http.HandleFunc("/api/probe/", corsMiddleware(handleProbe))
-	http.HandleFunc("/api/policies", corsMiddleware(handlePolicies))
-	http.HandleFunc("/api/policies/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/evaluate"):
-			handlePolicyEvaluate(w, r)
-		case strings.HasSuffix(r.URL.Path, "/expire"):
-			handlePolicyExpire(w, r)
-		default:
-			handlePolicyByName(w, r)
-		}
-	}))
-	http.HandleFunc("/api/cluster/summary", corsMiddleware(handleClusterSummary))
+   // Metrics configuration endpoints
+   http.HandleFunc("/api/metrics-config", corsMiddleware(handleMetricsConfig))
+
+   // Component 2 (routing) endpoints
+   http.HandleFunc("/api/probe/", corsMiddleware(handleProbe))
+   http.HandleFunc("/api/policies", corsMiddleware(handlePolicies))
+   http.HandleFunc("/api/policies/", corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+      switch {
+      case strings.HasSuffix(r.URL.Path, "/evaluate"):
+         handlePolicyEvaluate(w, r)
+      case strings.HasSuffix(r.URL.Path, "/expire"):
+         handlePolicyExpire(w, r)
+      default:
+         handlePolicyByName(w, r)
+      }
+   }))
+   http.HandleFunc("/api/cluster/summary", corsMiddleware(handleClusterSummary))
 
 	// Extensions (SPI): list at /api/extensions and /api/extensions/; config/trigger/test/ui under /api/extensions/:name/...
 	http.HandleFunc("/api/extensions", corsMiddleware(handleExtensionsList))
@@ -589,4 +592,16 @@ func updatePodIPMappingFromK8s() {
 	if tracker != nil {
 		tracker.UpdatePodIPMapping(mapping)
 	}
+}
+
+// handleMetricsConfig handles GET and POST requests for metrics configuration
+func handleMetricsConfig(w http.ResponseWriter, r *http.Request) {
+   switch r.Method {
+   case http.MethodGet:
+      config.HandleGetMetricsConfig(w, r)
+   case http.MethodPost, http.MethodPut:
+      config.HandleSetMetricsConfig(w, r)
+   default:
+      http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+   }
 }
