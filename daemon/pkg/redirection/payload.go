@@ -28,8 +28,10 @@ func NormalizeCreatePayload(body map[string]interface{}) (*Policy, error) {
 	metric := coalesce(
 		nestedStr(body, "telemetry", "metric"),
 		str(body["metric"]),
-		"rtt_us",
 	)
+	if metric == "" {
+		metric = defaultMetricForScope(scope)
+	}
 	threshold, thSet := floatVal(coalesceRaw(
 		nested(body, "telemetry", "violation_threshold"),
 		body["violation_threshold"],
@@ -322,6 +324,9 @@ func applyDefaults(p *Policy) {
 	if p.Telemetry.MonitorPodContains == "" {
 		p.Telemetry.MonitorPodContains = p.Frontend.Service
 	}
+	if p.Telemetry.Metric == "" {
+		p.Telemetry.Metric = defaultMetricForScope(p.Scope)
+	}
 	if p.Action.Protocol == "" {
 		p.Action.Protocol = "TCP"
 	}
@@ -338,11 +343,18 @@ func applyDefaults(p *Policy) {
 
 func validateMetric(metric string) error {
 	switch strings.ToLower(metric) {
-	case "rtt_us", "dns_us", "sched_latency_us", "sched_us", "rtt":
+	case "rtt_us", "dns_us", "sched_latency_us", "sched_us", "rtt", "dns_latency", "dns", "disk_io":
 		return nil
 	default:
-		return fmt.Errorf("metric must be one of: rtt_us, dns_us, sched_latency_us")
+		return fmt.Errorf("metric must be one of: rtt_us, dns_us, dns_latency, sched_latency_us, disk_io")
 	}
+}
+
+func defaultMetricForScope(scope string) string {
+	if strings.EqualFold(scope, "cluster") {
+		return "disk_io"
+	}
+	return "dns_latency"
 }
 
 func validatePort(port int, field string) error {

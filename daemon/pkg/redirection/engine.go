@@ -9,7 +9,9 @@ import (
 	"math"
 	"net/http"
 	"net/netip"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/IrushiGunawardana/k8s-runtime-aware-ebpf-orchestration/daemon/pkg/loader"
@@ -23,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
@@ -39,6 +42,11 @@ type Engine struct {
 	dyn    dynamic.Interface
 	kube   *kubernetes.Clientset
 	logger *log.Logger
+
+	syncNamespace string
+	dnatSyncMu    sync.Mutex
+	dnatSyncKeys  map[string]dnatKey // configmap-key -> applied map key
+	localNodeName string
 }
 
 // ApplyResult mirrors the response we return to the frontend.
@@ -62,7 +70,25 @@ func NewEngine(store *Store, dyn dynamic.Interface, kube *kubernetes.Clientset, 
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Engine{store: store, dyn: dyn, kube: kube, logger: logger}
+	syncNS := os.Getenv("POD_NAMESPACE")
+	if syncNS == "" {
+		syncNS = "ebpf-telemetry"
+	}
+	localNode := os.Getenv("NODE_NAME")
+	if localNode == "" {
+		if host, err := os.Hostname(); err == nil {
+			localNode = host
+		}
+	}
+	return &Engine{
+		store:         store,
+		dyn:           dyn,
+		kube:          kube,
+		logger:        logger,
+		syncNamespace: syncNS,
+		dnatSyncKeys:  map[string]dnatKey{},
+		localNodeName: localNode,
+	}
 }
 
 // EvaluateAndApply loads a policy, checks telemetry, and creates the LRP if needed.
@@ -73,6 +99,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 	}
 
 	now := time.Now().UTC()
+	metricUsed := healthMetricForScope(policy.Scope)
 	avgValue, count := e.averageMetric(policy)
 	violation := count > 0 && avgValue >= policy.Telemetry.ViolationThreshold
 
@@ -88,7 +115,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 			Applied:    false,
 			Message:    "Action type not redirect; nothing to apply",
 			Violation:  violation,
-			Metric:     policy.Telemetry.Metric,
+			Metric:     metricUsed,
 			StatusCode: http.StatusOK,
 		}, nil
 	}
@@ -96,7 +123,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 	if !violation {
 		policy.Status.LastDecision = "SKIPPED"
 		policy.AddHistory("SKIPPED", "No violation detected", map[string]interface{}{
-			"metric":    policy.Telemetry.Metric,
+			"metric":    metricUsed,
 			"avg_value": avgValue,
 			"threshold": policy.Telemetry.ViolationThreshold,
 			"pod_count": count,
@@ -106,7 +133,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 			Applied:       false,
 			Message:       "Violation not triggered. No redirect applied.",
 			Details:       []string{"No redirect applied"},
-			Metric:        policy.Telemetry.Metric,
+			Metric:        metricUsed,
 			MetricAverage: avgValue,
 			Violation:     false,
 			StatusCode:    http.StatusOK,
@@ -134,7 +161,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 	policy.Status.LastHelperStderr = res.Stderr
 	policy.AddHistory("APPLIED", "LocalRedirectPolicy applied", map[string]interface{}{
 		"target_backend": res.TargetBackend,
-		"metric":         policy.Telemetry.Metric,
+		"metric":         metricUsed,
 		"avg_value":      avgValue,
 	})
 
@@ -143,7 +170,7 @@ func (e *Engine) EvaluateAndApply(ctx context.Context, name string) (*Policy, *A
 	}
 
 	res.Applied = true
-	res.Metric = policy.Telemetry.Metric
+	res.Metric = metricUsed
 	res.MetricAverage = avgValue
 	res.Violation = true
 	return policy, res, nil
@@ -354,38 +381,35 @@ func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue f
 		return nil, err
 	}
 
-	if err := e.applyDNATRedirectWithPorts(ctx, frontendSvc, winner, uint16(p.Frontend.Port), uint16(p.Action.BackendPort)); err != nil {
-		if err := e.updateEndpointSlicesForService(ctx, p.Namespace, frontendSvc, winner, p.PolicyName); err != nil {
-			return nil, err
-		}
-
-		msg := "Violation triggered. Cluster redirection applied via EndpointSlice."
-		return &ApplyResult{
-			Applied:       true,
-			Message:       msg,
-			TargetBackend: winnerPod,
-			TTLSeconds:    p.Action.TTLSeconds,
-			Details: []string{
-				"EndpointSlice updated",
-				fmt.Sprintf("Target backend: %s", winnerPod),
-				fmt.Sprintf("Metric avg: %.2f (threshold %.2f)", avgValue, p.Telemetry.ViolationThreshold),
-			},
-			Stdout: fmt.Sprintf("EndpointSlice updated for service %s", frontendSvc.Name),
-		}, nil
+	if p.Action.WinnerLabel == "" {
+		return nil, fmt.Errorf("winner_label is required for cluster redirection")
+	}
+	winKey, winVal, err := splitSelector(p.Action.WinnerLabel)
+	if err != nil {
+		return nil, fmt.Errorf("winner label: %w", err)
+	}
+	if err := e.applyWinnerLabel(ctx, targetNS, p.Action.BackendSelector, winnerPod, winKey, winVal); err != nil {
+		return nil, fmt.Errorf("apply winner label: %w", err)
+	}
+	if p.Action.BackendPort <= 0 {
+		return nil, fmt.Errorf("backend_port is required for cluster redirection")
+	}
+	if err := e.switchServiceSelector(ctx, frontendSvc, map[string]string{winKey: winVal}, p.PolicyName, p.Frontend.Port, p.Action.BackendPort); err != nil {
+		return nil, err
 	}
 
-	msg := "Violation triggered. Cluster redirection applied via eBPF DNAT."
+	msg := "Violation triggered. Cluster redirection applied via service selector."
 	return &ApplyResult{
 		Applied:       true,
 		Message:       msg,
 		TargetBackend: winnerPod,
 		TTLSeconds:    p.Action.TTLSeconds,
 		Details: []string{
-			"DNAT map updated",
+			"Service selector updated",
 			fmt.Sprintf("Target backend: %s", winnerPod),
 			fmt.Sprintf("Metric avg: %.2f (threshold %.2f)", avgValue, p.Telemetry.ViolationThreshold),
 		},
-		Stdout: fmt.Sprintf("DNAT map updated for service %s", frontendSvc.Name),
+		Stdout: fmt.Sprintf("Service %s selector updated to %s=%s", frontendSvc.Name, winKey, winVal),
 	}, nil
 }
 
@@ -409,7 +433,7 @@ func (e *Engine) selectBackend(ctx context.Context, p *Policy) (string, string, 
 			candidateSelector = p.Action.BackendSelector
 		}
 
-		winner, _, err := e.pickBestPod(ctx, targetNS, candidateSelector, p.Telemetry.Metric, p.Scope)
+		winner, _, err := e.pickBestPod(ctx, targetNS, candidateSelector, podHealthMetric(), p.Scope)
 		if err != nil {
 			return "", "", "", fmt.Errorf("choose best pod: %w", err)
 		}
@@ -464,15 +488,8 @@ func (e *Engine) restoreClusterRedirect(ctx context.Context, p *Policy, clearWin
 		return err
 	}
 
-	if err := e.deleteDNATRedirectWithPort(frontendSvc, uint16(p.Frontend.Port)); err != nil {
-		endpoints, err := e.buildEndpointsForService(ctx, p.Namespace, frontendSvc)
-		if err != nil {
-			return err
-		}
-
-		if err := e.updateEndpointSlicesWithEndpoints(ctx, p.Namespace, frontendSvc, endpoints, p.PolicyName); err != nil {
-			return err
-		}
+	if err := e.restoreServiceSelector(ctx, frontendSvc); err != nil {
+		e.logger.Printf("[Routing] cluster selector restore failed for %s/%s: %v", p.Namespace, frontendSvc.Name, err)
 	}
 
 	if clearWinner && strings.ToLower(p.Action.Strategy) == "best_pod" && p.Action.WinnerLabel != "" {
@@ -481,6 +498,73 @@ func (e *Engine) restoreClusterRedirect(ctx context.Context, p *Policy, clearWin
 		}
 	}
 	return nil
+}
+
+func (e *Engine) switchServiceSelector(ctx context.Context, svc *corev1.Service, selector map[string]string, policyName string, frontendPort, backendPort int) error {
+	if svc == nil {
+		return fmt.Errorf("service is nil")
+	}
+	if len(selector) == 0 {
+		return fmt.Errorf("selector is empty")
+	}
+	if frontendPort <= 0 || backendPort <= 0 {
+		return fmt.Errorf("frontend and backend ports must be set")
+	}
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
+	}
+	if _, ok := svc.Annotations["ebpf-daemon/original-selector"]; !ok {
+		data, _ := json.Marshal(svc.Spec.Selector)
+		svc.Annotations["ebpf-daemon/original-selector"] = string(data)
+	}
+	if _, ok := svc.Annotations["ebpf-daemon/original-ports"]; !ok {
+		data, _ := json.Marshal(svc.Spec.Ports)
+		svc.Annotations["ebpf-daemon/original-ports"] = string(data)
+	}
+	svc.Annotations["ebpf-daemon/redirect-policy"] = policyName
+	svc.Spec.Selector = selector
+	updated := false
+	for i := range svc.Spec.Ports {
+		if int(svc.Spec.Ports[i].Port) == frontendPort {
+			svc.Spec.Ports[i].TargetPort = intstr.FromInt(backendPort)
+			updated = true
+		}
+	}
+	if !updated {
+		return fmt.Errorf("service %s does not expose port %d", svc.Name, frontendPort)
+	}
+	_, err := e.kube.CoreV1().Services(svc.Namespace).Update(ctx, svc, metav1.UpdateOptions{})
+	return err
+}
+
+func (e *Engine) restoreServiceSelector(ctx context.Context, svc *corev1.Service) error {
+	if svc == nil {
+		return fmt.Errorf("service is nil")
+	}
+	orig := ""
+	if svc.Annotations != nil {
+		orig = svc.Annotations["ebpf-daemon/original-selector"]
+	}
+	if orig == "" {
+		return nil
+	}
+	var selector map[string]string
+	if err := json.Unmarshal([]byte(orig), &selector); err != nil {
+		return err
+	}
+	svc.Spec.Selector = selector
+	if portsRaw := svc.Annotations["ebpf-daemon/original-ports"]; portsRaw != "" {
+		var ports []corev1.ServicePort
+		if err := json.Unmarshal([]byte(portsRaw), &ports); err != nil {
+			return err
+		}
+		svc.Spec.Ports = ports
+	}
+	delete(svc.Annotations, "ebpf-daemon/original-selector")
+	delete(svc.Annotations, "ebpf-daemon/original-ports")
+	delete(svc.Annotations, "ebpf-daemon/redirect-policy")
+	_, err := e.kube.CoreV1().Services(svc.Namespace).Update(ctx, svc, metav1.UpdateOptions{})
+	return err
 }
 
 func (e *Engine) resolveBackendService(ctx context.Context, ns string, action ActionConfig) (*corev1.Service, error) {
@@ -574,7 +658,11 @@ func ensureServicePortExists(svc *corev1.Service, port int) error {
 	return fmt.Errorf("service %s does not expose port %d", svc.Name, port)
 }
 
-func (e *Engine) updateEndpointSlicesForService(ctx context.Context, ns string, svc *corev1.Service, winner *corev1.Pod, policyName string) error {
+func (e *Engine) updateEndpointSlicesForService(ctx context.Context, ns string, svc *corev1.Service, winner *corev1.Pod, targetPort int, policyName string) error {
+	if targetPort <= 0 {
+		return fmt.Errorf("target port must be a positive number")
+	}
+
 	endpoint := discoveryv1.Endpoint{
 		Addresses: []string{winner.Status.PodIP},
 		Conditions: discoveryv1.EndpointConditions{
@@ -587,10 +675,18 @@ func (e *Engine) updateEndpointSlicesForService(ctx context.Context, ns string, 
 			UID:       winner.UID,
 		},
 	}
-	return e.updateEndpointSlicesWithEndpoints(ctx, ns, svc, []discoveryv1.Endpoint{endpoint}, policyName)
+	return e.updateEndpointSlicesWithEndpointsAndPort(ctx, ns, svc, []discoveryv1.Endpoint{endpoint}, targetPort, policyName)
 }
 
 func (e *Engine) updateEndpointSlicesWithEndpoints(ctx context.Context, ns string, svc *corev1.Service, endpoints []discoveryv1.Endpoint, policyName string) error {
+	if svc == nil || len(svc.Spec.Ports) == 0 {
+		return fmt.Errorf("service has no ports")
+	}
+	targetPort := int(resolveTargetPort(svc.Spec.Ports[0]))
+	return e.updateEndpointSlicesWithEndpointsAndPort(ctx, ns, svc, endpoints, targetPort, policyName)
+}
+
+func (e *Engine) updateEndpointSlicesWithEndpointsAndPort(ctx context.Context, ns string, svc *corev1.Service, endpoints []discoveryv1.Endpoint, targetPort int, policyName string) error {
 	if svc == nil {
 		return fmt.Errorf("service is nil")
 	}
@@ -615,6 +711,14 @@ func (e *Engine) updateEndpointSlicesWithEndpoints(ctx context.Context, ns strin
 			slice.Labels = map[string]string{}
 		}
 		slice.Labels["ebpf-daemon/redirect-policy"] = policyName
+
+		// EndpointSlice ports represent the backend port that kube-proxy forwards to. This enables
+		// service-port (frontend) -> pod-port (backend) translation.
+		tp := int32(targetPort)
+		for j := range slice.Ports {
+			slice.Ports[j].Port = &tp
+		}
+
 		slice.Endpoints = endpoints
 		if _, err := e.kube.DiscoveryV1().EndpointSlices(ns).Update(ctx, &slice, metav1.UpdateOptions{}); err != nil {
 			return err
@@ -886,6 +990,21 @@ func boolPtr(v bool) *bool {
 	return &v
 }
 
+func healthMetricForScope(scope string) string {
+	if strings.EqualFold(scope, "cluster") {
+		return nodeHealthMetric()
+	}
+	return podHealthMetric()
+}
+
+func podHealthMetric() string {
+	return "dns_latency"
+}
+
+func nodeHealthMetric() string {
+	return "disk_io"
+}
+
 // clearWinnerLabel removes the winner label from all candidate pods.
 func (e *Engine) clearWinnerLabel(ctx context.Context, ns string, action ActionConfig) error {
 	selector := action.BackendCandidatesSelector
@@ -935,11 +1054,29 @@ func (e *Engine) pickBestPod(ctx context.Context, ns, selector, metric, scope st
 	best := ""
 	bestNode := ""
 	bestValue := math.MaxFloat64
+	bestNodeValue := math.MaxFloat64
 	for _, pod := range pods.Items {
+		nodeValue := bestNodeValue
+		if strings.EqualFold(scope, "cluster") {
+			if value, ok := e.nodeMetricValue(nodeHealthMetric(), pod.Spec.NodeName, "cluster"); ok {
+				nodeValue = value
+			}
+		}
+
 		value, ok := metricValueForPodWithScope(metric, ns, pod.Name, scope)
 		if !ok {
 			continue
 		}
+		if strings.EqualFold(scope, "cluster") {
+			if nodeValue < bestNodeValue || (nodeValue == bestNodeValue && value < bestValue) {
+				bestNodeValue = nodeValue
+				bestValue = value
+				best = pod.Name
+				bestNode = pod.Spec.NodeName
+			}
+			continue
+		}
+
 		if value < bestValue {
 			bestValue = value
 			best = pod.Name
@@ -977,15 +1114,20 @@ func (e *Engine) applyWinnerLabel(ctx context.Context, ns, selector, winner, lab
 
 // averageMetric computes the mean microsecond value for pods in the namespace that match the substring.
 func (e *Engine) averageMetric(p *Policy) (float64, int) {
+	metric := healthMetricForScope(p.Scope)
+	if metric == nodeHealthMetric() {
+		return e.averageNodeMetric(metric)
+	}
+
 	monitor := p.Telemetry.MonitorPodContains
 	if monitor == "" {
 		monitor = p.Frontend.Service
 	}
 	namespace := p.Namespace
 	if strings.EqualFold(p.Scope, "cluster") {
-		return e.averageMetricForPodsCluster(p.Telemetry.Metric, namespace, monitor)
+		return e.averageMetricForPodsCluster(metric, namespace, monitor)
 	}
-	return averageMetricForPods(p.Telemetry.Metric, namespace, monitor)
+	return averageMetricForPods(metric, namespace, monitor)
 }
 
 func (e *Engine) averageMetricForPodsCluster(metric, namespace, nameContains string) (float64, int) {
@@ -1016,11 +1158,38 @@ func (e *Engine) averageMetricForPodsCluster(metric, namespace, nameContains str
 	return sum / float64(count), count
 }
 
+func (e *Engine) averageNodeMetric(metric string) (float64, int) {
+	if e.localNodeName == "" {
+		return 0, 0
+	}
+	if value, ok := e.nodeMetricValue(metric, e.localNodeName, "cluster"); ok {
+		return value, 1
+	}
+	return 0, 0
+}
+
+func (e *Engine) nodeMetricValue(metric, nodeName, scope string) (float64, bool) {
+	switch strings.ToLower(metric) {
+	case nodeHealthMetric():
+		if strings.EqualFold(scope, "cluster") {
+			if nodeMetric, ok := telemetry.GetClusterNodeMetric(nodeName, telemetry.MetricType("disk_io")); ok {
+				return extractDiskIOValue(nodeMetric.Value)
+			}
+		}
+		if nodeName == "" || !strings.EqualFold(nodeName, e.localNodeName) {
+			return 0, false
+		}
+		return extractDiskIOValue(telemetry.GetDiskIOMetrics())
+	default:
+		return 0, false
+	}
+}
+
 // metricValueForPod returns the metric value for a specific pod (microseconds).
 func metricValueForPod(metric, namespace, podName string) (float64, bool) {
 	key := namespace + "/" + podName
 	switch strings.ToLower(metric) {
-	case "dns_us":
+	case "dns_us", "dns_latency", "dns":
 		if data, ok := telemetry.GetPodDNSMetrics()[key]; ok && data.TotalEvents > 0 {
 			return float64(data.TotalLatencyNs) / float64(data.TotalEvents) / 1000.0, true
 		}
@@ -1048,7 +1217,7 @@ func metricValueForPodWithScope(metric, namespace, podName, scope string) (float
 func clusterMetricValueForPod(metric, namespace, podName string) (float64, bool) {
 	key := namespace + "/" + podName
 	switch strings.ToLower(metric) {
-	case "dns_us":
+	case "dns_us", "dns_latency", "dns":
 		if podMetric, ok := telemetry.GetClusterPodMetric(key, telemetry.MetricTypeDNS); ok {
 			return extractDNSValue(podMetric.Value)
 		}
@@ -1135,6 +1304,29 @@ func extractSchedLatencyValue(value interface{}) (float64, bool) {
 	}
 }
 
+func extractDiskIOValue(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case telemetry.DiskIOMetrics:
+		if v.AvgIOLatencyNs == 0 {
+			return 0, false
+		}
+		return float64(v.AvgIOLatencyNs) / 1000.0, true
+	case *telemetry.DiskIOMetrics:
+		if v == nil || v.AvgIOLatencyNs == 0 {
+			return 0, false
+		}
+		return float64(v.AvgIOLatencyNs) / 1000.0, true
+	case map[string]interface{}:
+		avg, ok := toUint64(v["avg_io_latency_ns"])
+		if !ok || avg == 0 {
+			return 0, false
+		}
+		return float64(avg) / 1000.0, true
+	default:
+		return 0, false
+	}
+}
+
 func toUint64(v interface{}) (uint64, bool) {
 	switch t := v.(type) {
 	case uint64:
@@ -1193,7 +1385,7 @@ func averageMetricForPods(metric, namespace, nameContains string) (float64, int)
 	var count int
 	nameContains = strings.ToLower(nameContains)
 	switch strings.ToLower(metric) {
-	case "dns_us":
+	case "dns_us", "dns_latency", "dns":
 		for _, data := range telemetry.GetPodDNSMetrics() {
 			if data.Namespace != namespace || !strings.Contains(strings.ToLower(data.PodName), nameContains) {
 				continue

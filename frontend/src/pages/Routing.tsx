@@ -61,7 +61,8 @@ export function Routing() {
     const [drawerError, setDrawerError] = useState<string | null>(null);
     const [drawerSuccess, setDrawerSuccess] = useState<string | null>(null);
 
-    const metricOptions = ['rtt_us', 'dns_us', 'sched_latency_us'];
+    // Supported telemetry metrics (must stay in sync with backend validation)
+    const metricOptions = ['dns_latency', 'disk_io'];
     const strategyOptions = ['best_pod', 'all'];
     const [deleteTarget, setDeleteTarget] = useState<PolicyRecord | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -1526,70 +1527,7 @@ export function Routing() {
                                 <div className="empty-state">Select a policy to view details.</div>
                             )}
                         </div>
-                        {selectedPolicy && (
-                            <div className="probe-card">
-                                <div className="probe-header">
-                                    <div>
-                                        <div className="probe-title">Redirect Confirmation</div>
-                                        <div className="probe-subtitle">Probe {resolveFrontend(selectedPolicy)} /whoami to see the actual backend</div>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        className="ghost-button"
-                                        onClick={() => runProbe(selectedPolicy)}
-                                        disabled={probeLoading}
-                                    >
-                                        {probeLoading ? 'Checking…' : 'Check Traffic'}
-                                    </button>
-                                </div>
-                                {probeError && (
-                                    <div className="probe-error">
-                                        <FiAlertTriangle /> {probeError}
-                                    </div>
-                                )}
-                                {!probeResult && !probeError && (
-                                    <div className="probe-empty">No probe run yet.</div>
-                                )}
-                                {probeResult && (
-                                    <div className="probe-grid">
-                                        <div className="probe-item">
-                                            <div className="probe-label">Served By</div>
-                                            <div className="probe-value">{probeResult.service || 'unknown'}</div>
-                                        </div>
-                                        <div className="probe-item">
-                                            <div className="probe-label">Pod Name</div>
-                                            <div className="probe-value">{probeResult.pod || 'unknown'}</div>
-                                        </div>
-                                        <div className="probe-item">
-                                            <div className="probe-label">Node Name</div>
-                                            <div className="probe-value">{probeResult.node || 'unknown'}</div>
-                                        </div>
-                                        <div className="probe-item">
-                                            <div className="probe-label">Winner Label</div>
-                                            <div className="probe-value">
-                                                {probeResult.winnerLabel
-                                                    ? `${probeResult.winnerLabel} (${probeResult.winnerLabelPresent ? 'present' : 'missing'})`
-                                                    : 'unknown'}
-                                            </div>
-                                        </div>
-                                        <div className="probe-item probe-raw">
-                                            <div className="probe-label">Raw /whoami</div>
-                                            <div className="probe-value">{probeResult.raw || '—'}</div>
-                                        </div>
-                                    </div>
-                                )}
-                                {lastApplyResult?.policy === selectedPolicy.policy_name && (
-                                    <div className="probe-meta">
-                                        Last apply: {lastApplyResult.applied ? 'applied' : 'evaluated'}
-                                        {lastApplyResult.target_backend ? ` • target ${lastApplyResult.target_backend}` : ''}
-                                        {typeof lastApplyResult.metric_average === 'number'
-                                            ? ` • avg ${lastApplyResult.metric_average.toFixed(2)}`
-                                            : ''}
-                                    </div>
-                                )}
-                                {probeTs && <div className="probe-meta">Last checked: {probeTs}</div>}
-                            </div>
-                        )}
+
                     </div>
                 )}
             </div>
