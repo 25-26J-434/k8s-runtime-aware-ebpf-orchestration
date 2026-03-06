@@ -337,6 +337,18 @@ func storeClusterPodMetrics(metrics UnifiedMetricsResponse) {
 	}
 }
 
+// GetClusterMetricsSnapshot returns a shallow copy of the current cluster-wide metrics map.
+// Used by the notification extension to evaluate thresholds across all nodes.
+func GetClusterMetricsSnapshot() map[string]UnifiedMetricsResponse {
+	clusterMetricsMu.RLock()
+	defer clusterMetricsMu.RUnlock()
+	out := make(map[string]UnifiedMetricsResponse, len(clusterMetrics))
+	for k, v := range clusterMetrics {
+		out[k] = v
+	}
+	return out
+}
+
 func metricsNodeKey(metrics UnifiedMetricsResponse) string {
 	if metrics.NodeName != "" && metrics.NodeName != "unknown" {
 		return metrics.NodeName
