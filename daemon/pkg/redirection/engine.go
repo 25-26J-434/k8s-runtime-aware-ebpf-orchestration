@@ -380,30 +380,32 @@ func (e *Engine) applyClusterRedirect(ctx context.Context, p *Policy, avgValue f
 		return nil, err
 	}
 
-	// For cluster scope, distribute the redirect decision to every node and let each node program
-	// its local DNAT map. This avoids fighting Kubernetes EndpointSlice reconciliation.
-	if err := e.publishClusterDNAT(ctx, p, frontendSvc, winner); err != nil {
-		e.logger.Printf("[Routing] cluster DNAT publish failed for %s/%s: %v", p.Namespace, frontendSvc.Name, err)
+	if p.Action.WinnerLabel == "" {
+		return nil, fmt.Errorf("winner_label is required for cluster redirection")
+	}
+	winKey, winVal, err := splitSelector(p.Action.WinnerLabel)
+	if err != nil {
+		return nil, fmt.Errorf("winner label: %w", err)
+	}
+	if err := e.applyWinnerLabel(ctx, targetNS, p.Action.BackendSelector, winnerPod, winKey, winVal); err != nil {
+		return nil, fmt.Errorf("apply winner label: %w", err)
+	}
+	if err := e.switchServiceSelector(ctx, frontendSvc, map[string]string{winKey: winVal}, p.PolicyName); err != nil {
 		return nil, err
 	}
 
-	if err := e.applyDNATRedirectWithPorts(ctx, frontendSvc, winner, uint16(p.Frontend.Port), uint16(p.Action.BackendPort)); err != nil {
-		return nil, err
-	}
-
-	msg := "Violation triggered. Cluster redirection applied via eBPF DNAT."
+	msg := "Violation triggered. Cluster redirection applied via service selector."
 	return &ApplyResult{
 		Applied:       true,
 		Message:       msg,
 		TargetBackend: winnerPod,
 		TTLSeconds:    p.Action.TTLSeconds,
 		Details: []string{
-			"DNAT map updated",
-			"Redirect published to all nodes",
+			"Service selector updated",
 			fmt.Sprintf("Target backend: %s", winnerPod),
 			fmt.Sprintf("Metric avg: %.2f (threshold %.2f)", avgValue, p.Telemetry.ViolationThreshold),
 		},
-		Stdout: fmt.Sprintf("DNAT map updated for service %s", frontendSvc.Name),
+		Stdout: fmt.Sprintf("Service %s selector updated to %s=%s", frontendSvc.Name, winKey, winVal),
 	}, nil
 }
 
@@ -482,11 +484,8 @@ func (e *Engine) restoreClusterRedirect(ctx context.Context, p *Policy, clearWin
 		return err
 	}
 
-	if err := e.removeClusterDNAT(ctx, p); err != nil {
-		e.logger.Printf("[Routing] cluster DNAT remove failed for %s/%s: %v", p.Namespace, frontendSvc.Name, err)
-	}
-	if err := e.deleteDNATRedirectWithPort(frontendSvc, uint16(p.Frontend.Port)); err != nil {
-		e.logger.Printf("[Routing] cluster DNAT map delete failed for %s/%s: %v", p.Namespace, frontendSvc.Name, err)
+	if err := e.restoreServiceSelector(ctx, frontendSvc); err != nil {
+		e.logger.Printf("[Routing] cluster selector restore failed for %s/%s: %v", p.Namespace, frontendSvc.Name, err)
 	}
 
 	if clearWinner && strings.ToLower(p.Action.Strategy) == "best_pod" && p.Action.WinnerLabel != "" {
@@ -495,6 +494,48 @@ func (e *Engine) restoreClusterRedirect(ctx context.Context, p *Policy, clearWin
 		}
 	}
 	return nil
+}
+
+func (e *Engine) switchServiceSelector(ctx context.Context, svc *corev1.Service, selector map[string]string, policyName string) error {
+	if svc == nil {
+		return fmt.Errorf("service is nil")
+	}
+	if len(selector) == 0 {
+		return fmt.Errorf("selector is empty")
+	}
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
+	}
+	if _, ok := svc.Annotations["ebpf-daemon/original-selector"]; !ok {
+		data, _ := json.Marshal(svc.Spec.Selector)
+		svc.Annotations["ebpf-daemon/original-selector"] = string(data)
+	}
+	svc.Annotations["ebpf-daemon/redirect-policy"] = policyName
+	svc.Spec.Selector = selector
+	_, err := e.kube.CoreV1().Services(svc.Namespace).Update(ctx, svc, metav1.UpdateOptions{})
+	return err
+}
+
+func (e *Engine) restoreServiceSelector(ctx context.Context, svc *corev1.Service) error {
+	if svc == nil {
+		return fmt.Errorf("service is nil")
+	}
+	orig := ""
+	if svc.Annotations != nil {
+		orig = svc.Annotations["ebpf-daemon/original-selector"]
+	}
+	if orig == "" {
+		return nil
+	}
+	var selector map[string]string
+	if err := json.Unmarshal([]byte(orig), &selector); err != nil {
+		return err
+	}
+	svc.Spec.Selector = selector
+	delete(svc.Annotations, "ebpf-daemon/original-selector")
+	delete(svc.Annotations, "ebpf-daemon/redirect-policy")
+	_, err := e.kube.CoreV1().Services(svc.Namespace).Update(ctx, svc, metav1.UpdateOptions{})
+	return err
 }
 
 func (e *Engine) resolveBackendService(ctx context.Context, ns string, action ActionConfig) (*corev1.Service, error) {
