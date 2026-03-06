@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -131,12 +132,13 @@ func StartServer() {
 	http.HandleFunc("/api/dnat/entries", corsMiddleware(handleDNATEntries))
 	http.HandleFunc("/api/dnat/status", corsMiddleware(handleDNATStatus))
 
-	// Scaling endpoints
-	http.HandleFunc("/api/scaling/rules", corsMiddleware(handleScalingRules))
-	http.HandleFunc("/api/scaling/rules/", corsMiddleware(handleScalingRuleByID))
-	http.HandleFunc("/api/scaling/deployments", corsMiddleware(handleScalingDeployments))
-	http.HandleFunc("/api/scaling/namespaces", corsMiddleware(handleScalingNamespaces))
-	http.HandleFunc("/api/scaling/metrics/latest", corsMiddleware(handleScalingLatestMetrics))
+   // Scaling endpoints
+   http.HandleFunc("/api/scaling/rules", corsMiddleware(handleScalingRules))
+   http.HandleFunc("/api/scaling/rules/", corsMiddleware(handleScalingRuleByID))
+   http.HandleFunc("/api/scaling/deployments", corsMiddleware(handleScalingDeployments))
+   http.HandleFunc("/api/scaling/namespaces", corsMiddleware(handleScalingNamespaces))
+   http.HandleFunc("/api/scaling/metrics/latest", corsMiddleware(handleScalingLatestMetrics))
+   http.HandleFunc("/api/scaling/pods", corsMiddleware(handleScalingPods))
 
 	// Component 2 (routing) endpoints
 	http.HandleFunc("/api/probe/", corsMiddleware(handleProbe))
@@ -158,34 +160,36 @@ func StartServer() {
 	http.HandleFunc("/ws/topology", corsMiddleware(handleWebSocketClusterTopology))
 	http.HandleFunc("/ws/pod-details", corsMiddleware(handleWebSocketPodDetails))
 
-	log.Println("[API] Starting HTTP server on :8080")
-	log.Println("[API]   GET /api/connections/topology    - Real TCP connections")
-	log.Println("[API]   GET /api/connections/pod         - Pod-specific connections")
-	log.Println("[API]   POST /api/pod/action             - Perform pod actions")
-	log.Println("[API]   POST /api/pod/ebpf-action        - eBPF-based pod actions")
-	log.Println("[API]   GET /api/pod/details             - Pod details")
-	log.Println("[API]   GET /api/scaling/rules           - Scaling rules (list)")
-	log.Println("[API]   POST /api/scaling/rules          - Scaling rules (create)")
-	log.Println("[API]   PUT /api/scaling/rules/{id}      - Scaling rules (update)")
-	log.Println("[API]   POST /api/scaling/rules/{id}/toggle - Scaling rules (toggle enabled)")
-	log.Println("[API]   GET /api/scaling/deployments     - Deployment replica info")
-	log.Println("[API]   GET /api/scaling/namespaces      - Cluster namespaces")
-	log.Println("[API]   GET /api/scaling/metrics/latest  - Latest per-deployment metrics")
-	log.Println("[API] WebSocket Endpoints:")
-	log.Println("[API]   WS /ws/metrics                   - Real-time metrics stream")
-	log.Println("[API]   WS /ws/topology                  - Real-time topology stream")
-	log.Println("[API]   WS /ws/pod-details               - Real-time pod details stream")
-	log.Println("[API] Endpoints:")
-	log.Println("[API]   GET /health                  - Health check")
-	log.Println("[API]   GET /ready                   - Readiness check")
-	log.Println("[API]   GET /metrics                 - Prometheus metrics")
-	log.Println("[API]   GET /metrics/json            - JSON metrics")
-	log.Println("[API]   GET /api/metrics             - Unified metrics (extensible)")
-	log.Println("[API]   GET /api/dns/pods            - Per-pod DNS metrics")
-	log.Println("[API]   GET /api/dns/pods/all        - Cluster-wide DNS metrics")
-	log.Println("[API]   GET /api/rtt/pods            - Per-pod RTT metrics")
-	log.Println("[API]   GET /api/cluster/topology    - Cluster topology")
-	log.Println("[API]   GET /api/cluster/services    - Services info")
+
+   log.Println("[API] Starting HTTP server on :8080")
+   log.Println("[API]   GET /api/connections/topology    - Real TCP connections")
+   log.Println("[API]   GET /api/connections/pod         - Pod-specific connections")
+   log.Println("[API]   POST /api/pod/action             - Perform pod actions")
+   log.Println("[API]   POST /api/pod/ebpf-action        - eBPF-based pod actions")
+   log.Println("[API]   GET /api/pod/details             - Pod details")
+   log.Println("[API]   GET /api/scaling/rules           - Scaling rules (list)")
+   log.Println("[API]   POST /api/scaling/rules          - Scaling rules (create)")
+   log.Println("[API]   PUT /api/scaling/rules/{id}      - Scaling rules (update)")
+   log.Println("[API]   POST /api/scaling/rules/{id}/toggle - Scaling rules (toggle enabled)")
+   log.Println("[API]   GET /api/scaling/deployments     - Deployment replica info")
+   log.Println("[API]   GET /api/scaling/namespaces      - Cluster namespaces")
+   log.Println("[API]   GET /api/scaling/metrics/latest  - Latest per-deployment metrics")
+   log.Println("[API] WebSocket Endpoints:")
+   log.Println("[API]   WS /ws/metrics                   - Real-time metrics stream")
+   log.Println("[API]   WS /ws/topology                  - Real-time topology stream")
+   log.Println("[API]   WS /ws/pod-details               - Real-time pod details stream")
+   log.Println("[API] Endpoints:")
+   log.Println("[API]   GET /health                  - Health check")
+   log.Println("[API]   GET /ready                   - Readiness check")
+   log.Println("[API]   GET /metrics                 - Prometheus metrics")
+   log.Println("[API]   GET /metrics/json            - JSON metrics")
+   log.Println("[API]   GET /api/metrics             - Unified metrics (extensible)")
+   log.Println("[API]   GET /api/dns/pods            - Per-pod DNS metrics")
+   log.Println("[API]   GET /api/dns/pods/all        - Cluster-wide DNS metrics")
+   log.Println("[API]   GET /api/rtt/pods            - Per-pod RTT metrics")
+   log.Println("[API]   GET /api/cluster/topology    - Cluster topology")
+   log.Println("[API]   GET /api/cluster/services    - Services info")
+   log.Println("[API]   GET /api/scaling/pods        - Pod placement for a deployment")
 
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalf("[API] Server failed: %v", err)
@@ -341,6 +345,7 @@ func safeMinValueUint(v uint64) uint64 {
 	return v
 }
 
+
 func buildPodDNSResponse() map[string]map[string]interface{} {
 	podDNSMetrics := telemetry.GetPodDNSMetrics()
 	response := make(map[string]map[string]interface{})
@@ -362,6 +367,7 @@ func buildPodDNSResponse() map[string]map[string]interface{} {
 	return response
 }
 
+
 // handlePodDNSMetrics returns per-pod DNS metrics
 func handlePodDNSMetrics(w http.ResponseWriter, r *http.Request) {
 	response := buildPodDNSResponse()
@@ -371,6 +377,7 @@ func handlePodDNSMetrics(w http.ResponseWriter, r *http.Request) {
 		"pods": response,
 	})
 }
+
 
 // handlePodDNSMetricsAll returns per-pod DNS metrics aggregated across all daemon pods
 func handlePodDNSMetricsAll(w http.ResponseWriter, r *http.Request) {
@@ -436,6 +443,7 @@ func handlePodDNSMetricsAll(w http.ResponseWriter, r *http.Request) {
 		"aggregated_at_utc": time.Now().UTC().Format(time.RFC3339),
 	})
 }
+
 
 // handlePodRTTMetrics returns per-pod RTT metrics
 func handlePodRTTMetrics(w http.ResponseWriter, r *http.Request) {
