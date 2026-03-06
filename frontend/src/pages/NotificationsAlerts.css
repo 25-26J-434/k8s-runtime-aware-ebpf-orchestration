@@ -1,0 +1,626 @@
+
+
+/* ── Same spacing as Dashboard (dashboard-main-wrapper: 2rem 2.5rem) ─── */
+.extensions-page.page-container.notif-alerts-fullwidth,
+.page-container.notif-alerts-fullwidth {
+  padding: 2rem 2.5rem 3rem;
+  max-width: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.notif-alerts-fullwidth .extensions-header {
+  padding-left: 0;
+  padding-right: 0;
+}
+.notif-alerts-fullwidth .extensions-content.notif-alerts-page {
+  padding-left: 0;
+  padding-right: 0;
+  box-sizing: border-box;
+}
+
+/* ── Page container (full width) ──────────────────────────────────────── */
+.notif-alerts-page {
+  --na-glass: rgba(15, 23, 42, 0.65);
+  --na-glass-border: rgba(99, 102, 241, 0.25);
+  --na-neon: rgba(99, 102, 241, 0.5);
+  --na-neon-cyan: rgba(6, 182, 212, 0.4);
+  --na-gradient: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(139, 92, 246, 0.08) 100%);
+  --na-card-bg: rgba(30, 41, 59, 0.5);
+  --na-text: #e2e8f0;
+  --na-text-muted: #94a3b8;
+  --na-radius: 12px;
+  --na-radius-sm: 8px;
+  --na-spacing: 1.25rem;
+  width: 100%;
+  max-width: 100%;
+  padding-left: 0;
+  padding-right: 0;
+  box-sizing: border-box;
+}
+
+/* Full-width dashboard wrapper and cards – overflow visible so Add Channel dropdown is not clipped */
+.notif-alerts-page .extensions-detail-card,
+.notif-alerts-page .extensions-detail-card.feature-card {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+}
+.notif-alerts-page .na-card {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.notif-alerts-page .notif-alerts-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--na-text);
+  letter-spacing: -0.02em;
+  margin: 0 0 0.25rem;
+}
+
+.notif-alerts-page .notif-alerts-subtitle {
+  font-size: 0.95rem;
+  color: var(--na-text-muted);
+  margin: 0 0 1.5rem;
+}
+
+/* ── Base card (glassmorphism + neon border) ────────────────────────────── */
+.na-card {
+  background: var(--na-card-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--na-glass-border);
+  border-radius: var(--na-radius);
+  padding: var(--na-spacing);
+  margin-bottom: 1.25rem;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.na-card:hover {
+  border-color: var(--na-neon);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15), 0 0 0 1px var(--na-neon);
+}
+
+/* Card that contains Add Channel: extra bottom space so the button is not overlapped by next section */
+.na-card:has(.na-add-channel-wrap) {
+  padding-bottom: 1.75rem;
+}
+
+.na-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--na-text);
+  margin: 0 0 0.75rem;
+}
+
+.na-card-title .na-card-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.na-card-desc {
+  font-size: 0.85rem;
+  color: var(--na-text-muted);
+  line-height: 1.5;
+  margin: 0 0 1rem;
+}
+
+/* ── Section 1: Notification Engine (full width) ───────────────────────── */
+.notif-alerts-page .na-card:first-of-type {
+  width: 100%;
+  max-width: 100%;
+}
+.na-engine-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+  width: 100%;
+}
+
+.na-toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.na-toggle {
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(71, 85, 105, 0.6);
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.na-toggle.on {
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  border-color: var(--na-neon);
+  box-shadow: 0 0 12px var(--na-neon);
+}
+
+.na-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.2s ease;
+}
+
+.na-toggle.on .na-toggle-thumb { transform: translateX(20px); }
+
+.na-interval {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.na-interval input {
+  width: 80px;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--na-radius-sm);
+  border: 1px solid var(--na-glass-border);
+  background: rgba(15, 23, 42, 0.5);
+  color: var(--na-text);
+  font-size: 0.95rem;
+}
+
+.na-interval-unit {
+  font-size: 0.85rem;
+  color: var(--na-text-muted);
+}
+
+.na-engine-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  width: 100%;
+}
+.na-engine-actions .btn { display: inline-flex; align-items: center; gap: 0.5rem; }
+
+/* Buttons use global .btn .btn-primary .btn-muted .btn-danger (same as Dashboard) */
+
+/* ── Section 2: Alert Channels ─────────────────────────────────────────── */
+.na-channels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.na-channel-card {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--na-glass-border);
+  border-radius: var(--na-radius-sm);
+  padding: 1.5rem;
+  min-height: 140px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.na-channel-card:hover {
+  border-color: var(--na-neon);
+  box-shadow: 0 0 0 1px var(--na-neon);
+}
+
+.na-channel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.na-channel-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+}
+
+.na-channel-name { font-weight: 600; color: var(--na-text); font-size: 1.05rem; }
+
+.na-channel-url {
+  font-size: 0.9rem;
+  color: var(--na-text-muted);
+  word-break: break-all;
+  margin-bottom: 0.75rem;
+  max-height: 3em;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.na-channel-enable-row {
+  margin-bottom: 0.75rem;
+}
+
+.na-channel-enable-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--na-text-muted);
+  user-select: none;
+}
+
+.na-channel-enable-label:hover { color: var(--na-text); }
+
+.na-channel-enable-text {
+  font-weight: 600;
+}
+
+.na-toggle-wrap-inline { display: inline-flex; align-items: center; }
+
+.na-toggle-sm {
+  width: 2.25rem;
+  height: 1.2rem;
+  min-width: 2.25rem;
+}
+
+.na-toggle-sm .na-toggle-thumb {
+  width: 0.95rem;
+  height: 0.95rem;
+  top: 0.125rem;
+  left: 0.15rem;
+}
+
+.na-toggle-sm.on .na-toggle-thumb { transform: translateX(1.05rem); }
+
+.na-channel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.na-channel-actions .btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+
+.na-add-channel-wrap {
+  position: relative;
+  z-index: 10;
+  margin-top: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.5rem;
+  overflow: visible;
+}
+
+/* Add Channel uses global .btn .btn-primary – ensure button is fully visible */
+.na-add-channel-wrap > .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.6rem 1.25rem;
+}
+
+/* Dropdown: full list visible, no clipping */
+.na-add-channel-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.5rem;
+  min-width: 260px;
+  width: max-content;
+  display: flex;
+  flex-direction: column;
+  background: var(--na-card-bg);
+  border: 1px solid var(--na-glass-border);
+  border-radius: var(--na-radius-sm);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  z-index: 100;
+  overflow: visible;
+  padding: 0.25rem 0;
+}
+
+.na-add-channel-dropdown .btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.5rem 1rem;
+  justify-content: flex-start;
+  text-align: left;
+  border-radius: 0;
+  border: none;
+  border-bottom: 1px solid var(--na-glass-border);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.na-add-channel-dropdown .btn:last-child { border-bottom: none; }
+.na-add-channel-dropdown .btn:hover { background: rgba(59, 130, 246, 0.12); }
+
+/* ── Section 3: Email SMTP (collapsible) ────────────────────────────────── */
+.na-email-collapse-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  user-select: none;
+}
+
+.na-email-collapse-header:hover { opacity: 0.9; }
+
+.na-email-collapse-chevron {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--na-text-muted);
+  transition: transform 0.2s ease;
+}
+
+.na-email-collapse.open .na-email-collapse-chevron { transform: rotate(180deg); }
+
+.na-email-form-compact {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.25rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.na-email-form-compact .full { grid-column: 1 / -1; }
+
+.na-email-hint {
+  font-size: 0.8rem;
+  color: var(--na-text-muted);
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: var(--na-radius-sm);
+  border-left: 3px solid rgba(59, 130, 246, 0.4);
+}
+
+.na-password-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.na-password-wrap input { flex: 1; min-width: 0; }
+
+.na-password-toggle {
+  padding: 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--na-glass-border);
+  background: rgba(15, 23, 42, 0.5);
+  color: var(--na-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.na-password-toggle:hover { color: var(--na-text); }
+
+/* ── Section 4: Alert Rules ────────────────────────────────────────────── */
+.na-rules-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.na-rule-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--na-gradient);
+  border: 1px solid var(--na-glass-border);
+  color: #60a5fa;
+}
+
+.na-rules-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.na-rules-table th,
+.na-rules-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.na-rules-table th {
+  font-weight: 600;
+  color: var(--na-text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.na-rules-table td { color: var(--na-text); }
+
+.na-rules-table tr:hover td { background: rgba(59, 130, 246, 0.04); }
+
+.na-threshold-highlight {
+  font-weight: 600;
+  color: #fbbf24;
+}
+
+.na-rule-builder {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.na-rule-builder .full { grid-column: 1 / -1; }
+
+.na-rule-builder label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--na-text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.na-rule-builder select,
+.na-rule-builder input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--na-radius-sm);
+  border: 1px solid var(--na-glass-border);
+  background: rgba(15, 23, 42, 0.5);
+  color: var(--na-text);
+  font-size: 0.9rem;
+}
+
+.na-add-rule-btn {
+  margin-top: 0.5rem;
+}
+
+/* ── Section 5: Live Metrics ───────────────────────────────────────────── */
+.na-live-panel {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--na-glass-border);
+  border-radius: var(--na-radius);
+  padding: var(--na-spacing);
+}
+
+.na-live-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  color: var(--na-text-muted);
+}
+
+.na-live-meta span strong { color: var(--na-text); margin-right: 0.25rem; }
+
+.na-live-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+
+.na-live-table th,
+.na-live-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.na-live-table th {
+  font-weight: 600;
+  color: var(--na-text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.na-status-healthy { color: #4ade80; font-weight: 500; }
+.na-status-warning { color: #fbbf24; font-weight: 500; }
+.na-status-critical { color: #f87171; font-weight: 500; }
+
+.na-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+}
+
+.na-status-badge.healthy { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+.na-status-badge.warning { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+.na-status-badge.critical { background: rgba(248, 113, 113, 0.2); color: #f87171; }
+
+.na-status-badge-dot { width: 6px; height: 6px; border-radius: 50%; }
+.na-status-badge.healthy .na-status-badge-dot { background: #4ade80; }
+.na-status-badge.warning .na-status-badge-dot { background: #fbbf24; }
+.na-status-badge.critical .na-status-badge-dot { background: #f87171; }
+
+.na-channel-url-row .btn { margin-left: 0.35rem; }
+
+/* Webhook URL row with copy */
+.na-channel-url-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* Live Metrics panel: style nested preview */
+.na-live-panel .extensions-metrics-preview {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
+}
+.na-live-panel .ext-metrics-meta,
+.na-live-panel .extensions-saved-threshold {
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--na-text-muted);
+}
+.na-live-panel .extensions-metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.na-live-panel .extensions-metrics-table th,
+.na-live-panel .extensions-metrics-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.na-live-panel .extensions-metrics-table th {
+  font-weight: 600;
+  color: var(--na-text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.na-live-panel .extensions-metrics-over {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(248, 113, 113, 0.2);
+  color: #f87171;
+}
+.na-live-panel .extensions-metrics-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .na-email-form-compact,
+  .na-rule-builder { grid-template-columns: 1fr; }
+  .na-channels-grid { grid-template-columns: 1fr; }
+}

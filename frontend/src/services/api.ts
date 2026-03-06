@@ -490,4 +490,86 @@ export const api = {
         const data = await response.json();
         return Array.isArray(data?.logs) ? (data.logs as CommLogEntry[]) : [];
     },
+
+    // Extensions (SPI)
+    async getExtensions(): Promise<{ extensions: ExtensionInfo[] }> {
+        const response = await fetch(`${API_BASE}/api/extensions`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch extensions: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+    async getExtensionConfig(name: string): Promise<Record<string, unknown>> {
+        const response = await fetch(`${API_BASE}/api/extensions/${name}/config`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            if (response.status === 404) return {};
+            throw new Error(`Failed to fetch extension config: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+    async setExtensionConfig(name: string, config: Record<string, unknown>): Promise<void> {
+        const response = await fetch(`${API_BASE}/api/extensions/${name}/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config),
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to set extension config: ${response.status} ${response.statusText}`);
+        }
+    },
+    async triggerNotificationExtension(): Promise<void> {
+        const response = await fetch(`${API_BASE}/api/extensions/notification/trigger`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to trigger notification check: ${response.status} ${response.statusText}`);
+        }
+    },
+
+    /** Sends a test message to all configured webhooks (Discord, Teams, Slack) so you can verify they receive it. */
+    async sendTestNotification(): Promise<void> {
+        const response = await fetch(`${API_BASE}/api/extensions/notification/test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to send test notification: ${response.status} ${response.statusText}`);
+        }
+    },
+
+    async getPodDetails(): Promise<{ pods: Record<string, { namespace: string; name: string; node_name: string }> }> {
+        const response = await fetch(`${API_BASE}/api/pod/details`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-cache',
+        });
+        if (!response.ok) throw new Error('Failed to fetch pod details');
+        return response.json();
+    },
 }
+
+export type ExtensionInput = {
+    key: string;
+    label: string;
+    type: string;
+    required?: boolean;
+    default?: unknown;
+    options?: { value: string; label: string }[];
+};
+
+export type ExtensionInfo = {
+    name: string;
+    label?: string;
+    description?: string;
+    inputs?: ExtensionInput[];
+    summary_keys?: string[];
+};
