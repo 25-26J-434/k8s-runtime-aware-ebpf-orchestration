@@ -372,3 +372,80 @@ export function useMetrics(_refreshInterval = 3000, selectedNodeKey?: string | n
     return { metrics, loading, error, availableNodes, totalPodsAcrossAllNodes };
 }
 
+export function useUnifiedMetricsFromWebSocket(selectedNodeKey?: string | null) {
+    const [unifiedMetrics, setUnifiedMetrics] = useState<UnifiedMetricsResponse | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<Error | null>(null);
+    const [availableNodes, setAvailableNodes] = useState<Array<{ key: string; name: string }>>([]);
+    const [podsOnSelectedNode, setPodsOnSelectedNode] = useState<string[]>([]);
+    const clusterRef = useRef<Record<string, UnifiedMetricsResponse>>({});
+    const pickAndSet = useCallback((nodeKey?: string | null) => {
+        const nodes = clusterRef.current;
+        const keys = Object.keys(nodes);
+        setAvailableNodes(keys.map((k) => ({ key: k, name: nodes[k]?.node_name || k })));
+        if (keys.length === 0) { setPodsOnSelectedNode([]); return; }
+        const key = nodeKey && nodes[nodeKey] ? nodeKey : keys[0];
+        const chosen = key ? nodes[key] : null;
+        if (chosen) {
+            setUnifiedMetrics(chosen);
+            setPodsOnSelectedNode(Object.keys(chosen.pods || {}));
+            setLoading(false);
+            setError(null);
+        } else { setPodsOnSelectedNode([]); }
+    }, []);
+    const handler = useCallback((message: any) => {
+        if (!message || typeof message !== 'object') return;
+        if (message.type === 'snapshot' && message.nodes && typeof message.nodes === 'object') {
+            clusterRef.current = message.nodes as Record<string, UnifiedMetricsResponse>;
+            pickAndSet(selectedNodeKey);
+            return;
+        }
+        if (message.type === 'node_update' && message.node != null && message.metrics) {
+            clusterRef.current = { ...clusterRef.current, [message.node]: message.metrics as UnifiedMetricsResponse };
+            pickAndSet(selectedNodeKey);
+        }
+    }, [selectedNodeKey, pickAndSet]);
+    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+        clusterMetricsWebSocketSingleton.messageHandlers.add(handler);
+        const safeCloseWebSocket = () => {
+            if (clusterMetricsWebSocketSingleton.ws) {
+                try { clusterMetricsWebSocketSingleton.ws.close(); } catch (_) {}
+                clusterMetricsWebSocketSingleton.ws = null;
+            }
+        };
+        const connectClusterWebSocket = () => {
+            if (typeof window === 'undefined') return;
+            if (clusterMetricsWebSocketSingleton.ws && (clusterMetricsWebSocketSingleton.ws.readyState === WebSocket.CONNECTING || clusterMetricsWebSocketSingleton.ws.readyState === WebSocket.OPEN)) return;
+            if (clusterMetricsWebSocketSingleton.isConnecting) return;
+            clusterMetricsWebSocketSingleton.isConnecting = true;
+            try {
+                const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/metrics/ws`);
+                clusterMetricsWebSocketSingleton.ws = ws;
+                ws.onopen = () => { clusterMetricsWebSocketSingleton.isConnecting = false; };
+                ws.onerror = () => { clusterMetricsWebSocketSingleton.isConnecting = false; safeCloseWebSocket(); };
+                ws.onclose = () => { clusterMetricsWebSocketSingleton.ws = null; clusterMetricsWebSocketSingleton.isConnecting = false; if (reconnectTimerRef.current !== null) return; safeCloseWebSocket(); reconnectTimerRef.current = setTimeout(() => { reconnectTimerRef.current = null; connectClusterWebSocket(); }, 5000); };
+                ws.onmessage = (e: MessageEvent) => {
+                    try {
+                        if (!e.data?.trim()) return;
+                        const payload = JSON.parse(e.data);
+                        clusterMetricsWebSocketSingleton.messageHandlers.forEach((h) => { try { h(payload); } catch (_) {} });
+                    } catch (_) {}
+                };
+            } catch (_) {
+                clusterMetricsWebSocketSingleton.isConnecting = false;
+                if (reconnectTimerRef.current !== null) return;
+                reconnectTimerRef.current = setTimeout(() => { reconnectTimerRef.current = null; connectClusterWebSocket(); }, 5000);
+            }
+        };
+        connectClusterWebSocket();
+        pickAndSet(selectedNodeKey);
+        return () => {
+            clusterMetricsWebSocketSingleton.messageHandlers.delete(handler);
+            if (clusterMetricsWebSocketSingleton.messageHandlers.size === 0) safeCloseWebSocket();
+            if (reconnectTimerRef.current !== null) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
+        };
+    }, [handler, pickAndSet, selectedNodeKey]);
+    useEffect(() => { pickAndSet(selectedNodeKey); }, [selectedNodeKey, pickAndSet]);
+    return { unifiedMetrics, loading, error, availableNodes, podsOnSelectedNode };
+}

@@ -1,0 +1,157 @@
+{
+  "label": "Notification",
+  "description": "",
+  "summary_keys": ["webhook_type", "threshold_value", "metric_type", "level", "node_name", "webhook_url", "webhook_url_teams", "webhook_url_slack", "email_enabled", "email_to"],
+  "inputs": [
+    {
+      "key": "enabled",
+      "label": "Enable notifications",
+      "type": "boolean",
+      "default": true,
+      "hint": "Toggle to pause or resume all alert delivery without losing your configuration."
+    },
+    {
+      "key": "interval_seconds",
+      "label": "Check interval",
+      "type": "number",
+      "default": 15,
+      "min": 5,
+      "unit": "seconds",
+      "placeholder": "15",
+      "hint": "How often (in seconds) the daemon evaluates thresholds across all cluster nodes. Minimum 5 s."
+    },
+    {
+      "key": "webhook_type",
+      "label": "Webhook type",
+      "type": "select",
+      "options": [
+        { "value": "discord", "label": "Discord" },
+        { "value": "teams",   "label": "Microsoft Teams" },
+        { "value": "slack",   "label": "Slack" }
+      ],
+      "default": "discord",
+      "hint": "Choose the platform that should receive the alert. You can add multiple destinations."
+    },
+    {
+      "key": "webhook_url",
+      "label": "Webhook URL (Discord)",
+      "type": "string",
+      "placeholder": "https://discord.com/api/webhooks/{id}/{token}",
+      "hint": "Create one at Discord › Server Settings › Integrations › Webhooks."
+    },
+    {
+      "key": "webhook_url_teams",
+      "label": "Webhook URL (Microsoft Teams)",
+      "type": "string",
+      "placeholder": "https://xxxx.webhook.office.com/webhookb2/...",
+      "hint": "Create one via a Teams channel › Connectors › Incoming Webhook."
+    },
+    {
+      "key": "webhook_url_slack",
+      "label": "Webhook URL (Slack)",
+      "type": "string",
+      "placeholder": "https://hooks.slack.com/services/T.../B.../...",
+      "hint": "Create one at api.slack.com/apps › Incoming Webhooks."
+    },
+    {
+      "key": "email_enabled",
+      "label": "Enable email alerts",
+      "type": "boolean",
+      "default": false,
+      "hint": "When enabled, alerts are also sent via SMTP to the configured addresses."
+    },
+    {
+      "key": "smtp_host",
+      "label": "SMTP host",
+      "type": "string",
+      "placeholder": "smtp.gmail.com",
+      "hint": "Your SMTP server hostname."
+    },
+    {
+      "key": "smtp_port",
+      "label": "SMTP port",
+      "type": "number",
+      "default": 587,
+      "hint": "Usually 587 (STARTTLS) or 465 (TLS)."
+    },
+    {
+      "key": "smtp_use_tls",
+      "label": "Use TLS / STARTTLS",
+      "type": "boolean",
+      "default": true,
+      "hint": "Enable for most providers (Gmail, Outlook, etc.)."
+    },
+    {
+      "key": "smtp_username",
+      "label": "SMTP username",
+      "type": "string",
+      "hint": "Leave empty if your server does not require authentication."
+    },
+    {
+      "key": "smtp_password",
+      "label": "SMTP password",
+      "type": "string",
+      "hint": "App password for Gmail/2FA. Stored in MongoDB."
+    },
+    {
+      "key": "email_from",
+      "label": "From address",
+      "type": "string",
+      "placeholder": "alerts@example.com",
+      "hint": "Sender address shown in alert emails."
+    },
+    {
+      "key": "email_to",
+      "label": "To addresses",
+      "type": "string",
+      "placeholder": "oncall@example.com, team@example.com",
+      "hint": "Comma-separated list of recipients."
+    },
+    {
+      "key": "metric_type",
+      "label": "Metric to monitor",
+      "type": "select",
+      "options": [
+        { "value": "dns_latency",        "label": "DNS latency (avg µs)"           },
+        { "value": "rtt",                "label": "RTT – round-trip time (avg µs)" },
+        { "value": "node_system",        "label": "Node CPU / memory %"            },
+        { "value": "sched_latency",      "label": "Scheduling latency (µs)"        },
+        { "value": "disk_io",            "label": "Disk I/O (bytes)"               },
+        { "value": "tcp_metrics",        "label": "TCP – packet loss / retrans"    },
+        { "value": "service_health",     "label": "Service health"                 },
+        { "value": "nat_metadata",       "label": "NAT metadata"                   },
+        { "value": "packet_distribution","label": "Packet distribution"            }
+      ],
+      "default": "dns_latency",
+      "hint": "The eBPF metric that will be evaluated against the threshold value."
+    },
+    {
+      "key": "level",
+      "label": "Granularity level",
+      "type": "select",
+      "options": [
+        { "value": "node",      "label": "Node – entire host"                },
+        { "value": "pod",       "label": "Pod – per Kubernetes workload"     },
+        { "value": "container", "label": "Container – per individual container" }
+      ],
+      "default": "pod",
+      "hint": "Aggregation scope. 'Pod' alerts per workload; 'Node' rolls all pods together."
+    },
+    {
+      "key": "node_name",
+      "label": "Node filter (optional)",
+      "type": "string",
+      "placeholder": "e.g. worker-node-1  (leave empty for cluster-wide)",
+      "hint": "Restrict this rule to one specific node. Leave blank to alert on any node in the cluster."
+    },
+    {
+      "key": "threshold_value",
+      "label": "Threshold value",
+      "type": "number",
+      "required": true,
+      "default": 100,
+      "placeholder": "100",
+      "hint": "An alert fires when the measured value exceeds this number. Unit depends on the metric selected above."
+    }
+  ]
+}
