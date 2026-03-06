@@ -213,6 +213,7 @@ func (c *scalingController) evaluateOnce() {
 		}
 
 		dep.Spec.Replicas = &desired
+		applyScalingSchedulerName(dep, rule)
 		if _, err := c.k8sClient.AppsV1().
 			Deployments(rule.Namespace).
 			Update(context.Background(), dep, metav1.UpdateOptions{}); err != nil {

@@ -22,10 +22,11 @@ type ScalingRule struct {
 	Enabled bool `bson:"enabled" json:"enabled"`
 
 	// optional tuning knobs
-	MinReplicas int32  `bson:"minReplicas,omitempty" json:"minReplicas,omitempty"`
-	MaxReplicas int32  `bson:"maxReplicas,omitempty" json:"maxReplicas,omitempty"`
-	Step        int32  `bson:"step,omitempty" json:"step,omitempty"`
-	Action      string `bson:"action,omitempty" json:"action,omitempty"`
+	MinReplicas        int32  `bson:"minReplicas,omitempty" json:"minReplicas,omitempty"`
+	MaxReplicas        int32  `bson:"maxReplicas,omitempty" json:"maxReplicas,omitempty"`
+	Step               int32  `bson:"step,omitempty" json:"step,omitempty"`
+	Action             string `bson:"action,omitempty" json:"action,omitempty"`
+	UseCustomScheduler bool   `bson:"useCustomScheduler,omitempty" json:"useCustomScheduler,omitempty"`
 
 	// status fields populated by the scaling controller
 	LastAction   string    `bson:"lastAction,omitempty" json:"lastAction,omitempty"`
