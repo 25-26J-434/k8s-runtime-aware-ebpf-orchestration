@@ -49,6 +49,19 @@ type Engine struct {
 	localNodeName string
 }
 
+func shouldSkipDNATService(svc *corev1.Service) (bool, string) {
+	if svc == nil {
+		return true, "service is nil"
+	}
+	if svc.Namespace == "kube-system" {
+		return true, "kube-system services are protected"
+	}
+	if svc.Namespace == "default" && svc.Name == "kubernetes" {
+		return true, "kubernetes API service is protected"
+	}
+	return false, ""
+}
+
 // ApplyResult mirrors the response we return to the frontend.
 type ApplyResult struct {
 	Applied       bool     `json:"applied"`
@@ -744,6 +757,9 @@ func (e *Engine) applyDNATRedirect(ctx context.Context, svc *corev1.Service, win
 	if dnatMap == nil {
 		return fmt.Errorf("dnat map not available")
 	}
+	if skip, reason := shouldSkipDNATService(svc); skip {
+		return fmt.Errorf("dnat skipped: %s", reason)
+	}
 	if svc == nil || winner == nil {
 		return fmt.Errorf("service or winner pod is nil")
 	}
@@ -784,6 +800,9 @@ func (e *Engine) applyDNATRedirectWithPorts(ctx context.Context, svc *corev1.Ser
 	dnatMap := loader.DNATMapHandle()
 	if dnatMap == nil {
 		return fmt.Errorf("dnat map not available")
+	}
+	if skip, reason := shouldSkipDNATService(svc); skip {
+		return fmt.Errorf("dnat skipped: %s", reason)
 	}
 	if svc == nil || winner == nil {
 		return fmt.Errorf("service or winner pod is nil")

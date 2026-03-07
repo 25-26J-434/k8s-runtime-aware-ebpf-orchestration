@@ -118,7 +118,7 @@ else
 fi
 
 # 4. Ensure Cilium CLI and install Cilium (no Helm required)
-echo "[4/6] Installing Cilium via Cilium CLI (Kind + LocalRedirectPolicy for Component 2)..."
+echo "[4/7] Installing Cilium via Cilium CLI (Kind + LocalRedirectPolicy, kube-proxy replacement)..."
 ensure_cilium_cli
 # k8sServiceHost: Kind control plane container name for cluster "ebpf-cluster"
 cilium install \
@@ -126,13 +126,22 @@ cilium install \
   --set image.pullPolicy=IfNotPresent \
   --set ipam.mode=kubernetes \
   --set localRedirectPolicy=true \
+  --set kubeProxyReplacement=true \
+  --set enable-bpf-masquerade=true \
   --set k8sServiceHost=ebpf-cluster-control-plane \
   --set k8sServicePort=6443
 echo "   Cilium installed"
 echo ""
 
-# 5. Wait for Cilium and nodes
-echo "[5/6] Waiting for Cilium and nodes..."
+# 5. Remove kube-proxy (Cilium handles Services via eBPF)
+echo "[5/7] Removing kube-proxy (kube-proxy replacement enabled in Cilium)..."
+kubectl -n kube-system delete ds kube-proxy --ignore-not-found
+kubectl -n kube-system delete cm kube-proxy --ignore-not-found
+echo "   kube-proxy removed"
+echo ""
+
+# 6. Wait for Cilium and nodes
+echo "[6/7] Waiting for Cilium and nodes..."
 kubectl wait --for=condition=ready pod -l k8s-app=cilium -n kube-system --timeout=300s
 kubectl wait --for=condition=Ready nodes --all --timeout=120s
 echo "   Cilium and nodes ready"
