@@ -57,6 +57,18 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
             description: 'Rate of TCP retransmissions per second.',
             typical: '0-5/s',
         },
+        disk_read_latency: {
+            label: 'Disk Read Latency',
+            unit: 'ns',
+            description: 'Average disk read latency observed across selected pods.',
+            typical: '10000-5000000ns',
+        },
+        disk_write_latency: {
+            label: 'Disk Write Latency',
+            unit: 'ns',
+            description: 'Average disk write latency observed across selected pods.',
+            typical: '10000-5000000ns',
+        },
     };
 
     const metricInfo = metricDetails[metric];
@@ -297,6 +309,8 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                                 <option value="dns_latency">dns_latency</option>
                                 <option value="rtt">rtt</option>
                                 <option value="tcp_retrans">tcp_retrans</option>
+                                <option value="disk_read_latency">disk_read_latency</option>
+                                <option value="disk_write_latency">disk_write_latency</option>
                             </select>
                         </div>
 
