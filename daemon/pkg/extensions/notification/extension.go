@@ -287,6 +287,7 @@ type thresholdSpec struct {
 }
 
 // getThresholdsFromConfig returns all threshold rules: from config["thresholds"] array, or legacy single from top-level.
+// Thresholds with value <= 0 are always skipped — a zero threshold would match every metric reading.
 func getThresholdsFromConfig(cfg spi.ExtensionParams) []thresholdSpec {
 	if cfg.Config == nil {
 		return nil
@@ -294,7 +295,13 @@ func getThresholdsFromConfig(cfg spi.ExtensionParams) []thresholdSpec {
 	raw, ok := cfg.Config["thresholds"]
 	sl, _ := raw.([]interface{})
 	if !ok || len(sl) == 0 {
-		// Legacy: single threshold from top-level
+		// Legacy: single threshold from top-level config keys (pre-drawer UI).
+		// Only use it if threshold_value was explicitly set to a positive number.
+		th := cfg.GetFloat("threshold_value")
+		if th <= 0 {
+			// No valid legacy threshold — user has not configured any rules yet.
+			return nil
+		}
 		mt := cfg.GetString("metric_type")
 		if mt == "" {
 			mt = "dns_latency"
@@ -303,7 +310,6 @@ func getThresholdsFromConfig(cfg spi.ExtensionParams) []thresholdSpec {
 		if lv == "" {
 			lv = "pod"
 		}
-		th := cfg.GetFloat("threshold_value")
 		node := cfg.GetString("node_name")
 		return []thresholdSpec{{MetricType: mt, Level: lv, Threshold: th, NodeName: node}}
 	}
@@ -311,6 +317,24 @@ func getThresholdsFromConfig(cfg spi.ExtensionParams) []thresholdSpec {
 	for _, v := range sl {
 		m, ok := v.(map[string]interface{})
 		if !ok {
+			continue
+		}
+		th := 0.0
+		switch n := m["threshold_value"].(type) {
+		case float64:
+			th = n
+		case float32:
+			th = float64(n)
+		case int:
+			th = float64(n)
+		case int32:
+			th = float64(n)
+		case int64:
+			th = float64(n)
+		}
+		// Skip rules with no meaningful threshold — they would match every metric value.
+		if th <= 0 {
+			log.Printf("[Notification] skipping threshold rule with value <= 0")
 			continue
 		}
 		mt := ""
@@ -326,19 +350,6 @@ func getThresholdsFromConfig(cfg spi.ExtensionParams) []thresholdSpec {
 		}
 		if lv == "" {
 			lv = "pod"
-		}
-		th := 0.0
-		switch n := m["threshold_value"].(type) {
-		case float64:
-			th = n
-		case float32:
-			th = float64(n)
-		case int:
-			th = float64(n)
-		case int32:
-			th = float64(n)
-		case int64:
-			th = float64(n)
 		}
 		node := ""
 		if s, ok := m["node_name"].(string); ok {
@@ -559,10 +570,12 @@ func (e *notificationExtension) Run(ctx context.Context, params spi.ExtensionPar
 		log.Printf("[Notification] [EMAIL] Run pass: webhooks=%d email_configured=%v", len(webhooks), emailSpec != nil)
 		hasDest := len(webhooks) > 0 || emailSpec != nil
 		if !hasDest {
+			log.Printf("[Notification] Run skipped: no alert channel configured (add a webhook or email)")
 			return
 		}
 		thresholds := getThresholdsFromConfig(cfg)
 		if len(thresholds) == 0 {
+			log.Printf("[Notification] Run skipped: no alert rules configured (add at least one threshold rule with value > 0)")
 			return
 		}
 		alerts := e.collectAllAlerts(thresholds)
