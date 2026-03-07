@@ -374,9 +374,10 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 	dnsMetrics := telemetry.GetPodDNSMetrics()
 	rttMetrics := telemetry.GetPodRTTMetrics()
 	tcpMetrics := telemetry.GetPodTCPMetrics()
+	diskMetrics := telemetry.GetPodDiskIOMetrics()
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	out := make([]LatestMetric, 0, len(deps.Items)*3)
+	out := make([]LatestMetric, 0, len(deps.Items)*5)
 
 	for _, dep := range deps.Items {
 		if len(dep.Spec.Selector.MatchLabels) == 0 {
@@ -402,6 +403,10 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 		var rttCount int
 		var tcpSum float64
 		var tcpCount int
+		var diskReadSum float64
+		var diskReadCount int
+		var diskWriteSum float64
+		var diskWriteCount int
 
 		for _, pod := range pods.Items {
 			key := fmt.Sprintf("%s/%s", dep.Namespace, pod.Name)
@@ -416,6 +421,12 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 			if m, ok := tcpMetrics[key]; ok {
 				tcpSum += float64(m.Retransmissions)
 				tcpCount++
+			}
+			if m, ok := diskMetrics[key]; ok {
+				diskReadSum += float64(m.AvgReadLatencyNs)
+				diskReadCount++
+				diskWriteSum += float64(m.AvgWriteLatencyNs)
+				diskWriteCount++
 			}
 		}
 
@@ -470,6 +481,42 @@ func handleScalingLatestMetrics(w http.ResponseWriter, r *http.Request) {
 				Deployment: dep.Name,
 				Metric:     "tcp_retrans",
 				Value:      float64(tcp.Retransmissions),
+				Timestamp:  now,
+			})
+		}
+		if diskReadCount > 0 {
+			out = append(out, LatestMetric{
+				Namespace:  dep.Namespace,
+				Deployment: dep.Name,
+				Metric:     "disk_read_latency",
+				Value:      diskReadSum / float64(diskReadCount),
+				Timestamp:  now,
+			})
+		} else {
+			disk := telemetry.GetDiskIOMetrics()
+			out = append(out, LatestMetric{
+				Namespace:  dep.Namespace,
+				Deployment: dep.Name,
+				Metric:     "disk_read_latency",
+				Value:      float64(disk.AvgReadLatencyNs),
+				Timestamp:  now,
+			})
+		}
+		if diskWriteCount > 0 {
+			out = append(out, LatestMetric{
+				Namespace:  dep.Namespace,
+				Deployment: dep.Name,
+				Metric:     "disk_write_latency",
+				Value:      diskWriteSum / float64(diskWriteCount),
+				Timestamp:  now,
+			})
+		} else {
+			disk := telemetry.GetDiskIOMetrics()
+			out = append(out, LatestMetric{
+				Namespace:  dep.Namespace,
+				Deployment: dep.Name,
+				Metric:     "disk_write_latency",
+				Value:      float64(disk.AvgWriteLatencyNs),
 				Timestamp:  now,
 			})
 		}

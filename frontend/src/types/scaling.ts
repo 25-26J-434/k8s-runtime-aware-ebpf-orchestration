@@ -1,4 +1,4 @@
-export type MetricType = 'dns_latency' | 'rtt' | 'tcp_retrans';
+export type MetricType = 'dns_latency' | 'rtt' | 'tcp_retrans' | 'disk_read_latency' | 'disk_write_latency';
 export type OperatorType = '>' | '<';
 export type ScalingAction = 'scale_up' | 'scale_down';
 

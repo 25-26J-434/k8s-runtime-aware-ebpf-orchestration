@@ -60,6 +60,22 @@ func GetMetricValue(metric string) (float64, error) {
 		tcp := telemetry.GetTCPMetrics()
 		return float64(tcp.Retransmissions), nil
 
+	case "disk_read_latency":
+		// Return node-level average disk read latency in nanoseconds
+		disk := telemetry.GetDiskIOMetrics()
+		if disk != nil {
+			return float64(disk.AvgReadLatencyNs), nil
+		}
+		return 0, nil
+
+	case "disk_write_latency":
+		// Return node-level average disk write latency in nanoseconds
+		disk := telemetry.GetDiskIOMetrics()
+		if disk != nil {
+			return float64(disk.AvgWriteLatencyNs), nil
+		}
+		return 0, nil
+
 	default:
 		return 0, fmt.Errorf("unknown metric: %s", metric)
 	}
@@ -151,6 +167,44 @@ func GetDeploymentMetricValue(k8sClient *kubernetes.Clientset, rule ScalingRule)
 				return val, nil
 			}
 			return 0, fmt.Errorf("no tcp metrics for deployment pods")
+		}
+		return sum / float64(count), nil
+
+	case "disk_read_latency":
+		podDisk := telemetry.GetPodDiskIOMetrics()
+		var sum float64
+		var count int
+		for _, pod := range pods.Items {
+			key := fmt.Sprintf("%s/%s", rule.Namespace, pod.Name)
+			if m, ok := podDisk[key]; ok {
+				sum += float64(m.AvgReadLatencyNs)
+				count++
+			}
+		}
+		if count == 0 {
+			if val, err := GetMetricValue("disk_read_latency"); err == nil {
+				return val, nil
+			}
+			return 0, fmt.Errorf("no disk read metrics for deployment pods")
+		}
+		return sum / float64(count), nil
+
+	case "disk_write_latency":
+		podDisk := telemetry.GetPodDiskIOMetrics()
+		var sum float64
+		var count int
+		for _, pod := range pods.Items {
+			key := fmt.Sprintf("%s/%s", rule.Namespace, pod.Name)
+			if m, ok := podDisk[key]; ok {
+				sum += float64(m.AvgWriteLatencyNs)
+				count++
+			}
+		}
+		if count == 0 {
+			if val, err := GetMetricValue("disk_write_latency"); err == nil {
+				return val, nil
+			}
+			return 0, fmt.Errorf("no disk write metrics for deployment pods")
 		}
 		return sum / float64(count), nil
 
