@@ -996,15 +996,6 @@ func (e *Engine) pickAnyPod(ctx context.Context, ns, selector string) (string, e
 	return "", nil
 }
 
-func isPodReady(pod *corev1.Pod) bool {
-	for _, cond := range pod.Status.Conditions {
-		if cond.Type == corev1.PodReady {
-			return cond.Status == corev1.ConditionTrue
-		}
-	}
-	return false
-}
-
 func boolPtr(v bool) *bool {
 	return &v
 }
