@@ -190,13 +190,30 @@ func (s *Scheduler) schedulePod(parent context.Context, key string) error {
 	if len(candidates) == 0 {
 		return fmt.Errorf("no eligible nodes available")
 	}
+	eligibleCount := len(candidates)
 
-	scores := scoreCandidates(candidates, s.cfg, time.Now().UTC())
+	now := time.Now().UTC()
+	candidates, usedHealthySubset := s.filterHealthyCandidates(candidates, now)
+	if usedHealthySubset {
+		log.Printf("[Scheduler] Using healthy candidate subset (%d/%d nodes) for pod %s/%s", len(candidates), eligibleCount, pod.Namespace, pod.Name)
+	} else {
+		log.Printf("[Scheduler] No healthy nodes available, falling back to eligible nodes for pod %s/%s", pod.Namespace, pod.Name)
+	}
+
+	scores := scoreCandidates(candidates, s.cfg, now)
 	if len(scores) == 0 {
 		return fmt.Errorf("no node scores calculated")
 	}
 
 	selected := scores[0]
+	selectedCandidate, found := candidateByName(candidates, selected.Name)
+	selectedHealthHealthy := false
+	selectedHealthStatus := "unknown"
+	if found && selectedCandidate.Telemetry.HasHealth {
+		selectedHealthHealthy = selectedCandidate.Telemetry.HealthHealthy
+		selectedHealthStatus = selectedCandidate.Telemetry.HealthStatus
+	}
+	log.Printf("[Scheduler] Selected node %s health=%t status=%s score=%.2f for pod %s/%s", selected.Name, selectedHealthHealthy, selectedHealthStatus, selected.Score, pod.Namespace, pod.Name)
 	s.incrementInflight(selected.Name)
 	defer s.decrementInflight(selected.Name)
 
@@ -220,7 +237,7 @@ func (s *Scheduler) schedulePod(parent context.Context, key string) error {
 		return err
 	}
 
-	log.Printf("[Scheduler] Bound pod %s/%s to node %s (score=%.2f base=%.2f metrics=%t)", pod.Namespace, pod.Name, selected.Name, selected.Score, selected.BaseScore, selected.HasMetrics)
+	log.Printf("[Scheduler] Bound pod %s/%s to node %s (score=%.2f base=%.2f metrics=%t health=%t status=%s healthy_subset=%t)", pod.Namespace, pod.Name, selected.Name, selected.Score, selected.BaseScore, selected.HasMetrics, selectedHealthHealthy, selectedHealthStatus, usedHealthySubset)
 	return nil
 }
 
@@ -285,6 +302,47 @@ func (s *Scheduler) isCandidateNode(node *corev1.Node) bool {
 	}
 
 	return true
+}
+
+func (s *Scheduler) filterHealthyCandidates(candidates []CandidateNode, now time.Time) ([]CandidateNode, bool) {
+	healthy := make([]CandidateNode, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidateIsHealthy(candidate, now, s.cfg.MetricsStaleAfter) {
+			healthy = append(healthy, candidate)
+		}
+	}
+
+	if len(healthy) > 0 {
+		return healthy, true
+	}
+	return candidates, false
+}
+
+func candidateIsHealthy(candidate CandidateNode, now time.Time, staleAfter time.Duration) bool {
+	if !candidate.HasMetrics || !candidate.Telemetry.HasHealth {
+		return false
+	}
+	if !candidate.Telemetry.HealthHealthy {
+		return false
+	}
+
+	healthTime := candidate.Telemetry.HealthUpdated
+	if healthTime.IsZero() {
+		return false
+	}
+	if now.Sub(healthTime) > staleAfter {
+		return false
+	}
+	return true
+}
+
+func candidateByName(candidates []CandidateNode, name string) (CandidateNode, bool) {
+	for _, candidate := range candidates {
+		if candidate.Name == name {
+			return candidate, true
+		}
+	}
+	return CandidateNode{}, false
 }
 
 func nodeConditionIsTrue(node *corev1.Node, conditionType corev1.NodeConditionType) bool {

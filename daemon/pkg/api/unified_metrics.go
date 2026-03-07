@@ -25,6 +25,7 @@ type UnifiedMetricsResponse struct {
 	Timestamp  string                            `json:"timestamp"`
 	NodeName   string                            `json:"node_name,omitempty"`
 	NodeIP     string                            `json:"node_ip,omitempty"`
+	Health     *NodeHealthUpdate                 `json:"health,omitempty"`
 	Node       map[string]interface{}            `json:"node,omitempty"`
 	Pods       map[string]map[string]interface{} `json:"pods,omitempty"`
 	Containers map[string]map[string]interface{} `json:"containers,omitempty"` // Container-level metrics
@@ -380,6 +381,12 @@ func buildUnifiedMetricsResponse(metricType, level string) UnifiedMetricsRespons
 				"last_seen":                metrics.LastSeen.Format(time.RFC3339),
 			}
 		}
+	}
+
+	nodeKey := metricsNodeKey(response)
+	if health, ok := getNodeHealthForMetrics(response.NodeName, response.NodeIP, nodeKey); ok {
+		healthCopy := health
+		response.Health = &healthCopy
 	}
 
 	return response

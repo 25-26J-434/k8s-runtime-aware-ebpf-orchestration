@@ -91,6 +91,20 @@ func publishLocalMetrics() {
 		return
 	}
 
+	if metrics.Health == nil {
+		localHealth := collectLocalNodeHealth()
+		healthCopy := localHealth
+		metrics.Health = &healthCopy
+
+		healthKey := localHealth.NodeName
+		if healthKey == "" {
+			healthKey = localHealth.NodeIP
+		}
+		if healthKey != "" {
+			storeNodeHealth(healthKey, localHealth)
+		}
+	}
+
 	storeClusterMetrics(nodeKey, metrics)
 	broadcastClusterUpdate(nodeKey, metrics)
 
@@ -128,6 +142,13 @@ func handleRemoteMetricUpdate(msg comm.Message) {
 	if nodeKey == "" {
 		log.Printf("[API] Received metrics update without identifiable node")
 		return
+	}
+
+	if metrics.Health == nil {
+		if health, ok := getNodeHealthForMetrics(metrics.NodeName, metrics.NodeIP, nodeKey); ok {
+			healthCopy := health
+			metrics.Health = &healthCopy
+		}
 	}
 
 	storeClusterMetrics(nodeKey, metrics)
