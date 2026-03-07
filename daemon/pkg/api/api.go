@@ -78,6 +78,9 @@ func StartServer() {
 
 	initMetricsStreaming()
 
+	// Initialize node health streaming (adds health monitoring endpoints and broadcasting)
+	initNodeHealthStreaming()
+
 	// Wire cluster-wide metrics into the notification extension so it evaluates
 	// thresholds for ALL nodes, not only the local daemon's own eBPF telemetry.
 	notification.SetClusterMetricsProvider(func() []notification.ClusterNodeSnapshot {
@@ -197,7 +200,13 @@ func StartServer() {
 	log.Println("[API]   GET /api/scaling/deployments     - Deployment replica info")
 	log.Println("[API]   GET /api/scaling/namespaces      - Cluster namespaces")
 	log.Println("[API]   GET /api/scaling/metrics/latest  - Latest per-deployment metrics")
+	log.Println("[API]   GET /api/cluster/node-health     - Cluster health status")
+	log.Println("[API]   GET /api/test-alert              - Generate test alert")
 	log.Println("[API] WebSocket Endpoints:")
+	log.Println("[API]   /ws/metrics       - Real-time metrics")
+	log.Println("[API]   /ws/topology      - Real-time topology")
+	log.Println("[API]   /ws/pod-details   - Real-time pod details")
+	log.Println("[API]   /ws/node-health   - Real-time health alerts")
 	log.Println("[API]   WS /ws/metrics                   - Real-time metrics stream")
 	log.Println("[API]   WS /ws/topology                  - Real-time topology stream")
 	log.Println("[API]   WS /ws/pod-details               - Real-time pod details stream")
