@@ -1,11 +1,15 @@
 import { NetworkTopology } from '../components/NetworkTopology';
-import './Page.css';
 
 export function Topology() {
     return (
-        <div className="page-container" style={{ 
-            background: 'transparent',
-            padding: 0 
+        <div style={{
+            width: '100%',
+            height: '100vh',
+            padding: '14px',
+            boxSizing: 'border-box',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
         }}>
             <NetworkTopology />
         </div>

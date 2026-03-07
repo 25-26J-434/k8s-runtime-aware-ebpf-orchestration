@@ -1,18 +1,35 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useMetrics } from '../hooks/useMetrics';
 import { api } from '../services/api';
 import { topologyWebSocket } from '../services/websocket';
 import { 
     FiRefreshCw, FiTrash2, FiX, FiCheckCircle, 
     FiAlertCircle, FiTerminal, FiRotateCw, FiZap,
-    FiServer
+    FiServer, FiGlobe
 } from 'react-icons/fi';
 import './NetworkTopology.css';
+
+const NODE_ZONE_COLORS = [
+    { fill: 'rgba(30,58,138,0.10)',  stroke: 'rgba(96,165,250,0.55)',  label: 'rgba(147,197,253,0.95)' },
+    { fill: 'rgba(22,78,99,0.10)',   stroke: 'rgba(34,211,238,0.55)',  label: 'rgba(103,232,249,0.95)' },
+    { fill: 'rgba(20,83,45,0.10)',   stroke: 'rgba(74,222,128,0.55)',  label: 'rgba(134,239,172,0.95)' },
+    { fill: 'rgba(88,28,135,0.10)',  stroke: 'rgba(192,132,252,0.55)', label: 'rgba(216,180,254,0.95)' },
+    { fill: 'rgba(120,53,15,0.10)',  stroke: 'rgba(251,146,60,0.55)',  label: 'rgba(253,186,116,0.95)'  },
+];
+
+const NS_PALETTE = [
+    { fill: 'rgba(99,102,241,0.07)',  stroke: 'rgba(99,102,241,0.30)',  label: 'rgba(165,168,255,0.75)' },
+    { fill: 'rgba(6,182,212,0.07)',   stroke: 'rgba(6,182,212,0.30)',   label: 'rgba(103,232,249,0.75)' },
+    { fill: 'rgba(16,185,129,0.07)',  stroke: 'rgba(16,185,129,0.30)',  label: 'rgba(52,211,153,0.75)'  },
+    { fill: 'rgba(245,158,11,0.07)',  stroke: 'rgba(245,158,11,0.30)',  label: 'rgba(252,211,77,0.75)'  },
+    { fill: 'rgba(236,72,153,0.07)', stroke: 'rgba(236,72,153,0.30)', label: 'rgba(249,168,212,0.75)' },
+];
 
 interface PodNode {
     id: string;
     name: string;
     namespace: string;
+    node?: string;
     x: number;
     y: number;
     vx: number;
@@ -77,6 +94,9 @@ export function NetworkTopology() {
     // Get metrics for selected node (or first node if none selected)
     const { metrics: displayMetrics } = useMetrics(3000, selectedNodeKey);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const canvasDimsRef = useRef({ w: 1200, h: 700 });
+    const [canvasDims, setCanvasDims] = useState({ w: 1200, h: 700 });
     const [pods, setPods] = useState<PodNode[]>([]);
     const [connections, setConnections] = useState<Connection[]>([]);
     const [realConnections] = useState<any[]>([]);
@@ -86,6 +106,7 @@ export function NetworkTopology() {
     const [isPaused, setIsPaused] = useState(false);
     const [showMigrationAdvisor, setShowMigrationAdvisor] = useState(false);
     const [showThresholdPanel, setShowThresholdPanel] = useState(false);
+    const [viewMode, setViewMode] = useState<'node' | 'cluster'>('cluster');
     const [migrationSuggestions, setMigrationSuggestions] = useState<MigrationSuggestion[]>([]);
     const [podLogs, setPodLogs] = useState<{pod: string, logs: string} | null>(null);
     const [actionResult, setActionResult] = useState<{type: 'success' | 'error', message: string} | null>(null);
@@ -93,7 +114,28 @@ export function NetworkTopology() {
     const [loadingLogs, setLoadingLogs] = useState<{[key: string]: boolean}>({});
     const [clusterTopology, setClusterTopology] = useState<any>(null);
     const animationRef = useRef<number>();
-    
+
+    // Resize canvas to fill its container responsively
+    useEffect(() => {
+        const frame = containerRef.current;
+        const canvas = canvasRef.current;
+        if (!frame || !canvas) return;
+
+        const observer = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                const w = Math.max(400, Math.floor(width));
+                const h = Math.max(300, Math.floor(height));
+                canvas.width = w;
+                canvas.height = h;
+                canvasDimsRef.current = { w, h };
+                setCanvasDims({ w, h });
+            }
+        });
+        observer.observe(frame);
+        return () => observer.disconnect();
+    }, []);
+
     // Threshold configuration state
     interface ThresholdConfig {
         dns_latency_critical: number;
@@ -127,6 +169,14 @@ export function NetworkTopology() {
     });
     
     const [editThresholds, setEditThresholds] = useState<ThresholdConfig>(thresholds);
+
+    // Namespace → colour mapping (stable across renders)
+    const namespaceColorMap = useMemo(() => {
+        const nsSet = [...new Set(pods.map(p => p.namespace))];
+        const map: Record<string, typeof NS_PALETTE[0]> = {};
+        nsSet.forEach((ns, i) => { map[ns] = NS_PALETTE[i % NS_PALETTE.length]; });
+        return map;
+    }, [pods]);
     
     // Fetch cluster topology via websocket (includes all nodes)
     useEffect(() => {
@@ -170,8 +220,56 @@ export function NetworkTopology() {
     // For now, realConnections will remain empty until backend adds websocket support
     // TODO: Add connections to websocket broadcaster in backend (daemon/pkg/api/websocket.go)
 
-    // Build pod nodes
+    // Build cluster-wide pod nodes (cluster view)
     useEffect(() => {
+        if (viewMode !== 'cluster') return;
+        if (!clusterTopology?.nodes?.length) return;
+
+        const nodes: any[] = clusterTopology.nodes;
+        const cols = Math.ceil(Math.sqrt(nodes.length));
+        const rows = Math.ceil(nodes.length / cols);
+        const newPods: PodNode[] = [];
+        const { w: cW, h: cH } = canvasDimsRef.current;
+        const pad = 40;
+
+        nodes.forEach((node: any, nodeIdx: number) => {
+            const col = nodeIdx % cols;
+            const row = Math.floor(nodeIdx / cols);
+            const cellW = (cW - pad * 2) / cols;
+            const cellH = (cH - pad * 2) / rows;
+            const nodeCx = pad + cellW * col + cellW / 2;
+            const nodeCy = pad + cellH * row + cellH / 2;
+
+            const nodePods: any[] = node.pods || [];
+            nodePods.forEach((pod: any, podIdx: number) => {
+                const podAngle = (podIdx / Math.max(nodePods.length, 1)) * Math.PI * 2 - Math.PI / 2;
+                const podR = Math.min(75, Math.max(35, nodePods.length * 6));
+                const podKey = `${pod.namespace || 'default'}/${pod.name}`;
+                const existingPod = pods.find(p => p.id === podKey);
+
+                newPods.push({
+                    id: podKey,
+                    name: pod.name,
+                    namespace: pod.namespace || 'default',
+                    node: node.name,
+                    x: existingPod?.x ?? (nodeCx + podR * Math.cos(podAngle)),
+                    y: existingPod?.y ?? (nodeCy + podR * Math.sin(podAngle)),
+                    vx: 0, vy: 0,
+                    health: 'good',
+                    connections: 0,
+                    metrics: { dns_latency: 0, tcp_retransmissions: 0, packet_loss: 0, events: 0 },
+                });
+            });
+        });
+
+        setPods(newPods);
+        setConnections([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewMode, clusterTopology, canvasDims]);
+
+    // Build pod nodes (node view)
+    useEffect(() => {
+        if (viewMode !== 'node') return;
         if (!displayMetrics?.pods) return;
 
         const newPods: PodNode[] = [];
@@ -180,7 +278,7 @@ export function NetworkTopology() {
         podEntries.forEach(([podKey, podData]: [string, any], index) => {
             const [namespace, name] = podKey.split('/');
             const angle = (index / podEntries.length) * Math.PI * 2;
-            const radius = 280;
+            const radius = 200;
             
             const dnsMetrics = podData.dns_latency;
             const tcpMetrics = podData.tcp_metrics;
@@ -253,7 +351,7 @@ export function NetworkTopology() {
         setPods(newPods);
         setConnections(newConnections);
 
-    }, [displayMetrics, realConnections]);
+    }, [viewMode, displayMetrics, realConnections]);
 
     // Analyze metrics for pod recommendations
     useEffect(() => {
@@ -378,21 +476,21 @@ export function NetworkTopology() {
 
                 updatedPods.forEach(pod => {
                     // Center attraction force (reduced)
-                    const centerX = 600;
-                    const centerY = 350;
+                    const centerX = canvasDimsRef.current.w / 2;
+                    const centerY = canvasDimsRef.current.h / 2;
                     const dx = centerX - pod.x;
                     const dy = centerY - pod.y;
                     pod.vx += dx * 0.00005; // Reduced from 0.0002
                     pod.vy += dy * 0.00005;
 
-                    // Repulsion between pods (reduced)
+                    // Repulsion between pods
                     updatedPods.forEach(other => {
                         if (pod.id === other.id) return;
                         const dx = other.x - pod.x;
                         const dy = other.y - pod.y;
                         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                        if (dist < 150) { // Increased from 120
-                            const force = (150 - dist) / dist * 0.2; // Reduced from 0.8
+                        if (dist < 90) {
+                            const force = (90 - dist) / dist * 0.18;
                             pod.vx -= dx * force;
                             pod.vy -= dy * force;
                         }
@@ -421,8 +519,9 @@ export function NetworkTopology() {
                     pod.vy *= 0.92;
 
                     // Keep in bounds
-                    pod.x = Math.max(80, Math.min(1120, pod.x));
-                    pod.y = Math.max(80, Math.min(620, pod.y));
+                    const { w: bW, h: bH } = canvasDimsRef.current;
+                    pod.x = Math.max(40, Math.min(bW - 40, pod.x));
+                    pod.y = Math.max(40, Math.min(bH - 40, pod.y));
                 });
 
                 return updatedPods;
@@ -448,55 +547,169 @@ export function NetworkTopology() {
         const draw = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw connections with animated flow
+            // ── 0. Node zone backgrounds (cluster view) ─────────────────────
+            if (viewMode === 'cluster' && clusterTopology?.nodes) {
+                (clusterTopology.nodes as any[]).forEach((node: any, nodeIdx: number) => {
+                    const podKeys = new Set(
+                        (node.pods || []).map((p: any) => `${p.namespace || 'default'}/${p.name}`)
+                    );
+                    const zonePods = pods.filter(p => podKeys.has(p.id));
+                    if (zonePods.length === 0) return;
+
+                    const cx = zonePods.reduce((s, p) => s + p.x, 0) / zonePods.length;
+                    const cy = zonePods.reduce((s, p) => s + p.y, 0) / zonePods.length;
+                    const maxR = Math.max(50, ...zonePods.map(p => Math.hypot(p.x - cx, p.y - cy))) + 52;
+                    const c = NODE_ZONE_COLORS[nodeIdx % NODE_ZONE_COLORS.length];
+
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, maxR, 0, Math.PI * 2);
+                    ctx.fillStyle = c.fill;
+                    ctx.fill();
+                    ctx.strokeStyle = c.stroke;
+                    ctx.lineWidth = 2.5;
+                    ctx.stroke();
+
+                    // Node name
+                    ctx.font = 'bold 11px system-ui, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = c.label;
+                    ctx.fillText(node.name || `Node ${nodeIdx + 1}`, cx, cy - maxR + 14);
+                    // IP
+                    if (node.ip) {
+                        ctx.font = '9px system-ui, sans-serif';
+                        ctx.fillStyle = c.label.replace('0.95)', '0.6)');
+                        ctx.fillText(node.ip, cx, cy - maxR + 25);
+                    }
+                    ctx.restore();
+                });
+            }
+
+            // ── 1. Namespace group backgrounds ──────────────────────────────
+            const nsSet = [...new Set(pods.map(p => p.namespace))];
+            nsSet.forEach(ns => {
+                const nsPods = pods.filter(p => p.namespace === ns);
+                if (nsPods.length === 0) return;
+                const colors = namespaceColorMap[ns];
+                if (!colors) return;
+
+                const cx = nsPods.reduce((s, p) => s + p.x, 0) / nsPods.length;
+                const cy = nsPods.reduce((s, p) => s + p.y, 0) / nsPods.length;
+                const maxR = Math.max(40, ...nsPods.map(p => Math.hypot(p.x - cx, p.y - cy))) + 44;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(cx, cy, maxR, 0, Math.PI * 2);
+                ctx.fillStyle = colors.fill;
+                ctx.fill();
+                ctx.strokeStyle = colors.stroke;
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([6, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Namespace label pinned to top of circle
+                ctx.font = 'bold 10px system-ui, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = colors.label;
+                ctx.fillText(ns, cx, cy - maxR + 13);
+                ctx.restore();
+            });
+
+            // ── 2. Inferred connections – same namespace, dashed ────────────
+            pods.forEach((pod, i) => {
+                pods.slice(i + 1).forEach(other => {
+                    if (pod.namespace !== other.namespace) return;
+                    const colors = namespaceColorMap[pod.namespace];
+                    if (!colors) return;
+
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(pod.x, pod.y);
+                    ctx.lineTo(other.x, other.y);
+                    ctx.strokeStyle = colors.stroke.replace('0.30)', '0.18)');
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([4, 7]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.restore();
+                });
+            });
+
+            // ── 3. Real connections – curved line + arrow + latency label ───
             connections.forEach(conn => {
                 const source = pods.find(p => p.id === conn.source);
                 const target = pods.find(p => p.id === conn.target);
-                if (!source || !target) {
-                    return;
-                }
+                if (!source || !target) return;
 
-                const dx = target.x - source.x;
-                const dy = target.y - source.y;
-                // Color based on latency
                 const color = conn.latency > 10000 ? '#ef4444' : conn.latency > 5000 ? '#f59e0b' : '#3b82f6';
-                
-                // Draw curved line
-                ctx.beginPath();
-                ctx.moveTo(source.x, source.y);
-                
-                // Control point for curve
                 const midX = (source.x + target.x) / 2;
                 const midY = (source.y + target.y) / 2;
-                const offset = 30;
+                const dx = target.x - source.x;
+                const dy = target.y - source.y;
                 const angle = Math.atan2(dy, dx);
+                const offset = 30;
                 const controlX = midX + offset * Math.cos(angle + Math.PI / 2);
                 const controlY = midY + offset * Math.sin(angle + Math.PI / 2);
-                
+
+                // Curved line
+                ctx.beginPath();
+                ctx.moveTo(source.x, source.y);
                 ctx.quadraticCurveTo(controlX, controlY, target.x, target.y);
-                ctx.strokeStyle = `${color}60`;
-                ctx.lineWidth = 2;
+                ctx.strokeStyle = `${color}90`;
+                ctx.lineWidth = 3.5;
                 ctx.stroke();
+
+                // Arrowhead at target (along bezier tangent at t=1)
+                const tDirX = target.x - controlX;
+                const tDirY = target.y - controlY;
+                const tLen = Math.hypot(tDirX, tDirY) || 1;
+                const nx = tDirX / tLen;
+                const ny = tDirY / tLen;
+                const podR = 24;
+                const arrowTipX = target.x - nx * podR;
+                const arrowTipY = target.y - ny * podR;
+                const arrowLen = 11;
+                const arrowSpread = Math.PI / 5;
+                const arrowA = Math.atan2(ny, nx);
+                ctx.beginPath();
+                ctx.moveTo(arrowTipX, arrowTipY);
+                ctx.lineTo(arrowTipX - arrowLen * Math.cos(arrowA - arrowSpread),
+                           arrowTipY - arrowLen * Math.sin(arrowA - arrowSpread));
+                ctx.lineTo(arrowTipX - arrowLen * Math.cos(arrowA + arrowSpread),
+                           arrowTipY - arrowLen * Math.sin(arrowA + arrowSpread));
+                ctx.closePath();
+                ctx.fillStyle = `${color}cc`;
+                ctx.fill();
+
+                // Latency label at bezier midpoint
+                if (conn.latency > 0) {
+                    const t = 0.5;
+                    const lx = (1-t)*(1-t)*source.x + 2*(1-t)*t*controlX + t*t*target.x;
+                    const ly = (1-t)*(1-t)*source.y + 2*(1-t)*t*controlY + t*t*target.y - 13;
+                    ctx.save();
+                    ctx.font = 'bold 10px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = color;
+                    ctx.fillText(`${(conn.latency / 1000).toFixed(1)}ms`, lx, ly);
+                    ctx.restore();
+                }
 
                 // Animated flow particles
                 if (!isPaused) {
                     for (let i = 0; i < 2; i++) {
                         const progress = ((Date.now() / 1500 + i * 0.5) % 1);
                         const t = progress;
-                        
                         const x = Math.pow(1 - t, 2) * source.x + 
                                  2 * (1 - t) * t * controlX + 
                                  Math.pow(t, 2) * target.x;
                         const y = Math.pow(1 - t, 2) * source.y + 
                                  2 * (1 - t) * t * controlY + 
                                  Math.pow(t, 2) * target.y;
-                        
-                        // Particle glow
                         const gradient = ctx.createRadialGradient(x, y, 0, x, y, 8);
                         gradient.addColorStop(0, color);
                         gradient.addColorStop(0.5, `${color}80`);
                         gradient.addColorStop(1, `${color}00`);
-                        
                         ctx.beginPath();
                         ctx.arc(x, y, 8, 0, Math.PI * 2);
                         ctx.fillStyle = gradient;
@@ -506,121 +719,180 @@ export function NetworkTopology() {
             });
 
             // Draw pods
+            const now = Date.now();
             pods.forEach(pod => {
                 const isSelected = selectedPod?.id === pod.id;
                 const isDragging = draggedPod?.id === pod.id;
-                const radius = isSelected ? 42 : isDragging ? 44 : 38;
+                const radius = isSelected ? 28 : isDragging ? 30 : 24;
 
-                // Glow effect
+                // ── Pulsing rings for critical pods ──────────────────────────
+                if (pod.health === 'critical' && !isPaused) {
+                    for (let ring = 0; ring < 2; ring++) {
+                        const phase = ((now + ring * 600) % 1200) / 1200;
+                        const pulseR = radius + 5 + phase * 16;
+                        const alpha = (1 - phase) * 0.55;
+                        ctx.beginPath();
+                        ctx.arc(pod.x, pod.y, pulseR, 0, Math.PI * 2);
+                        ctx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
+                        ctx.lineWidth = 1.5;
+                        ctx.stroke();
+                    }
+                }
+
+                // ── Dashed ring for warning pods ─────────────────────────────
+                if (pod.health === 'warning') {
+                    ctx.save();
+                    ctx.setLineDash([4, 4]);
+                    ctx.lineDashOffset = -(now / 60) % 16;
+                    ctx.beginPath();
+                    ctx.arc(pod.x, pod.y, radius + 5, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(251, 191, 36, 0.55)';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.restore();
+                }
+
+                // ── Selection glow ────────────────────────────────────────────
                 if (isSelected || isDragging) {
                     ctx.beginPath();
-                    ctx.arc(pod.x, pod.y, radius + 12, 0, Math.PI * 2);
-                    const glowGradient = ctx.createRadialGradient(pod.x, pod.y, radius, pod.x, pod.y, radius + 12);
-                    const glowColor = pod.health === 'critical' ? 'rgba(239, 68, 68, 0.4)' : 
-                                     pod.health === 'warning' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(59, 130, 246, 0.4)';
+                    ctx.arc(pod.x, pod.y, radius + 10, 0, Math.PI * 2);
+                    const glowGradient = ctx.createRadialGradient(pod.x, pod.y, radius, pod.x, pod.y, radius + 10);
+                    const glowColor = pod.health === 'critical' ? 'rgba(239, 68, 68, 0.35)' :
+                                     pod.health === 'warning' ? 'rgba(245, 158, 11, 0.35)' : 'rgba(59, 130, 246, 0.35)';
                     glowGradient.addColorStop(0, glowColor);
                     glowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
                     ctx.fillStyle = glowGradient;
                     ctx.fill();
                 }
 
-                // Pod circle with gradient
+                // ── Pod circle ────────────────────────────────────────────────
                 ctx.beginPath();
                 ctx.arc(pod.x, pod.y, radius, 0, Math.PI * 2);
-                
                 const gradient = ctx.createRadialGradient(
-                    pod.x - radius/3, pod.y - radius/3, 0,
+                    pod.x - radius / 3, pod.y - radius / 3, 0,
                     pod.x, pod.y, radius
                 );
-                
                 if (pod.health === 'critical') {
                     gradient.addColorStop(0, '#f87171');
-                    gradient.addColorStop(1, '#dc2626');
+                    gradient.addColorStop(0.6, '#ef4444');
+                    gradient.addColorStop(1, '#991b1b');
                 } else if (pod.health === 'warning') {
-                    gradient.addColorStop(0, '#fbbf24');
-                    gradient.addColorStop(1, '#f59e0b');
+                    gradient.addColorStop(0, '#fde68a');
+                    gradient.addColorStop(0.6, '#fbbf24');
+                    gradient.addColorStop(1, '#b45309');
                 } else {
-                    gradient.addColorStop(0, '#60a5fa');
-                    gradient.addColorStop(1, '#3b82f6');
+                    gradient.addColorStop(0, '#93c5fd');
+                    gradient.addColorStop(0.6, '#60a5fa');
+                    gradient.addColorStop(1, '#1d4ed8');
                 }
-                
                 ctx.fillStyle = gradient;
                 ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
                 ctx.shadowBlur = 15;
                 ctx.shadowOffsetX = 0;
                 ctx.shadowOffsetY = 5;
                 ctx.fill();
-                
-                // Border
+
                 ctx.shadowColor = 'transparent';
                 ctx.shadowBlur = 0;
-                ctx.strokeStyle = isSelected ? '#fff' : 'rgba(255, 255, 255, 0.4)';
+                ctx.strokeStyle = isSelected ? '#fff' :
+                    pod.health === 'critical' ? 'rgba(252, 165, 165, 0.7)' :
+                    pod.health === 'warning'  ? 'rgba(253, 230, 138, 0.7)' :
+                                               'rgba(147, 197, 253, 0.5)';
                 ctx.lineWidth = isSelected ? 3 : 2;
                 ctx.stroke();
 
-                // Kubernetes pod hexagon icon
+                // ── Health arc (DNS latency progress ring) ────────────────────
+                const dnsVal = pod.metrics.dns_latency || 0;
+                const arcFraction = Math.min(dnsVal / 10000, 1);
+                if (arcFraction > 0.04) {
+                    const arcR = radius + 4;
+                    const arcStart = -Math.PI / 2;
+                    ctx.beginPath();
+                    ctx.arc(pod.x, pod.y, arcR, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    const arcColor = arcFraction > 0.8 ? '#ef4444' : arcFraction > 0.5 ? '#f59e0b' : '#22d3ee';
+                    ctx.beginPath();
+                    ctx.arc(pod.x, pod.y, arcR, arcStart, arcStart + arcFraction * Math.PI * 2);
+                    ctx.strokeStyle = arcColor;
+                    ctx.lineWidth = 2;
+                    ctx.lineCap = 'round';
+                    ctx.stroke();
+                    ctx.lineCap = 'butt';
+                }
+
+                // ── Hexagon (Kubernetes) icon ─────────────────────────────────
+                const hexSize = 8;
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
                 ctx.beginPath();
-                const hexSize = 14;
                 for (let i = 0; i < 6; i++) {
-                    const angle = (Math.PI / 3) * i - Math.PI / 2;
-                    const hx = pod.x + hexSize * Math.cos(angle);
-                    const hy = pod.y + hexSize * Math.sin(angle);
-                    if (i === 0) {
-                        ctx.moveTo(hx, hy);
-                    } else {
-                        ctx.lineTo(hx, hy);
-                    }
+                    const a = (Math.PI / 3) * i - Math.PI / 2;
+                    const hx = pod.x + hexSize * Math.cos(a);
+                    const hy = pod.y + hexSize * Math.sin(a);
+                    if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
                 }
                 ctx.closePath();
                 ctx.fill();
-                ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+                ctx.lineWidth = 1;
                 ctx.stroke();
-                
-                // Inner circle
+
+                // Inner health-colour dot
                 ctx.beginPath();
-                ctx.arc(pod.x, pod.y, hexSize * 0.4, 0, Math.PI * 2);
-                ctx.fillStyle = pod.health === 'critical' ? '#dc2626' : 
-                               pod.health === 'warning' ? '#d97706' : '#2563eb';
+                ctx.arc(pod.x, pod.y, hexSize * 0.38, 0, Math.PI * 2);
+                ctx.fillStyle = pod.health === 'critical' ? '#dc2626' :
+                               pod.health === 'warning'  ? '#d97706' : '#2563eb';
                 ctx.fill();
 
-                // Connection count badge
+                // ── Status dot (bottom-right corner) ─────────────────────────
+                const dotX = pod.x + radius * 0.68;
+                const dotY = pod.y + radius * 0.68;
+                ctx.beginPath();
+                ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
+                ctx.fillStyle = pod.health === 'critical' ? '#ef4444' :
+                               pod.health === 'warning'  ? '#f59e0b' : '#22c55e';
+                ctx.fill();
+                ctx.strokeStyle = '#0f172a';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // ── Connection count badge ────────────────────────────────────
                 if (pod.connections > 0) {
                     ctx.beginPath();
-                    ctx.arc(pod.x + radius - 8, pod.y - radius + 8, 12, 0, Math.PI * 2);
+                    ctx.arc(pod.x + radius - 6, pod.y - radius + 6, 8, 0, Math.PI * 2);
                     ctx.fillStyle = '#1e293b';
                     ctx.fill();
                     ctx.strokeStyle = '#3b82f6';
-                    ctx.lineWidth = 2;
+                    ctx.lineWidth = 1.5;
                     ctx.stroke();
-                    
                     ctx.fillStyle = '#fff';
-                    ctx.font = 'bold 11px sans-serif';
+                    ctx.font = 'bold 8px sans-serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
-                    ctx.fillText(pod.connections.toString(), pod.x + radius - 8, pod.y - radius + 8);
+                    ctx.fillText(pod.connections.toString(), pod.x + radius - 6, pod.y - radius + 6);
                 }
 
-                // Pod name
+                // ── Pod name ──────────────────────────────────────────────────
                 ctx.fillStyle = '#f1f5f9';
-                ctx.font = 'bold 12px sans-serif';
+                ctx.font = 'bold 10px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'top';
-                const displayName = pod.name.length > 18 ? pod.name.substring(0, 16) + '..' : pod.name;
-                ctx.fillText(displayName, pod.x, pod.y + radius + 8);
-                
+                const displayName = pod.name.length > 16 ? pod.name.substring(0, 14) + '..' : pod.name;
+                ctx.fillText(displayName, pod.x, pod.y + radius + 6);
+
                 // Namespace
-                ctx.font = '10px sans-serif';
-                ctx.fillStyle = 'rgba(203, 213, 225, 0.8)';
-                ctx.fillText(pod.namespace, pod.x, pod.y + radius + 24);
+                ctx.font = '9px sans-serif';
+                ctx.fillStyle = 'rgba(203, 213, 225, 0.65)';
+                ctx.fillText(pod.namespace, pod.x, pod.y + radius + 18);
             });
 
             requestAnimationFrame(draw);
         };
 
         draw();
-    }, [pods, connections, selectedPod, draggedPod, isPaused]);
+    }, [pods, connections, selectedPod, draggedPod, isPaused, namespaceColorMap, viewMode, clusterTopology]);
 
     // Mouse handlers
     const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -634,7 +906,7 @@ export function NetworkTopology() {
         const clickedPod = pods.find(pod => {
             const dx = pod.x - x;
             const dy = pod.y - y;
-            return Math.sqrt(dx * dx + dy * dy) < 38;
+            return Math.sqrt(dx * dx + dy * dy) < 28;
         });
 
         if (clickedPod) {
@@ -765,42 +1037,43 @@ export function NetworkTopology() {
                 <div>
                     <h2>Pod Network Topology</h2>
                     <span className="topology-stats">
-                        {selectedNode ? `${selectedNodePodCount} Pods on ${selectedNode}` : `${pods.length} Pods`} • {connections.length} Connections
+                        {viewMode === 'cluster'
+                            ? `${clusterTopology?.nodes?.length ?? 0} Nodes · ${pods.length} Pods`
+                            : (selectedNode ? `${selectedNodePodCount} Pods on ${selectedNode}` : `${pods.length} Pods`)
+                        }
                     </span>
                 </div>
                 <div className="topology-controls-pro">
-                    <div className="node-selector-container">
-                        <FiServer style={{ color: '#60a5fa', fontSize: '1.25rem' }} />
-                        <label style={{ color: '#e2e8f0', fontSize: '0.95rem', fontWeight: 500 }}>
-                            Select Node:
-                        </label>
+                    {/* Unified view selector: Cluster View + per-node options */}
+                    <div className="topology-view-select-wrap">
+                        {viewMode === 'cluster' ? <FiGlobe className="topology-view-select-icon" /> : <FiServer className="topology-view-select-icon" />}
                         <select
-                            value={selectedNodeKey || ''}
+                            className="topology-view-select"
+                            value={viewMode === 'cluster' ? '__cluster__' : (selectedNodeKey || '')}
                             onChange={(e) => {
-                                const newKey = e.target.value || null;
-                                setSelectedNodeKey(newKey);
-                                if (newKey) {
-                                    localStorage.setItem('selectedNodeKey', newKey);
+                                const val = e.target.value;
+                                if (val === '__cluster__') {
+                                    setViewMode('cluster');
+                                } else {
+                                    setViewMode('node');
+                                    setSelectedNodeKey(val || null);
+                                    if (val) localStorage.setItem('selectedNodeKey', val);
                                 }
                             }}
-                            style={{
-                                padding: '0.5rem 1rem',
-                                background: 'rgba(30, 41, 59, 0.8)',
-                                border: '1px solid rgba(71, 85, 105, 0.5)',
-                                borderRadius: '6px',
-                                color: '#e2e8f0',
-                                fontSize: '0.95rem',
-                                cursor: 'pointer',
-                                minWidth: '250px',
-                            }}
                         >
-                            {availableNodes.map((node) => (
-                                <option key={node.key} value={node.key}>
-                                    {node.name} {node.ip ? `(${node.ip})` : ''}
-                                </option>
-                            ))}
+                            <option value="__cluster__">Cluster View — All Nodes</option>
+                            {availableNodes.length > 0 && (
+                                <optgroup label="Single Node">
+                                    {availableNodes.map((node) => (
+                                        <option key={node.key} value={node.key}>
+                                            {node.name}{node.ip ? ` (${node.ip})` : ''}
+                                        </option>
+                                    ))}
+                                </optgroup>
+                            )}
                         </select>
                     </div>
+
                     <button 
                         className={`control-btn-pro ${isPaused ? '' : 'active'}`}
                         onClick={() => setIsPaused(!isPaused)}
@@ -810,9 +1083,7 @@ export function NetworkTopology() {
                     </button>
                     <button 
                         className={`control-btn-pro ${showMigrationAdvisor ? 'active' : ''}`}
-                        onClick={() => {
-                            setShowMigrationAdvisor(!showMigrationAdvisor);
-                        }}
+                        onClick={() => setShowMigrationAdvisor(!showMigrationAdvisor)}
                     >
                         <FiZap />
                         Pod Recommendations
@@ -832,25 +1103,52 @@ export function NetworkTopology() {
                 </div>
             )}
 
+            {/* Namespace bar */}
+            {Object.keys(namespaceColorMap).length > 0 && (
+                <div className="topology-ns-bar">
+                    <span className="topology-ns-bar-label">Namespaces</span>
+                    {Object.entries(namespaceColorMap).map(([ns, colors]) => (
+                        <span
+                            key={ns}
+                            className="topology-ns-tag"
+                            style={{
+                                color: colors.label,
+                                borderColor: colors.stroke,
+                                background: colors.fill,
+                            }}
+                        >
+                            <span className="topology-ns-tag-dot" style={{ background: colors.stroke }} />
+                            {ns}
+                        </span>
+                    ))}
+                    <span
+                        className="topology-ns-tag"
+                        style={{ color: 'rgba(148,163,184,0.7)', borderColor: 'rgba(148,163,184,0.25)', background: 'transparent', borderStyle: 'dashed', marginLeft: 'auto' }}
+                    >
+                        ╌╌ same-namespace link
+                    </span>
+                </div>
+            )}
+
             {/* Canvas */}
             <div className="topology-canvas-container">
-                <canvas
-                    ref={canvasRef}
-                    width={1200}
-                    height={700}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onMouseLeave={handleMouseUp}
-                    style={{ cursor: draggedPod ? 'grabbing' : 'grab' }}
-                />
-                
-                {pods.length === 0 && (
-                    <div className="topology-empty">
-                        <p>No pods available</p>
-                        <span>Deploy pods to see network topology</span>
-                    </div>
-                )}
+                <div className="topology-canvas-frame" ref={containerRef}>
+                    <canvas
+                        ref={canvasRef}
+                        onMouseDown={handleMouseDown}
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handleMouseUp}
+                        onMouseLeave={handleMouseUp}
+                        style={{ cursor: draggedPod ? 'grabbing' : 'grab', display: 'block', width: '100%', height: '100%' }}
+                    />
+
+                    {pods.length === 0 && (
+                        <div className="topology-empty">
+                            <p>No pods available</p>
+                            <span>Deploy pods to see network topology</span>
+                        </div>
+                    )}
+                </div>
             </div>
 
 
@@ -1335,6 +1633,17 @@ export function NetworkTopology() {
                 <div className="legend-item">
                     <div className="legend-arrow red"></div>
                     <span>Poor (&gt;10s)</span>
+                </div>
+                <div className="legend-separator"></div>
+                {Object.entries(namespaceColorMap).map(([ns, colors]) => (
+                    <div key={ns} className="legend-item">
+                        <div className="legend-ns-dot" style={{ background: colors.stroke, border: `1px dashed ${colors.stroke}` }} />
+                        <span style={{ color: colors.label }}>{ns}</span>
+                    </div>
+                ))}
+                <div className="legend-item" style={{ opacity: 0.6 }}>
+                    <div className="legend-ns-dashed" />
+                    <span>Same-namespace link</span>
                 </div>
             </div>
         </div>
