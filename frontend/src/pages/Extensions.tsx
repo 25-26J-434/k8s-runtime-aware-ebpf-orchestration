@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, type ExtensionInfo, type ExtensionInput } from '../services/api';
 import { useUnifiedMetricsFromWebSocket } from '../hooks/useMetrics';
-import { FiSave, FiPlusCircle, FiEdit2, FiTrash2, FiChevronRight, FiActivity, FiSend, FiSliders, FiInfo, FiMail, FiEye, FiEyeOff, FiCopy } from 'react-icons/fi';
+import { FiSave, FiPlusCircle, FiEdit2, FiTrash2, FiChevronRight, FiActivity, FiSend, FiSliders, FiInfo, FiMail, FiEye, FiEyeOff, FiCopy, FiX, FiCheckCircle } from 'react-icons/fi';
 import { SiDiscord, SiSlack } from 'react-icons/si';
 import { FiMessageCircle } from 'react-icons/fi';
 
@@ -127,7 +127,7 @@ export function Extensions() {
     const [selected, setSelectedState] = useState<string | null>(null);
     const [config, setConfig] = useState<Record<string, unknown>>({});
     const [saving, setSaving] = useState(false);
-    const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+    const [saveSuccess, setSaveSuccess] = useState<{ title: string; subtitle: string } | null>(null);
     const [nodeNames, setNodeNames] = useState<string[]>([]);
     const [editingThresholdIndex, setEditingThresholdIndex] = useState<number | null>(null);
     const [newThreshold, setNewThreshold] = useState<NewThresholdForm>({ metric_type: 'dns_latency', level: 'pod', threshold_value: 100, node_name: '', pod_name: '' });
@@ -141,9 +141,8 @@ export function Extensions() {
     const [newEmailTo, setNewEmailTo] = useState('');
     const [emailSectionCollapsed, setEmailSectionCollapsed] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
-    const [addChannelOpen, setAddChannelOpen] = useState(false);
-    const [showAddWebhookForm, setShowAddWebhookForm] = useState(false);
-    const addChannelRef = useRef<HTMLDivElement>(null);
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [drawerMode, setDrawerMode] = useState<'add-rule' | 'edit-rule' | 'add-channel' | 'edit-channel' | 'edit-email'>('add-rule');
 
     const emailToList = (String(config.email_to ?? '').split(/[,;]/).map((s) => s.trim()).filter(Boolean)) as string[];
     const updateEmailToList = (list: string[]) => updateConfig('email_to', list.join(', '));
@@ -238,19 +237,6 @@ export function Extensions() {
         }
     }, [selected, loadConfig]);
 
-    useEffect(() => {
-        if (!addChannelOpen) return;
-        const onOutside = (e: MouseEvent) => {
-            if (addChannelRef.current && !addChannelRef.current.contains(e.target as Node)) setAddChannelOpen(false);
-        };
-        document.addEventListener('click', onOutside, true);
-        return () => document.removeEventListener('click', onOutside, true);
-    }, [addChannelOpen]);
-
-    // Keep dropdown closed when add/edit form is visible to avoid overlap (e.g. "Editing destination" over dropdown)
-    useEffect(() => {
-        if (editingWebhookId || showAddWebhookForm) setAddChannelOpen(false);
-    }, [editingWebhookId, showAddWebhookForm]);
 
     // Node list: same WebSocket as Dashboard (cluster-wide); fallback to cluster topology when WS has no nodes yet
     const nodeOptions = wsNodes.length > 0
@@ -269,31 +255,42 @@ export function Extensions() {
     const { podsOnSelectedNode } = useUnifiedMetricsFromWebSocket(nodeKeyForPods ?? undefined);
     const podsForNode = selected === 'notification' && nodeKeyForPods ? podsOnSelectedNode : [];
 
-    const handleSaveConfig = async () => {
+    // Accepts an optional configOverride so drawers can pass the freshly-built
+    // config directly, avoiding the async state-update timing issue.
+    const handleSaveConfig = async (configOverride?: Record<string, unknown>, label?: string, triggerEval = false) => {
         if (!selected || !ext) return;
+        if (triggerEval && selected === 'notification') {
+            const base = configOverride ?? config;
+            const wh = Array.isArray(base.webhooks) ? (base.webhooks as WebhookRow[]) : [];
+            const th = Array.isArray(base.thresholds) ? (base.thresholds as ThresholdRow[]) : [];
+            const channelOk = wh.some(w => w.enabled !== false && w.url) || base.email_enabled === true;
+            const ruleOk = th.some(t => Number(t.threshold_value) > 0);
+            if (!channelOk) { setError('Add at least one enabled alert channel (webhook or email) before running a check.'); return; }
+            if (!ruleOk) { setError('Add at least one alert rule with a threshold value > 0 before running a check.'); return; }
+        }
         setSaving(true);
         setError(null);
         setSaveSuccess(null);
         let fullConfig: Record<string, unknown> = {};
+        const base = configOverride ?? config;
         if (selected === 'notification') {
-            // Cluster-wide: thresholds saved to MongoDB with node_name per rule (empty = any node); daemons evaluate and alert when any threshold exceeded on any node
             fullConfig = {
-                enabled: config.enabled !== false,
-                interval_seconds: Number(config.interval_seconds) || 15,
-                webhooks: Array.isArray(config.webhooks) ? config.webhooks : [],
-                thresholds: Array.isArray(config.thresholds) ? config.thresholds : [],
-                email_enabled: config.email_enabled === true,
-                smtp_host: String(config.smtp_host ?? '').trim(),
-                smtp_port: Number(config.smtp_port) || 587,
-                smtp_use_tls: config.smtp_use_tls !== false,
-                smtp_username: String(config.smtp_username ?? '').trim(),
-                smtp_password: String(config.smtp_password ?? '').trim(),
-                email_from: String(config.email_from ?? '').trim(),
-                email_to: String(config.email_to ?? '').trim(),
+                enabled: base.enabled !== false,
+                interval_seconds: Number(base.interval_seconds) || 15,
+                webhooks: Array.isArray(base.webhooks) ? base.webhooks : [],
+                thresholds: Array.isArray(base.thresholds) ? base.thresholds : [],
+                email_enabled: base.email_enabled === true,
+                smtp_host: String(base.smtp_host ?? '').trim(),
+                smtp_port: Number(base.smtp_port) || 587,
+                smtp_use_tls: base.smtp_use_tls !== false,
+                smtp_username: String(base.smtp_username ?? '').trim(),
+                smtp_password: String(base.smtp_password ?? '').trim(),
+                email_from: String(base.email_from ?? '').trim(),
+                email_to: String(base.email_to ?? '').trim(),
             };
         } else {
             ext.inputs?.forEach((input) => {
-                fullConfig[input.key] = config[input.key] ?? input.default;
+                fullConfig[input.key] = base[input.key] ?? input.default;
             });
         }
         try {
@@ -303,12 +300,17 @@ export function Extensions() {
                 setEditingEmail(false);
                 setEditingWebhookId(null);
                 setNewWebhookUrl('');
-                await api.triggerNotificationExtension();
-                setSaveSuccess('Configuration saved.');
+                const validThresholds = Array.isArray(fullConfig.thresholds)
+                    ? (fullConfig.thresholds as ThresholdRow[]).filter(t => Number(t.threshold_value) > 0)
+                    : [];
+                if (triggerEval && validThresholds.length > 0) {
+                    await api.triggerNotificationExtension();
+                }
+                setSaveSuccess({ title: 'Configuration Saved', subtitle: label ?? 'Notification settings updated.' });
             } else {
-                setSaveSuccess('Configuration saved.');
+                setSaveSuccess({ title: 'Configuration Saved', subtitle: label ?? 'Extension settings updated.' });
             }
-            setTimeout(() => setSaveSuccess(null), 5000);
+            setTimeout(() => setSaveSuccess(null), 3500);
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to save config');
         } finally {
@@ -316,83 +318,102 @@ export function Extensions() {
         }
     };
 
+    const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const updateConfig = (key: string, value: unknown) => {
-        setConfig((prev) => ({ ...prev, [key]: value }));
+        const updated = { ...config, [key]: value };
+        setConfig(updated);
+        if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+        autoSaveTimer.current = setTimeout(() => {
+            handleSaveConfig(updated, 'Settings auto-saved.');
+        }, 800);
     };
 
     const webhooksList = (selected === 'notification' && Array.isArray(config.webhooks) ? config.webhooks : []) as WebhookRow[];
     const thresholdsList = (selected === 'notification' && Array.isArray(config.thresholds) ? config.thresholds : []) as ThresholdRow[];
 
     const addWebhook = (type: 'teams' | 'discord' | 'slack', url: string) => {
-        setConfig((prev) => ({
-            ...prev,
-            webhooks: [...(Array.isArray(prev.webhooks) ? prev.webhooks : []), { id: genId(), type, url: url.trim(), enabled: true }],
-        }));
+        const label = type === 'discord' ? 'Discord' : type === 'slack' ? 'Slack' : 'Microsoft Teams';
+        const updated = { ...config, webhooks: [...(Array.isArray(config.webhooks) ? config.webhooks : []), { id: genId(), type, url: url.trim(), enabled: true }] };
+        setConfig(updated);
+        setNewWebhookUrl('');
+        setDrawerOpen(false);
+        handleSaveConfig(updated, `${label} channel added.`);
     };
     const deleteWebhook = (id: string) => {
-        setConfig((prev) => ({
-            ...prev,
-            webhooks: (Array.isArray(prev.webhooks) ? prev.webhooks : []).filter((w: WebhookRow) => w.id !== id),
-        }));
+        const w = (Array.isArray(config.webhooks) ? config.webhooks : []).find((x: WebhookRow) => x.id === id) as WebhookRow | undefined;
+        const label = w ? (w.type === 'discord' ? 'Discord' : w.type === 'slack' ? 'Slack' : 'Microsoft Teams') : 'Channel';
+        const updated = { ...config, webhooks: (Array.isArray(config.webhooks) ? config.webhooks : []).filter((x: WebhookRow) => x.id !== id) };
+        setConfig(updated);
+        handleSaveConfig(updated, `${label} channel removed.`);
     };
     const setWebhookEnabled = (id: string, enabled: boolean) => {
-        setConfig((prev) => ({
-            ...prev,
-            webhooks: (Array.isArray(prev.webhooks) ? prev.webhooks : []).map((w: WebhookRow) => (w.id === id ? { ...w, enabled } : w)),
-        }));
+        const w = (Array.isArray(config.webhooks) ? config.webhooks : []).find((x: WebhookRow) => x.id === id) as WebhookRow | undefined;
+        const label = w ? (w.type === 'discord' ? 'Discord' : w.type === 'slack' ? 'Slack' : 'Microsoft Teams') : 'Channel';
+        const updated = { ...config, webhooks: (Array.isArray(config.webhooks) ? config.webhooks : []).map((x: WebhookRow) => x.id === id ? { ...x, enabled } : x) };
+        setConfig(updated);
+        handleSaveConfig(updated, `${label} ${enabled ? 'enabled' : 'disabled'}.`);
     };
     const updateWebhook = (id: string, type: 'teams' | 'discord' | 'slack', url: string) => {
-        setConfig((prev) => ({
-            ...prev,
-            webhooks: (Array.isArray(prev.webhooks) ? prev.webhooks : []).map((w: WebhookRow) =>
-                w.id === id ? { ...w, type, url: url.trim() } : w
-            ),
-        }));
+        const label = type === 'discord' ? 'Discord' : type === 'slack' ? 'Slack' : 'Microsoft Teams';
+        const updated = { ...config, webhooks: (Array.isArray(config.webhooks) ? config.webhooks : []).map((x: WebhookRow) => x.id === id ? { ...x, type, url: url.trim() } : x) };
+        setConfig(updated);
         setEditingWebhookId(null);
         setNewWebhookType('discord');
         setNewWebhookUrl('');
+        setDrawerOpen(false);
+        handleSaveConfig(updated, `${label} channel updated.`);
     };
     const startEditWebhook = (w: WebhookRow) => {
-        setAddChannelOpen(false);
         setNewWebhookType(w.type);
         setNewWebhookUrl(w.url || '');
         setEditingWebhookId(w.id);
-        setShowAddWebhookForm(true);
+        setDrawerMode('edit-channel');
+        setDrawerOpen(true);
     };
 
     const addThreshold = () => {
-        setConfig((prev) => ({
-            ...prev,
-            thresholds: [...(Array.isArray(prev.thresholds) ? prev.thresholds : []), { id: genId(), ...newThreshold }],
-        }));
+        if (Number(newThreshold.threshold_value) <= 0) { setError('Threshold value must be greater than 0.'); return; }
+        const updated = { ...config, thresholds: [...(Array.isArray(config.thresholds) ? config.thresholds : []), { id: genId(), ...newThreshold }] };
+        setConfig(updated);
         setNewThreshold({ metric_type: 'dns_latency', level: 'pod', threshold_value: 100, node_name: '', pod_name: '' });
+        setDrawerOpen(false);
+        handleSaveConfig(updated, 'Alert rule added.');
     };
     const updateThresholdAt = () => {
         if (editingThresholdIndex == null) return;
-        setConfig((prev) => {
-            const th = Array.isArray(prev.thresholds) ? [...prev.thresholds] : [];
-            if (editingThresholdIndex >= 0 && editingThresholdIndex < th.length) th[editingThresholdIndex] = { ...th[editingThresholdIndex], ...newThreshold };
-            return { ...prev, thresholds: th };
-        });
+        if (Number(newThreshold.threshold_value) <= 0) { setError('Threshold value must be greater than 0.'); return; }
+        const th = Array.isArray(config.thresholds) ? [...config.thresholds] : [];
+        if (editingThresholdIndex >= 0 && editingThresholdIndex < th.length) th[editingThresholdIndex] = { ...th[editingThresholdIndex], ...newThreshold };
+        const updated = { ...config, thresholds: th };
+        setConfig(updated);
         setEditingThresholdIndex(null);
         setNewThreshold({ metric_type: 'dns_latency', level: 'pod', threshold_value: 100, node_name: '', pod_name: '' });
+        setDrawerOpen(false);
+        handleSaveConfig(updated, 'Alert rule updated.');
     };
     const deleteThresholdAt = (index: number) => {
-        setConfig((prev) => {
-            const th = Array.isArray(prev.thresholds) ? prev.thresholds : [];
-            return { ...prev, thresholds: th.filter((_, i) => i !== index) };
-        });
-        if (editingThresholdIndex === index) setEditingThresholdIndex(null);
+        const th = Array.isArray(config.thresholds) ? config.thresholds : [];
+        const updated = { ...config, thresholds: th.filter((_, i) => i !== index) };
+        setConfig(updated);
+        handleSaveConfig(updated, 'Alert rule deleted.');
+        if (editingThresholdIndex === index) { setEditingThresholdIndex(null); setDrawerOpen(false); }
         else if (editingThresholdIndex != null && editingThresholdIndex > index) setEditingThresholdIndex(editingThresholdIndex - 1);
     };
     const startEditThreshold = (index: number) => {
         const row = thresholdsList[index];
         if (row) setNewThreshold({ metric_type: row.metric_type || 'dns_latency', level: row.level || 'pod', threshold_value: Number(row.threshold_value) || 100, node_name: row.node_name ?? '', pod_name: row.pod_name ?? '' });
         setEditingThresholdIndex(index);
+        setDrawerMode('edit-rule');
+        setDrawerOpen(true);
     };
 
     const ext = extensions.find((e) => e.name === selected);
     const hasConfigEndpoint = selected === 'notification';
+
+    // Readiness checks for sending notifications
+    const hasChannel = webhooksList.some(w => w.enabled !== false && w.url) || config.email_enabled === true;
+    const hasValidRule = thresholdsList.some(t => Number(t.threshold_value) > 0);
+    const readyToNotify = hasChannel && hasValidRule;
 
     return (
         <div className={`page-container extensions-page ${selected === 'notification' ? 'notif-alerts-fullwidth' : ''}`}>
@@ -416,11 +437,13 @@ export function Extensions() {
                 {loading && <div className="extensions-loading">Loading extensions…</div>}
                 {error && <div className="error">{error}</div>}
                 {saveSuccess && (
-                    <div className="extensions-save-success-popup" role="alert" aria-live="polite">
-                        <div className="extensions-save-success-popup-inner">
-                            <span className="extensions-save-success-popup-icon">✓</span>
-                            <span>{saveSuccess}</span>
+                    <div className="ext-toast" role="alert" aria-live="polite">
+                        <div className="ext-toast-icon-wrap"><FiCheckCircle className="ext-toast-icon" /></div>
+                        <div className="ext-toast-body">
+                            <span className="ext-toast-title">{saveSuccess.title}</span>
+                            <span className="ext-toast-subtitle">{saveSuccess.subtitle}</span>
                         </div>
+                        <div className="ext-toast-bar" />
                     </div>
                 )}
 
@@ -432,8 +455,7 @@ export function Extensions() {
 
                 {!loading && !error && ext && (
                     <div className="extensions-detail feature-card extensions-detail-card">
-                        {hasConfigEndpoint && ext.inputs && ext.inputs.length > 0 ? (
-                                            hasConfigEndpoint ? (
+                        {hasConfigEndpoint ? (
                                                 <>
                                                     {/* 1️⃣ Enable / interval */}
                                                     <div className="na-card">
@@ -447,232 +469,114 @@ export function Extensions() {
                                                                 <input id="na-interval-input" type="number" min={5} value={Number(config.interval_seconds) || 15} onChange={(e) => updateConfig('interval_seconds', Number(e.target.value) || 15)} />
                                                                 <span className="na-interval-unit">seconds</span>
                                                             </div>
-                                                        </div>
-                                                        <div className="na-engine-actions">
-                                                            <button type="button" className="btn btn-primary" onClick={handleSaveConfig} disabled={saving}><FiSave /> {saving ? 'Saving…' : 'Save Configuration'}</button>
+                                                            <div className="na-readiness-row">
+                                                                <span className={`na-readiness-chip ${hasChannel ? 'ok' : 'missing'}`}>{hasChannel ? <FiCheckCircle size={14} /> : <FiX size={14} />} Alert channel</span>
+                                                                <span className={`na-readiness-chip ${hasValidRule ? 'ok' : 'missing'}`}>{hasValidRule ? <FiCheckCircle size={14} /> : <FiX size={14} />} Alert rule</span>
+                                                                {readyToNotify && <span className="na-readiness-chip ok na-readiness-ready"><FiCheckCircle size={14} /> Ready to notify</span>}
+                                                            </div>
                                                         </div>
                                                     </div>
 
                                                     {/* 2️⃣ Alert Channels */}
                                                     <div className="na-card">
-                                                        <h2 className="na-card-title"><FiSend className="na-card-icon" aria-hidden /> Alert Channels</h2>
-                                                        <p className="na-card-desc">Configure where alerts are sent.</p>
+                                                        <div className="na-rules-header">
+                                                            <h2 className="na-card-title"><FiSend className="na-card-icon" aria-hidden /> Alert Channels</h2>
+                                                            <button type="button" className="btn btn-primary" onClick={() => { setEditingWebhookId(null); setNewWebhookType('discord'); setNewWebhookUrl(''); setDrawerMode('add-channel'); setDrawerOpen(true); }}><FiPlusCircle /> Add Channel</button>
+                                                        </div>
                                                         <div className="na-channels-grid">
                                                             {webhooksList.map((w) => {
                                                                 const ChanIcon = w.type === 'discord' ? SiDiscord : w.type === 'slack' ? SiSlack : FiMessageCircle;
-                                                                const name = w.type === 'discord' ? 'Discord' : w.type === 'slack' ? 'Slack' : 'Microsoft Teams';
+                                                                const chanName = w.type === 'discord' ? 'Discord' : w.type === 'slack' ? 'Slack' : 'Microsoft Teams';
+                                                                const chanColor = w.type === 'discord' ? '#5865F2' : w.type === 'slack' ? '#E01E5A' : '#6264A7';
+                                                                const enabled = w.enabled !== false;
                                                                 return (
-                                                                    <div key={w.id} className="na-channel-card">
-                                                                        <div className="na-channel-header">
-                                                                            <ChanIcon className="na-channel-icon" style={{ color: w.type === 'discord' ? '#5865F2' : w.type === 'slack' ? '#E01E5A' : '#6264A7' }} aria-hidden />
-                                                                            <span className="na-channel-name">{name}</span>
+                                                                    <div key={w.id} className={`na-chan-card ${enabled ? 'na-chan-card-on' : 'na-chan-card-off'}`} style={{ '--chan-color': chanColor } as React.CSSProperties}>
+                                                                        <div className="na-chan-top">
+                                                                            <div className="na-chan-icon-wrap">
+                                                                                <ChanIcon className="na-chan-icon" aria-hidden />
+                                                                            </div>
+                                                                            <div className="na-chan-info">
+                                                                                <span className="na-chan-name">{chanName}</span>
+                                                                                <span className="na-chan-type">{w.type} · webhook</span>
+                                                                            </div>
+                                                                            <span className={`na-chan-badge ${enabled ? 'na-chan-badge-on' : 'na-chan-badge-off'}`}>{enabled ? 'Active' : 'Inactive'}</span>
                                                                         </div>
-                                                                        <div className="na-channel-url-row">
-                                                                            <span className="na-channel-url" title={w.url}>{w.url ? (w.url.length > 40 ? w.url.slice(0, 40) + '…' : w.url) : '—'}</span>
-                                                                            {w.url && (
-                                                                                <button type="button" className="btn btn-sm" onClick={() => { navigator.clipboard.writeText(w.url); }} title="Copy URL"><FiCopy /></button>
-                                                                            )}
-                                                                        </div>
-                                                                        <div className="na-channel-enable-row">
-                                                                            <label className="na-channel-enable-label">
-                                                                                <span className="na-toggle-wrap-inline">
-                                                                                    <div className={`na-toggle na-toggle-sm ${w.enabled !== false ? 'on' : ''}`} role="switch" aria-checked={w.enabled !== false} tabIndex={0} onClick={() => setWebhookEnabled(w.id, !(w.enabled !== false))} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setWebhookEnabled(w.id, !(w.enabled !== false)); } }}><div className="na-toggle-thumb" /></div>
-                                                                                </span>
-                                                                                <span className="na-channel-enable-text">{w.enabled !== false ? 'Enabled' : 'Disabled'}</span>
-                                                                            </label>
-                                                                        </div>
-                                                                        <div className="na-channel-actions">
-                                                                            <button type="button" className="btn btn-sm btn-muted" onClick={() => startEditWebhook(w)}>Edit</button>
-                                                                            <button type="button" className="btn btn-sm btn-danger" onClick={() => deleteWebhook(w.id)}>Delete</button>
+                                                                        {w.url && (
+                                                                            <div className="na-chan-url-row">
+                                                                                <span className="na-chan-url" title={w.url}>{w.url}</span>
+                                                                                <button type="button" className="na-chan-copy" onClick={() => navigator.clipboard.writeText(w.url)} title="Copy URL"><FiCopy size={11} /></button>
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="na-chan-footer">
+                                                                            <div className={`na-toggle na-toggle-sm ${enabled ? 'on' : ''}`} role="switch" aria-checked={enabled} tabIndex={0} onClick={() => setWebhookEnabled(w.id, !enabled)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setWebhookEnabled(w.id, !enabled); } }} title={enabled ? 'Disable' : 'Enable'}><div className="na-toggle-thumb" /></div>
+                                                                            <div className="na-chan-actions">
+                                                                                <button type="button" className="na-chan-btn" onClick={() => startEditWebhook(w)}><FiEdit2 size={12} /> Edit</button>
+                                                                                <button type="button" className="na-chan-btn na-chan-btn-del" onClick={() => deleteWebhook(w.id)}><FiTrash2 size={12} /> Delete</button>
+                                                                            </div>
                                                                         </div>
                                                                     </div>
                                                                 );
                                                             })}
                                                             {config.email_enabled === true && (String(config.smtp_host ?? '').trim() !== '' || String(config.email_to ?? '').trim() !== '') && (
-                                                                <div className="na-channel-card">
-                                                                    <div className="na-channel-header">
-                                                                        <FiMail className="na-channel-icon" style={{ color: '#60a5fa' }} aria-hidden />
-                                                                        <span className="na-channel-name">Email</span>
+                                                                <div className="na-chan-card na-chan-card-on" style={{ '--chan-color': '#60a5fa' } as React.CSSProperties}>
+                                                                    <div className="na-chan-top">
+                                                                        <div className="na-chan-icon-wrap">
+                                                                            <FiMail className="na-chan-icon" aria-hidden />
+                                                                        </div>
+                                                                        <div className="na-chan-info">
+                                                                            <span className="na-chan-name">Email</span>
+                                                                            <span className="na-chan-type">SMTP · {String(config.smtp_host || '—')}</span>
+                                                                        </div>
+                                                                        <span className="na-chan-badge na-chan-badge-on">Active</span>
                                                                     </div>
-                                                                    <div className="na-channel-url">{String(config.smtp_host || '—')} · SMTP configured</div>
-                                                                    <div className="na-channel-status active"><span className="na-channel-status-dot" />Active</div>
-                                                                    <div className="na-channel-actions">
-                                                                        <button type="button" className="btn btn-sm btn-muted" onClick={() => setEditingEmail(true)}>Edit</button>
-                                                                        <button type="button" className="btn btn-sm btn-muted" onClick={() => setEmailSectionCollapsed(false)}>Edit SMTP</button>
+                                                                    <div className="na-chan-footer" style={{ justifyContent: 'flex-end' }}>
+                                                                        <div className="na-chan-actions">
+                                                                            <button type="button" className="na-chan-btn" onClick={() => { setDrawerMode('edit-email'); setDrawerOpen(true); }}><FiEdit2 size={12} /> Configure</button>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             )}
-                                                        </div>
-                                                        <div className="na-add-channel-wrap" ref={addChannelRef}>
-                                                            <button type="button" className="btn btn-primary" onClick={() => setAddChannelOpen((o) => !o)}><FiPlusCircle /> Add Channel</button>
-                                                            {addChannelOpen && (
-                                                                <div className="na-add-channel-dropdown">
-                                                                    <button type="button" className="btn btn-sm btn-muted" onClick={() => { setNewWebhookType('discord'); setAddChannelOpen(false); setShowAddWebhookForm(true); }}><SiDiscord style={{ color: '#5865F2' }} /> Discord</button>
-                                                                    <button type="button" className="btn btn-sm btn-muted" onClick={() => { setNewWebhookType('slack'); setAddChannelOpen(false); setShowAddWebhookForm(true); }}><SiSlack style={{ color: '#E01E5A' }} /> Slack</button>
-                                                                    <button type="button" className="btn btn-sm btn-muted" onClick={() => { setNewWebhookType('teams'); setAddChannelOpen(false); setShowAddWebhookForm(true); }}><FiMessageCircle style={{ color: '#6264A7' }} /> Microsoft Teams</button>
-                                                                    <button type="button" className="btn btn-sm btn-muted" onClick={() => { setEditingEmail(true); setEmailSectionCollapsed(false); setAddChannelOpen(false); }}><FiMail /> Email (SMTP)</button>
-                                                                </div>
+                                                            {webhooksList.length === 0 && config.email_enabled !== true && (
+                                                                <p className="ext-notif-empty">No channels yet. Click <strong>Add Channel</strong> to configure one.</p>
                                                             )}
                                                         </div>
-                                                        {(editingWebhookId || showAddWebhookForm) && (
-                                                            <div className="ext-notif-add-webhook" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                                                                {editingWebhookId && <span className="ext-notif-editing-badge">Editing destination</span>}
-                                                                <select value={newWebhookType} onChange={(e) => { setNewWebhookType(e.target.value as 'teams'|'discord'|'slack'); if (!editingWebhookId) setNewWebhookUrl(''); }}>
-                                                                    <option value="discord">Discord</option>
-                                                                    <option value="teams">Microsoft Teams</option>
-                                                                    <option value="slack">Slack</option>
-                                                                </select>
-                                                                <div className="ext-notif-url-wrap">
-                                                                    <input type="url" placeholder={newWebhookType === 'teams' ? 'https://xxxx.webhook.office.com/…' : newWebhookType === 'slack' ? 'https://hooks.slack.com/…' : 'https://discord.com/api/webhooks/…'} value={newWebhookUrl} onChange={(e) => setNewWebhookUrl(e.target.value)} className="ext-notif-url-input" />
-                                                                </div>
-                                                                {editingWebhookId ? (
-                                                                    <><button type="button" className="btn btn-primary" style={{ marginRight: '0.5rem' }} onClick={() => { if (newWebhookUrl.trim() && editingWebhookId) { updateWebhook(editingWebhookId, newWebhookType, newWebhookUrl); setAddChannelOpen(false); } }}><FiEdit2 /> Update</button><button type="button" className="btn btn-muted" onClick={() => { setEditingWebhookId(null); setNewWebhookType('discord'); setNewWebhookUrl(''); setAddChannelOpen(false); }}>Cancel</button></>
-                                                                ) : (
-                                                                    <><button type="button" className="btn btn-primary" style={{ marginRight: '0.5rem' }} onClick={() => { if (newWebhookUrl.trim()) { addWebhook(newWebhookType, newWebhookUrl); setNewWebhookUrl(''); setShowAddWebhookForm(false); } }}><FiPlusCircle /> Add destination</button><button type="button" className="btn btn-muted" onClick={() => { setShowAddWebhookForm(false); setNewWebhookUrl(''); }}>Cancel</button></>
-                                                                )}
-                                                            </div>
-                                                        )}
                                                     </div>
 
-                                                    {/* 3️⃣ Email SMTP Settings (collapsible) */}
+                                                    {/* 3️⃣ Email SMTP */}
                                                     <div className="na-card">
-                                                        <div className={`na-email-collapse ${emailSectionCollapsed ? '' : 'open'}`}>
-                                                            <div className="na-email-collapse-header" onClick={() => setEmailSectionCollapsed((c) => !c)}>
-                                                                <h2 className="na-card-title"><FiMail className="na-card-icon" aria-hidden /> Email SMTP Settings</h2>
-                                                                <FiChevronRight className="na-email-collapse-chevron" aria-hidden />
+                                                        <div className="na-rules-header">
+                                                            <h2 className="na-card-title"><FiMail className="na-card-icon" aria-hidden /> Email SMTP</h2>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                                <label className="na-channel-enable-label" style={{ margin: 0 }}>
+                                                                    <span className="na-toggle-wrap-inline">
+                                                                        <div className={`na-toggle na-toggle-sm ${config.email_enabled === true ? 'on' : ''}`} role="switch" aria-checked={config.email_enabled === true} tabIndex={0} onClick={() => updateConfig('email_enabled', !(config.email_enabled === true))} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); updateConfig('email_enabled', !(config.email_enabled === true)); } }}><div className="na-toggle-thumb" /></div>
+                                                                    </span>
+                                                                    <span className="na-channel-enable-text">{config.email_enabled === true ? 'Enabled' : 'Disabled'}</span>
+                                                                </label>
+                                                                <button type="button" className="btn btn-primary" onClick={() => { setDrawerMode('edit-email'); setDrawerOpen(true); }}><FiEdit2 /> Configure</button>
                                                             </div>
-                                                        <label className="ext-notif-checkbox" style={{ marginBottom: '0.5rem' }}>
-                                                            <input type="checkbox" checked={config.email_enabled === true} onChange={(e) => { updateConfig('email_enabled', e.target.checked); if (!e.target.checked) setEditingEmail(false); }} />
-                                                            <span>Enable email alerts</span>
-                                                        </label>
-                                                        {!emailSectionCollapsed && (
-                                                        <>
-                                                        {/* Saved email summary: ordered card when configured and not editing */}
-                                                        {config.email_enabled === true && String(config.smtp_host ?? '').trim() !== '' && String(config.email_to ?? '').trim() !== '' && !editingEmail && (
-                                                            <div className="ext-notif-email-summary">
-                                                                <div className="ext-notif-email-summary-grid">
-                                                                    <div className="ext-notif-email-summary-item">
-                                                                        <span className="ext-notif-email-summary-label">Server</span>
-                                                                        <span className="ext-notif-email-summary-value">{String(config.smtp_host)}:{Number(config.smtp_port) || 587}</span>
-                                                                    </div>
-                                                                    <div className="ext-notif-email-summary-item">
-                                                                        <span className="ext-notif-email-summary-label">From</span>
-                                                                        <span className="ext-notif-email-summary-value">{String(config.email_from || '—')}</span>
-                                                                    </div>
-                                                                    <div className="ext-notif-email-summary-item ext-notif-email-summary-to">
-                                                                        <span className="ext-notif-email-summary-label">To</span>
-                                                                        <div className="ext-notif-email-summary-to-list">
-                                                                            {emailToList.map((addr, i) => (
-                                                                                <span key={i} className="ext-notif-email-chip">{addr}</span>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="ext-notif-email-summary-actions">
-                                                                    <button type="button" className="btn btn-primary" onClick={() => { setEditingEmail(true); setEmailSectionCollapsed(false); }}><FiEdit2 /> Edit email settings</button>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                        {/* Email form: when enabled and (editing or no saved config yet) */}
-                                                        {config.email_enabled === true && (editingEmail || String(config.smtp_host ?? '').trim() === '' || String(config.email_to ?? '').trim() === '') && (
-                                                            <div className="ext-notif-email-form na-email-form-compact">
-                                                                <div className="ext-notif-email-form-block">
-                                                                    <h4 className="ext-notif-email-form-block-title">Server</h4>
-                                                                    <div className="ext-notif-email-grid">
-                                                                        <div className="extensions-form-row">
-                                                                            <label>SMTP host</label>
-                                                                            <input type="text" placeholder="smtp.gmail.com" value={String(config.smtp_host ?? '')} onChange={(e) => updateConfig('smtp_host', e.target.value)} className="ext-notif-url-input" />
-                                                                            <span className="ext-notif-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />e.g. smtp.gmail.com, smtp.office365.com</span>
-                                                                        </div>
-                                                                        <div className="extensions-form-row">
-                                                                            <label>Port</label>
-                                                                            <input type="number" min={1} max={65535} value={Number(config.smtp_port) || 587} onChange={(e) => updateConfig('smtp_port', Number(e.target.value) || 587)} />
-                                                                            <span className="ext-notif-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />587 (STARTTLS) or 465 (TLS).</span>
-                                                                        </div>
-                                                                        <div className="extensions-form-row ext-notif-checkbox-row ext-rule-full">
-                                                                            <label className="ext-notif-checkbox">
-                                                                                <input type="checkbox" checked={config.smtp_use_tls !== false} onChange={(e) => updateConfig('smtp_use_tls', e.target.checked)} />
-                                                                                <span>Use TLS / STARTTLS</span>
-                                                                            </label>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="ext-notif-email-form-block">
-                                                                    <h4 className="ext-notif-email-form-block-title">Authentication</h4>
-                                                                    <div className="ext-notif-email-grid">
-                                                                        <div className="extensions-form-row">
-                                                                            <label>Username <span className="ext-notif-optional-badge">optional</span></label>
-                                                                            <input type="text" placeholder="Leave empty if no auth" value={String(config.smtp_username ?? '')} onChange={(e) => updateConfig('smtp_username', e.target.value)} className="ext-notif-url-input" autoComplete="off" />
-                                                                        </div>
-                                                                        <div className="extensions-form-row">
-                                                                            <label>Password <span className="ext-notif-optional-badge">optional</span></label>
-                                                                            <div className="na-password-wrap">
-                                                                                <input type={showPassword ? 'text' : 'password'} placeholder="App password for Gmail/2FA" value={String(config.smtp_password ?? '')} onChange={(e) => updateConfig('smtp_password', e.target.value)} className="ext-notif-url-input" autoComplete="off" />
-                                                                                <button type="button" className="na-password-toggle" onClick={() => setShowPassword((p) => !p)} title={showPassword ? 'Hide password' : 'Show password'} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <FiEyeOff size={16} /> : <FiEye size={16} />}</button>
-                                                                            </div>
-                                                                            <span className="ext-notif-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />Use an app password for Gmail or 2FA accounts.</span>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="ext-notif-email-form-block">
-                                                                    <h4 className="ext-notif-email-form-block-title">Recipients</h4>
-                                                                    <div className="ext-notif-email-grid">
-                                                                        <div className="extensions-form-row ext-rule-full">
-                                                                            <label>From address</label>
-                                                                            <input type="email" placeholder="alerts@example.com" value={String(config.email_from ?? '')} onChange={(e) => updateConfig('email_from', e.target.value)} className={`ext-notif-url-input ${String(config.email_from ?? '').trim() && !isValidEmail(String(config.email_from ?? '')) ? 'ext-notif-input-invalid' : ''}`} />
-                                                                            {String(config.email_from ?? '').trim() && !isValidEmail(String(config.email_from ?? '')) && (
-                                                                                <span className="ext-notif-validation-err">Enter a valid email address (e.g. user@gmail.com)</span>
-                                                                            )}
-                                                                        </div>
-                                                                        <div className="extensions-form-row ext-rule-full">
-                                                                            <label>To addresses</label>
-                                                                            <div className="ext-notif-email-to-list">
-                                                                                {emailToList.map((addr, i) => (
-                                                                                    <div key={i} className="ext-notif-email-to-row">
-                                                                                        <div className="ext-notif-email-to-cell">
-                                                                                            <input type="email" placeholder="email@example.com" value={addr} onChange={(e) => updateEmailToRecipient(i, e.target.value)} className={`ext-notif-url-input ${addr.trim() && !isValidEmail(addr) ? 'ext-notif-input-invalid' : ''}`} />
-                                                                                            {addr.trim() && !isValidEmail(addr) && <span className="ext-notif-validation-err">Invalid email</span>}
-                                                                                        </div>
-                                                                                        <button type="button" className="btn btn-sm extensions-table-btn extensions-table-btn-danger" onClick={() => removeEmailToRecipient(i)} title="Remove"><FiTrash2 /></button>
-                                                                                    </div>
-                                                                                ))}
-                                                                                <div className="ext-notif-email-to-row ext-notif-email-to-add">
-                                                                                    <div className="ext-notif-email-to-cell">
-                                                                                        <input type="email" placeholder="Add recipient…" value={newEmailTo} onChange={(e) => setNewEmailTo(e.target.value)} className={`ext-notif-url-input ${newEmailTo.trim() && !isValidEmail(newEmailTo) ? 'ext-notif-input-invalid' : ''}`} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addEmailToRecipient())} />
-                                                                                        {newEmailTo.trim() && !isValidEmail(newEmailTo) && <span className="ext-notif-validation-err">Enter a valid email (e.g. user@gmail.com)</span>}
-                                                                                    </div>
-                                                                                    <button type="button" className="btn btn-primary btn-sm" onClick={addEmailToRecipient} disabled={!newEmailTo.trim() || !isValidEmail(newEmailTo)} title="Add recipient"><FiPlusCircle /> Add</button>
-                                                                                </div>
-                                                                            </div>
-                                                                            <span className="ext-notif-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />Alerts are sent to all listed addresses.</span>
-                                                                        </div>
-                                                                        <div className="ext-notif-email-actions ext-rule-full">
-                                                                            {editingEmail && (
-                                                                                <>
-                                                                                    <button type="button" className="btn btn-primary" onClick={handleSaveConfig} disabled={saving}>
-                                                                                        <FiSave /> {saving ? 'Saving…' : 'Save configuration'}
-                                                                                    </button>
-                                                                                    {String(config.smtp_host ?? '').trim() !== '' && emailToList.length > 0 && (
-                                                                                        <button type="button" className="btn btn-muted" onClick={() => setEditingEmail(false)}>Cancel</button>
-                                                                                    )}
-                                                                                </>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                        <p className="na-email-hint">Gmail requires an App Password when 2-factor authentication is enabled.</p>
-                                                        </>
-                                                        )}
                                                         </div>
+                                                        {String(config.smtp_host ?? '').trim() !== '' ? (
+                                                            <div className="na-email-summary-row">
+                                                                <span className="na-email-summary-chip"><span className="na-email-summary-chip-label">Server</span>{String(config.smtp_host)}:{Number(config.smtp_port) || 587}</span>
+                                                                <span className="na-email-summary-chip"><span className="na-email-summary-chip-label">From</span>{String(config.email_from || '—')}</span>
+                                                                {emailToList.length > 0 && <span className="na-email-summary-chip"><span className="na-email-summary-chip-label">To</span>{emailToList.join(', ')}</span>}
+                                                            </div>
+                                                        ) : (
+                                                            <p className="ext-notif-empty" style={{ margin: '0.25rem 0 0' }}>Not configured. Click <strong>Configure</strong> to set up SMTP.</p>
+                                                        )}
                                                     </div>
 
                                                     {/* 4️⃣ Alert Rules */}
                                                     <div className="na-card">
                                                         <div className="na-rules-header">
-                                                            <h2 className="na-card-title"><FiSliders className="na-card-icon" aria-hidden /> Alert Rules</h2>
-                                                            <span className="na-rule-count-badge">{thresholdsList.length} rule{thresholdsList.length !== 1 ? 's' : ''}</span>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                                <h2 className="na-card-title" style={{ margin: 0 }}><FiSliders className="na-card-icon" aria-hidden /> Alert Rules</h2>
+                                                                <span className="na-rule-count-badge">{thresholdsList.length} rule{thresholdsList.length !== 1 ? 's' : ''}</span>
+                                                            </div>
+                                                            <button type="button" className="btn btn-primary" onClick={() => { setEditingThresholdIndex(null); setNewThreshold({ metric_type: 'dns_latency', level: 'pod', threshold_value: 100, node_name: '', pod_name: '' }); setDrawerMode('add-rule'); setDrawerOpen(true); }}>
+                                                                <FiPlusCircle /> Add Rule
+                                                            </button>
                                                         </div>
                                                         <table className="na-rules-table">
                                                             <thead>
@@ -680,17 +584,17 @@ export function Extensions() {
                                                                     <th>Metric</th>
                                                                     <th>Scope</th>
                                                                     <th>Threshold</th>
-                                                                    <th>Node Filter</th>
-                                                                    <th>Pod Filter</th>
+                                                                    <th>Node</th>
+                                                                    <th>Pod</th>
                                                                     <th>Actions</th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
                                                                 {thresholdsList.length === 0 ? (
-                                                                    <tr><td colSpan={6} style={{ color: 'var(--na-text-muted)', padding: '1rem' }}>No rules yet. Add one below.</td></tr>
+                                                                    <tr><td colSpan={6} style={{ color: 'var(--na-text-muted)', padding: '1rem', textAlign: 'center' }}>No rules yet. Click <strong>Add Rule</strong> to create one.</td></tr>
                                                                 ) : thresholdsList.map((row, i) => (
                                                                     <tr key={row.id}>
-                                                                        <td>{({ dns_latency: 'DNS latency', rtt: 'RTT', node_system: 'Node CPU/memory %', sched_latency: 'Scheduling latency', disk_io: 'Disk I/O', tcp_metrics: 'TCP metrics', service_health: 'Service health', nat_metadata: 'NAT metadata', packet_distribution: 'Packet distribution' } as Record<string, string>)[row.metric_type] || row.metric_type}</td>
+                                                                        <td>{({ dns_latency: 'DNS latency', rtt: 'RTT', node_system: 'Node CPU/mem %', sched_latency: 'Sched latency', disk_io: 'Disk I/O', tcp_metrics: 'TCP', service_health: 'Svc health', nat_metadata: 'NAT', packet_distribution: 'Packets' } as Record<string, string>)[row.metric_type] || row.metric_type}</td>
                                                                         <td>{row.level || '—'}</td>
                                                                         <td><span className="na-threshold-highlight">{row.threshold_value ?? '—'} {({'dns_latency':'µs','rtt':'µs','node_system':'%','sched_latency':'µs','disk_io':'bytes'} as Record<string,string>)[row.metric_type] || ''}</span></td>
                                                                         <td>{row.node_name || 'all'}</td>
@@ -705,124 +609,212 @@ export function Extensions() {
                                                                 ))}
                                                             </tbody>
                                                         </table>
-                                                        <div className="na-rule-builder">
-                                                            <div className="extensions-form-row full">
-                                                                <label>Metric</label>
-                                                                <select
-                                                                    value={newThreshold.metric_type}
-                                                                    onChange={(e) => setNewThreshold((p) => ({ ...p, metric_type: e.target.value }))}
-                                                                >
-                                                                    <option value="dns_latency">DNS latency (avg µs)</option>
-                                                                    <option value="rtt">RTT – round-trip time (avg µs)</option>
-                                                                    <option value="node_system">Node CPU / memory %</option>
-                                                                    <option value="sched_latency">Scheduling latency (µs)</option>
-                                                                    <option value="disk_io">Disk I/O (bytes)</option>
-                                                                    <option value="tcp_metrics">TCP – packet loss / retrans</option>
-                                                                    <option value="service_health">Service health</option>
-                                                                    <option value="nat_metadata">NAT metadata</option>
-                                                                    <option value="packet_distribution">Packet distribution</option>
-                                                                </select>
-                                                                <span className="ext-notif-hint">
-                                                                    <FiInfo className="ext-notif-hint-icon" aria-hidden />
-                                                                    {{
-                                                                        dns_latency: 'Average DNS resolution latency per pod/node. Typical healthy range: < 1000 µs.',
-                                                                        rtt: 'Average network round-trip time. Typical healthy range: < 500 µs.',
-                                                                        node_system: 'Node-level CPU or memory usage percentage. Alert above 80–90 % is common.',
-                                                                        sched_latency: 'Kernel run-queue wait time. High values indicate CPU contention.',
-                                                                        disk_io: 'Total read + write bytes for the pod/container per interval.',
-                                                                        tcp_metrics: 'TCP packet loss or retransmission count. Any non-zero value may warrant an alert.',
-                                                                        service_health: 'Number of unhealthy Kubernetes services detected by eBPF.',
-                                                                        nat_metadata: 'Active or total NAT connections tracked by the kernel.',
-                                                                        packet_distribution: 'Total packet count on the node per interval.',
-                                                                    }[newThreshold.metric_type] ?? ''}
-                                                                </span>
-                                                            </div>
-                                                            <div className="extensions-form-row">
-                                                                <label>Granularity level (Scope)</label>
-                                                                <select value={newThreshold.level} onChange={(e) => setNewThreshold((p) => ({ ...p, level: e.target.value }))}>
-                                                                    <option value="node">Node – entire host</option>
-                                                                    <option value="pod">Pod – per workload</option>
-                                                                    <option value="container">Container – per container</option>
-                                                                </select>
-                                                                <span className="ext-notif-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />
-                                                                    {newThreshold.level === 'node' && 'Aggregated across all pods on the node.'}
-                                                                    {newThreshold.level === 'pod' && 'Evaluated per Kubernetes pod. Best for workload-level alerting.'}
-                                                                    {newThreshold.level === 'container' && 'Evaluated per individual container. Most granular.'}
-                                                                </span>
-                                                            </div>
-                                                            <div className="extensions-form-row">
-                                                                <label>
-                                                                    Threshold value
-                                                                    <span className="ext-notif-unit-badge">
-                                                                        {({'dns_latency':'µs','rtt':'µs','node_system':'%','sched_latency':'µs','disk_io':'bytes'} as Record<string,string>)[newThreshold.metric_type] ?? 'count'}
-                                                                    </span>
-                                                                </label>
-                                                                <input
-                                                                    type="number"
-                                                                    value={newThreshold.threshold_value}
-                                                                    onChange={(e) => setNewThreshold((p) => ({ ...p, threshold_value: Number(e.target.value) || 0 }))}
-                                                                />
-                                                                <span className="ext-notif-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />Alert fires when the live value <strong>exceeds</strong> this number.</span>
-                                                            </div>
-                                                            <div className="extensions-form-row">
-                                                                <label>Node filter</label>
-                                                                <select
-                                                                    value={newThreshold.node_name || ''}
-                                                                    onChange={(e) => setNewThreshold((p) => ({ ...p, node_name: e.target.value || undefined, pod_name: '' }))}
-                                                                >
-                                                                    <option value="">Any node (cluster-wide)</option>
-                                                                    {nodeOptions.map((n: { key: string; name: string }) => (
-                                                                        <option key={n.key} value={n.name || n.key}>{n.name || n.key}</option>
-                                                                    ))}
-                                                                </select>
-                                                                <span className="ext-notif-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />Leave empty to alert on any node.</span>
-                                                            </div>
-                                                            <div className="extensions-form-row">
-                                                                <label>Pod filter</label>
-                                                                <select
-                                                                    value={newThreshold.pod_name || ''}
-                                                                    onChange={(e) => setNewThreshold((p) => ({ ...p, pod_name: e.target.value || undefined }))}
-                                                                >
-                                                                    <option value="">All pods</option>
-                                                                    {podsForNode.map((key: string) => (
-                                                                        <option key={key} value={key}>{key}</option>
-                                                                    ))}
-                                                                </select>
-                                                            </div>
-                                                            <div className="full na-add-rule-btn">
-                                                                {editingThresholdIndex != null ? (
-                                                                    <>
-                                                                        <button type="button" className="btn btn-primary" onClick={updateThresholdAt}><FiEdit2 /> Update rule</button>
-                                                                        <button type="button" className="btn btn-muted" style={{ marginLeft: '0.5rem' }} onClick={() => { setEditingThresholdIndex(null); setNewThreshold({ metric_type: 'dns_latency', level: 'pod', threshold_value: 100, node_name: '', pod_name: '' }); }}>Cancel</button>
-                                                                    </>
-                                                                ) : (
-                                                                    <button type="button" className="btn btn-primary" onClick={addThreshold}><FiPlusCircle /> Add Rule</button>
-                                                                )}
-                                                            </div>
-                                                        </div>
                                                     </div>
 
-                                                    {/* 5️⃣ Live Metrics */}
-                                                    <div className="na-card na-live-panel">
-                                                        <h2 className="na-card-title"><FiActivity className="na-card-icon" aria-hidden /> Live Metrics</h2>
-                                                        <NotificationMetricsPreview
-                                                            nodeKey={newThreshold.node_name || undefined}
-                                                            podName={newThreshold.pod_name || undefined}
-                                                            metricType={newThreshold.metric_type}
-                                                            level={newThreshold.level}
-                                                            threshold={newThreshold.threshold_value ? Number(newThreshold.threshold_value) : undefined}
-                                                            savedThreshold={thresholdsList[0]?.threshold_value != null ? Number(thresholdsList[0].threshold_value) : undefined}
-                                                        />
-                                                    </div>
                                                 </>
-                                            ) : (
-                                                <SavedConfigSummary inputs={ext.inputs} config={config} summaryKeys={ext.summary_keys} />
-                                            )
+                        ) : ext.inputs && ext.inputs.length > 0 ? (
+                            <SavedConfigSummary inputs={ext.inputs} config={config} summaryKeys={ext.summary_keys} />
                         ) : (
-                            (!ext.inputs || ext.inputs.length === 0) && (
-                                <p className="list-subtext">No configuration options for this extension.</p>
-                            )
+                            <p className="list-subtext">No configuration options for this extension.</p>
                         )}
+                    </div>
+                )}
+            </div>
+
+            {/* ── Right-side drawer for Add/Edit Rule and Add/Edit Channel ── */}
+            {drawerOpen && <div className="drawer-overlay" onClick={() => { setDrawerOpen(false); setEditingThresholdIndex(null); setEditingWebhookId(null); }} />}
+            <div className={`drawer ${drawerOpen ? 'open' : ''}`}>
+                <div className="drawer-header">
+                    <div>
+                        <div className="drawer-title">
+                            {drawerMode === 'add-rule' && 'Add Rule'}
+                            {drawerMode === 'edit-rule' && 'Edit Rule'}
+                            {drawerMode === 'add-channel' && 'Add Channel'}
+                            {drawerMode === 'edit-channel' && 'Edit Channel'}
+                            {drawerMode === 'edit-email' && 'Email SMTP'}
+                        </div>
+                        <div className="drawer-subtitle">
+                            {(drawerMode === 'add-rule' || drawerMode === 'edit-rule') && 'Alert when a metric exceeds the threshold'}
+                            {(drawerMode === 'add-channel' || drawerMode === 'edit-channel') && 'Webhook destination for alert messages'}
+                            {drawerMode === 'edit-email' && 'SMTP server, credentials and recipient addresses'}
+                        </div>
+                    </div>
+                    <button className="icon-button" aria-label="Close drawer" onClick={() => { setDrawerOpen(false); setEditingThresholdIndex(null); setEditingWebhookId(null); setNewWebhookUrl(''); }}><FiX /></button>
+                </div>
+
+                {/* Rule form */}
+                {(drawerMode === 'add-rule' || drawerMode === 'edit-rule') && (
+                    <div className="drawer-form na-drawer-rule-form">
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">Metric</label>
+                            <select className="na-drawer-select" value={newThreshold.metric_type} onChange={(e) => setNewThreshold((p) => ({ ...p, metric_type: e.target.value }))}>
+                                <option value="dns_latency">DNS latency (avg µs)</option>
+                                <option value="rtt">RTT – round-trip time (avg µs)</option>
+                                <option value="node_system">Node CPU / memory %</option>
+                                <option value="sched_latency">Scheduling latency (µs)</option>
+                                <option value="disk_io">Disk I/O (bytes)</option>
+                                <option value="tcp_metrics">TCP – packet loss / retrans</option>
+                                <option value="service_health">Service health</option>
+                                <option value="nat_metadata">NAT metadata</option>
+                                <option value="packet_distribution">Packet distribution</option>
+                            </select>
+                            <span className="ext-notif-hint na-drawer-hint">
+                                <FiInfo className="ext-notif-hint-icon" aria-hidden />
+                                {({
+                                    dns_latency: 'Average DNS resolution latency. Healthy: < 1000 µs.',
+                                    rtt: 'Average network round-trip time. Healthy: < 500 µs.',
+                                    node_system: 'Node CPU or memory usage %. Common threshold: 80–90 %.',
+                                    sched_latency: 'Kernel run-queue wait time. High = CPU contention.',
+                                    disk_io: 'Total read + write bytes per pod/container per interval.',
+                                    tcp_metrics: 'TCP packet loss / retransmission count.',
+                                    service_health: 'Unhealthy Kubernetes services detected by eBPF.',
+                                    nat_metadata: 'Active or total NAT connections tracked by the kernel.',
+                                    packet_distribution: 'Total packet count on the node per interval.',
+                                } as Record<string,string>)[newThreshold.metric_type] ?? ''}
+                            </span>
+                        </div>
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">Scope</label>
+                            <select className="na-drawer-select" value={newThreshold.level} onChange={(e) => setNewThreshold((p) => ({ ...p, level: e.target.value }))}>
+                                <option value="node">Node – entire host</option>
+                                <option value="pod">Pod – per workload</option>
+                                <option value="container">Container – per container</option>
+                            </select>
+                        </div>
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">
+                                Threshold value
+                                <span className="ext-notif-unit-badge" style={{ marginLeft: '0.4rem' }}>
+                                    {({'dns_latency':'µs','rtt':'µs','node_system':'%','sched_latency':'µs','disk_io':'bytes'} as Record<string,string>)[newThreshold.metric_type] ?? 'count'}
+                                </span>
+                            </label>
+                            <input className="na-drawer-input" type="number" value={newThreshold.threshold_value} onChange={(e) => setNewThreshold((p) => ({ ...p, threshold_value: Number(e.target.value) || 0 }))} />
+                            <span className="ext-notif-hint na-drawer-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />Alert fires when the live value <strong>exceeds</strong> this number.</span>
+                        </div>
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">Node filter</label>
+                            <select className="na-drawer-select" value={newThreshold.node_name || ''} onChange={(e) => setNewThreshold((p) => ({ ...p, node_name: e.target.value || undefined, pod_name: '' }))}>
+                                <option value="">Any node (cluster-wide)</option>
+                                {nodeOptions.map((n: { key: string; name: string }) => (
+                                    <option key={n.key} value={n.name || n.key}>{n.name || n.key}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">Pod filter</label>
+                            <select className="na-drawer-select" value={newThreshold.pod_name || ''} onChange={(e) => setNewThreshold((p) => ({ ...p, pod_name: e.target.value || undefined }))}>
+                                <option value="">All pods</option>
+                                {podsForNode.map((key: string) => (
+                                    <option key={key} value={key}>{key}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="drawer-footer">
+                            {drawerMode === 'edit-rule' ? (
+                                <button type="button" className="btn btn-primary" onClick={updateThresholdAt}><FiEdit2 /> Update rule</button>
+                            ) : (
+                                <button type="button" className="btn btn-primary" onClick={addThreshold}><FiPlusCircle /> Add Rule</button>
+                            )}
+                            <button type="button" className="btn btn-muted" onClick={() => { setDrawerOpen(false); setEditingThresholdIndex(null); setNewThreshold({ metric_type: 'dns_latency', level: 'pod', threshold_value: 100, node_name: '', pod_name: '' }); }}>Cancel</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Channel form */}
+                {(drawerMode === 'add-channel' || drawerMode === 'edit-channel') && (
+                    <div className="drawer-form na-drawer-rule-form">
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">Channel type</label>
+                            <select className="na-drawer-select" value={newWebhookType} onChange={(e) => { setNewWebhookType(e.target.value as 'teams'|'discord'|'slack'); if (!editingWebhookId) setNewWebhookUrl(''); }}>
+                                <option value="discord">Discord</option>
+                                <option value="teams">Microsoft Teams</option>
+                                <option value="slack">Slack</option>
+                            </select>
+                        </div>
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">Webhook URL</label>
+                            <input className="na-drawer-input" type="url" placeholder={newWebhookType === 'teams' ? 'https://xxxx.webhook.office.com/…' : newWebhookType === 'slack' ? 'https://hooks.slack.com/…' : 'https://discord.com/api/webhooks/…'} value={newWebhookUrl} onChange={(e) => setNewWebhookUrl(e.target.value)} />
+                        </div>
+                        <div className="drawer-footer">
+                            {drawerMode === 'edit-channel' && editingWebhookId ? (
+                                <button type="button" className="btn btn-primary" onClick={() => { if (newWebhookUrl.trim() && editingWebhookId) updateWebhook(editingWebhookId, newWebhookType, newWebhookUrl); }}><FiEdit2 /> Update</button>
+                            ) : (
+                                <button type="button" className="btn btn-primary" onClick={() => { if (newWebhookUrl.trim()) addWebhook(newWebhookType, newWebhookUrl); }}><FiPlusCircle /> Add Channel</button>
+                            )}
+                            <button type="button" className="btn btn-muted" onClick={() => { setDrawerOpen(false); setEditingWebhookId(null); setNewWebhookUrl(''); }}>Cancel</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Email SMTP form */}
+                {drawerMode === 'edit-email' && (
+                    <div className="drawer-form na-drawer-rule-form">
+                        <div className="na-drawer-section-label">Server</div>
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">SMTP host</label>
+                            <input className="na-drawer-input" type="text" placeholder="smtp.gmail.com" value={String(config.smtp_host ?? '')} onChange={(e) => updateConfig('smtp_host', e.target.value)} />
+                            <span className="ext-notif-hint na-drawer-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />e.g. smtp.gmail.com, smtp.office365.com</span>
+                        </div>
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">Port</label>
+                            <input className="na-drawer-input" type="number" min={1} max={65535} value={Number(config.smtp_port) || 587} onChange={(e) => updateConfig('smtp_port', Number(e.target.value) || 587)} />
+                            <span className="ext-notif-hint na-drawer-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />587 (STARTTLS) or 465 (TLS).</span>
+                        </div>
+                        <div className="na-drawer-field">
+                            <label className="ext-notif-checkbox">
+                                <input type="checkbox" checked={config.smtp_use_tls !== false} onChange={(e) => updateConfig('smtp_use_tls', e.target.checked)} />
+                                <span>Use TLS / STARTTLS</span>
+                            </label>
+                        </div>
+
+                        <div className="na-drawer-section-label" style={{ marginTop: '0.5rem' }}>Authentication</div>
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">Username <span className="ext-notif-optional-badge">optional</span></label>
+                            <input className="na-drawer-input" type="text" placeholder="Leave empty if no auth" value={String(config.smtp_username ?? '')} onChange={(e) => updateConfig('smtp_username', e.target.value)} autoComplete="off" />
+                        </div>
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">Password <span className="ext-notif-optional-badge">optional</span></label>
+                            <div className="na-password-wrap">
+                                <input className="na-drawer-input" type={showPassword ? 'text' : 'password'} placeholder="App password for Gmail/2FA" value={String(config.smtp_password ?? '')} onChange={(e) => updateConfig('smtp_password', e.target.value)} autoComplete="off" />
+                                <button type="button" className="na-password-toggle" onClick={() => setShowPassword((p) => !p)} title={showPassword ? 'Hide' : 'Show'}>{showPassword ? <FiEyeOff size={16} /> : <FiEye size={16} />}</button>
+                            </div>
+                            <span className="ext-notif-hint na-drawer-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />Use an app password for Gmail or 2FA accounts.</span>
+                        </div>
+
+                        <div className="na-drawer-section-label" style={{ marginTop: '0.5rem' }}>Recipients</div>
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">From address</label>
+                            <input className={`na-drawer-input ${String(config.email_from ?? '').trim() && !isValidEmail(String(config.email_from ?? '')) ? 'ext-notif-input-invalid' : ''}`} type="email" placeholder="alerts@example.com" value={String(config.email_from ?? '')} onChange={(e) => updateConfig('email_from', e.target.value)} />
+                            {String(config.email_from ?? '').trim() && !isValidEmail(String(config.email_from ?? '')) && <span className="ext-notif-validation-err">Enter a valid email (e.g. user@gmail.com)</span>}
+                        </div>
+                        <div className="na-drawer-field">
+                            <label className="na-drawer-label">To addresses</label>
+                            <div className="ext-notif-email-to-list">
+                                {emailToList.map((addr, i) => (
+                                    <div key={i} className="ext-notif-email-to-row">
+                                        <div className="ext-notif-email-to-cell">
+                                            <input className={`na-drawer-input ${addr.trim() && !isValidEmail(addr) ? 'ext-notif-input-invalid' : ''}`} type="email" placeholder="email@example.com" value={addr} onChange={(e) => updateEmailToRecipient(i, e.target.value)} />
+                                            {addr.trim() && !isValidEmail(addr) && <span className="ext-notif-validation-err">Invalid email</span>}
+                                        </div>
+                                        <button type="button" className="btn btn-sm extensions-table-btn extensions-table-btn-danger" onClick={() => removeEmailToRecipient(i)} title="Remove"><FiTrash2 /></button>
+                                    </div>
+                                ))}
+                                <div className="ext-notif-email-to-row ext-notif-email-to-add">
+                                    <div className="ext-notif-email-to-cell">
+                                        <input className={`na-drawer-input ${newEmailTo.trim() && !isValidEmail(newEmailTo) ? 'ext-notif-input-invalid' : ''}`} type="email" placeholder="Add recipient…" value={newEmailTo} onChange={(e) => setNewEmailTo(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addEmailToRecipient())} />
+                                        {newEmailTo.trim() && !isValidEmail(newEmailTo) && <span className="ext-notif-validation-err">Enter a valid email</span>}
+                                    </div>
+                                    <button type="button" className="btn btn-primary btn-sm" onClick={addEmailToRecipient} disabled={!newEmailTo.trim() || !isValidEmail(newEmailTo)}><FiPlusCircle /> Add</button>
+                                </div>
+                            </div>
+                            <span className="ext-notif-hint na-drawer-hint"><FiInfo className="ext-notif-hint-icon" aria-hidden />Alerts are sent to all listed addresses.</span>
+                        </div>
+                        <p className="na-email-hint" style={{ margin: '0.25rem 0 0' }}>Gmail requires an App Password when 2-factor authentication is enabled.</p>
+
+                        <div className="drawer-footer">
+                            <button type="button" className="btn btn-primary" onClick={() => handleSaveConfig(undefined, 'Email SMTP settings saved.')} disabled={saving}><FiSave /> {saving ? 'Saving…' : 'Save'}</button>
+                            <button type="button" className="btn btn-muted" onClick={() => { setDrawerOpen(false); setEditingEmail(false); }}>Cancel</button>
+                        </div>
                     </div>
                 )}
             </div>
