@@ -19,15 +19,34 @@ import {
   FiRefreshCw,
   FiTrendingUp,
   FiHeart,
+  FiLayers,
+  FiBell,
 } from "react-icons/fi";
+import { api, type ExtensionInfo } from "../services/api";
 import "./Navigation.css";
+
+const extensionIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+  notification: FiBell,
+};
+function getExtensionIcon(name: string) {
+  return extensionIconMap[name] ?? FiLayers;
+}
 
 export function Navigation() {
   const location = useLocation();
   const [submenuStyle, setSubmenuStyle] = useState<React.CSSProperties>({});
+  const [extensionsSubmenuStyle, setExtensionsSubmenuStyle] = useState<React.CSSProperties>({});
   const dashboardLinkRef = useRef<HTMLDivElement>(null);
+  const extensionsLinkRef = useRef<HTMLDivElement>(null);
+  const [extensions, setExtensions] = useState<ExtensionInfo[]>([]);
 
   const isActive = (path: string) => location.pathname === path;
+
+  useEffect(() => {
+    api.getExtensions()
+      .then((res) => setExtensions(res.extensions ?? []))
+      .catch(() => setExtensions([]));
+  }, []);
 
   const dashboardSubItems = [
     { id: "health", label: "System Health", icon: FiActivity },
@@ -56,9 +75,11 @@ export function Navigation() {
     const updateSubmenuPosition = () => {
       if (dashboardLinkRef.current) {
         const rect = dashboardLinkRef.current.getBoundingClientRect();
-        setSubmenuStyle({
-          top: `${rect.top - 10}px`,
-        });
+        setSubmenuStyle({ top: `${rect.top - 10}px` });
+      }
+      if (extensionsLinkRef.current) {
+        const rect = extensionsLinkRef.current.getBoundingClientRect();
+        setExtensionsSubmenuStyle({ top: `${rect.top - 10}px` });
       }
     };
 
@@ -165,6 +186,46 @@ export function Navigation() {
           <FiGlobe className="nav-icon" />
           <span className="nav-link-text">Federation</span>
         </Link>
+
+        <div className="side-nav-item-wrapper" ref={extensionsLinkRef}>
+          <Link
+            to="/extensions"
+            className={`side-nav-link ${location.pathname.startsWith("/extensions") ? "active" : ""}`}
+            title="SPI Extensions"
+          >
+            <FiLayers className="nav-icon" />
+            <span className="nav-link-text">Extensions</span>
+            <FiChevronRight className="nav-arrow" />
+          </Link>
+          <div className="submenu" style={extensionsSubmenuStyle}>
+            <div className="submenu-header">Extensions</div>
+            <div className="submenu-items-container">
+              {extensions.length === 0 ? (
+                <Link
+                  to="/extensions/notification"
+                  className={`submenu-item submenu-item-link ${location.pathname === "/extensions/notification" ? "active" : ""}`}
+                >
+                  <FiBell className="submenu-icon" />
+                  <span className="submenu-text">Notification</span>
+                </Link>
+              ) : (
+                extensions.map((ext) => {
+                  const Icon = getExtensionIcon(ext.name);
+                  return (
+                    <Link
+                      key={ext.name}
+                      to={`/extensions/${ext.name}`}
+                      className={`submenu-item submenu-item-link ${location.pathname === `/extensions/${ext.name}` ? "active" : ""}`}
+                    >
+                      <Icon className="submenu-icon" />
+                      <span className="submenu-text">{ext.label || ext.name}</span>
+                    </Link>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="side-nav-footer">
