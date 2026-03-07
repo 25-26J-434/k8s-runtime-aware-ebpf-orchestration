@@ -18,12 +18,14 @@ import (
 const dnatRedirectConfigMapName = "ebpf-dnat-redirects"
 
 type dnatRedirectSpec struct {
-	ServiceIP   string    `json:"service_ip"`
-	ServicePort int       `json:"service_port"`
-	TargetIP    string    `json:"target_ip"`
-	TargetPort  int       `json:"target_port"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	PolicyName  string    `json:"policy_name"`
+	ServiceIP        string    `json:"service_ip"`
+	ServicePort      int       `json:"service_port"`
+	ServiceName      string    `json:"service_name,omitempty"`
+	ServiceNamespace string    `json:"service_namespace,omitempty"`
+	TargetIP         string    `json:"target_ip"`
+	TargetPort       int       `json:"target_port"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	PolicyName       string    `json:"policy_name"`
 }
 
 func dnatPolicyKey(p *Policy) string {
@@ -37,6 +39,9 @@ func (e *Engine) publishClusterDNAT(ctx context.Context, p *Policy, svc *corev1.
 	if p == nil || svc == nil || winner == nil {
 		return fmt.Errorf("policy/service/winner is nil")
 	}
+	if skip, reason := shouldSkipDNATService(svc); skip {
+		return fmt.Errorf("dnat skipped: %s", reason)
+	}
 	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
 		return fmt.Errorf("service %s has no cluster IP", svc.Name)
 	}
@@ -48,12 +53,14 @@ func (e *Engine) publishClusterDNAT(ctx context.Context, p *Policy, svc *corev1.
 	}
 
 	spec := dnatRedirectSpec{
-		ServiceIP:   svc.Spec.ClusterIP,
-		ServicePort: p.Frontend.Port,
-		TargetIP:    winner.Status.PodIP,
-		TargetPort:  p.Action.BackendPort,
-		ExpiresAt:   time.Now().UTC().Add(time.Duration(p.Action.TTLSeconds) * time.Second),
-		PolicyName:  p.PolicyName,
+		ServiceIP:        svc.Spec.ClusterIP,
+		ServicePort:      p.Frontend.Port,
+		ServiceName:      svc.Name,
+		ServiceNamespace: svc.Namespace,
+		TargetIP:         winner.Status.PodIP,
+		TargetPort:       p.Action.BackendPort,
+		ExpiresAt:        time.Now().UTC().Add(time.Duration(p.Action.TTLSeconds) * time.Second),
+		PolicyName:       p.PolicyName,
 	}
 	raw, err := json.Marshal(spec)
 	if err != nil {
@@ -147,7 +154,7 @@ func (e *Engine) StartClusterDNATSync(ctx context.Context) {
 func (e *Engine) fetchAndReconcileClusterDNAT(ctx context.Context) {
 	cm, err := e.kube.CoreV1().ConfigMaps(e.syncNamespace).Get(ctx, dnatRedirectConfigMapName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		e.reconcileDNATFromConfigMap(&corev1.ConfigMap{Data: map[string]string{}})
+		e.reconcileDNATFromConfigMap(ctx, &corev1.ConfigMap{Data: map[string]string{}})
 		return
 	}
 	if err != nil || cm == nil {
@@ -156,7 +163,7 @@ func (e *Engine) fetchAndReconcileClusterDNAT(ctx context.Context) {
 		}
 		return
 	}
-	e.reconcileDNATFromConfigMap(cm)
+	e.reconcileDNATFromConfigMap(ctx, cm)
 }
 
 func (e *Engine) consumeDNATWatch(ctx context.Context, w watch.Interface) {
@@ -177,12 +184,12 @@ func (e *Engine) consumeDNATWatch(ctx context.Context, w watch.Interface) {
 			if !ok || cm == nil {
 				continue
 			}
-			e.reconcileDNATFromConfigMap(cm)
+			e.reconcileDNATFromConfigMap(ctx, cm)
 		}
 	}
 }
 
-func (e *Engine) reconcileDNATFromConfigMap(cm *corev1.ConfigMap) {
+func (e *Engine) reconcileDNATFromConfigMap(ctx context.Context, cm *corev1.ConfigMap) {
 	dnatMap := loader.DNATMapHandle()
 	if dnatMap == nil {
 		if e.localNodeName != "" {
@@ -193,27 +200,50 @@ func (e *Engine) reconcileDNATFromConfigMap(cm *corev1.ConfigMap) {
 
 	now := time.Now().UTC()
 	seen := map[string]dnatKey{}
+	staleKeys := make([]string, 0)
 
 	applyCount := 0
 	for k, v := range cm.Data {
 		var spec dnatRedirectSpec
 		if err := json.Unmarshal([]byte(v), &spec); err != nil {
 			e.logger.Printf("[Routing] DNAT sync: invalid entry %q: %v", k, err)
+			staleKeys = append(staleKeys, k)
 			continue
 		}
 		if !spec.ExpiresAt.IsZero() && now.After(spec.ExpiresAt) {
+			staleKeys = append(staleKeys, k)
 			continue
 		}
 		if spec.ServiceIP == "" || spec.TargetIP == "" || spec.ServicePort <= 0 || spec.TargetPort <= 0 {
+			staleKeys = append(staleKeys, k)
 			continue
+		}
+		if spec.ServiceNamespace == "kube-system" || (spec.ServiceNamespace == "default" && spec.ServiceName == "kubernetes") {
+			e.logger.Printf("[Routing] DNAT sync: skipping protected service %s/%s", spec.ServiceNamespace, spec.ServiceName)
+			staleKeys = append(staleKeys, k)
+			continue
+		}
+		if spec.ServiceIP == "10.96.0.1" && spec.ServicePort == 443 {
+			e.logger.Printf("[Routing] DNAT sync: skipping Kubernetes API service IP %s:%d", spec.ServiceIP, spec.ServicePort)
+			staleKeys = append(staleKeys, k)
+			continue
+		}
+		if e.kube != nil {
+			if stale, reason := e.isDNATTargetStale(ctx, spec); stale {
+				e.logger.Printf("[Routing] DNAT sync: skipping stale target for %q: %s", k, reason)
+				staleKeys = append(staleKeys, k)
+				continue
+			}
 		}
 
 		serviceIP, err := parseIPv4NetOrder(spec.ServiceIP)
 		if err != nil {
+			staleKeys = append(staleKeys, k)
 			continue
 		}
 		targetIP, err := parseIPv4NetOrder(spec.TargetIP)
 		if err != nil {
+			staleKeys = append(staleKeys, k)
 			continue
 		}
 
@@ -249,4 +279,77 @@ func (e *Engine) reconcileDNATFromConfigMap(cm *corev1.ConfigMap) {
 		}
 		e.logger.Printf("[Routing] DNAT sync applied %d entries on node %s", applyCount, nodeLabel)
 	}
+
+	if len(staleKeys) > 0 && e.kube != nil {
+		e.cleanupStaleDNATKeys(ctx, staleKeys)
+	}
+}
+
+func (e *Engine) isDNATTargetStale(ctx context.Context, spec dnatRedirectSpec) (bool, string) {
+	if e.kube == nil {
+		return false, ""
+	}
+	if spec.TargetIP == "" {
+		return true, "missing target IP"
+	}
+
+	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	pods, err := e.kube.CoreV1().Pods("").List(checkCtx, metav1.ListOptions{
+		FieldSelector: "status.podIP=" + spec.TargetIP,
+	})
+	if err != nil {
+		return false, "pod lookup failed"
+	}
+	if len(pods.Items) == 0 {
+		return true, "target pod not found"
+	}
+	for i := range pods.Items {
+		if isPodReady(&pods.Items[i]) {
+			return false, ""
+		}
+	}
+	return true, "target pod not ready"
+}
+
+func (e *Engine) cleanupStaleDNATKeys(ctx context.Context, keys []string) {
+	if e.kube == nil || len(keys) == 0 {
+		return
+	}
+	cmClient := e.kube.CoreV1().ConfigMaps(e.syncNamespace)
+	cm, err := cmClient.Get(ctx, dnatRedirectConfigMapName, metav1.GetOptions{})
+	if err != nil || cm == nil || cm.Data == nil {
+		if err != nil {
+			e.logger.Printf("[Routing] DNAT sync cleanup failed to load ConfigMap: %v", err)
+		}
+		return
+	}
+
+	changed := false
+	for _, k := range keys {
+		if _, ok := cm.Data[k]; ok {
+			delete(cm.Data, k)
+			changed = true
+		}
+	}
+	if !changed {
+		return
+	}
+	if _, err := cmClient.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		e.logger.Printf("[Routing] DNAT sync cleanup failed to update ConfigMap: %v", err)
+	}
+}
+
+func isPodReady(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	for i := range pod.Status.Conditions {
+		cond := pod.Status.Conditions[i]
+		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
