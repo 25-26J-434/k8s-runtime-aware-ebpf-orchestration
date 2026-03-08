@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { MetricsResponse, UnifiedMetricsResponse } from '../types/api';
+import { getBackendWsUrl } from '../services/api';
 
 // Module-level singleton to track cluster metrics WebSocket connection
 // This prevents multiple connections even when React StrictMode remounts components
@@ -266,10 +267,7 @@ export function useMetrics(_refreshInterval = 3000, selectedNodeKey?: string | n
             clusterMetricsWebSocketSingleton.isConnecting = true;
 
             try {
-                // Use relative URL so Vite proxy handles it
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const host = window.location.host;
-                const wsUrl = `${protocol}//${host}/api/metrics/ws`;
+                const wsUrl = getBackendWsUrl('/api/metrics/ws');
 
                 const ws = new WebSocket(wsUrl);
                 clusterMetricsWebSocketSingleton.ws = ws;
@@ -420,7 +418,7 @@ export function useUnifiedMetricsFromWebSocket(selectedNodeKey?: string | null) 
             if (clusterMetricsWebSocketSingleton.isConnecting) return;
             clusterMetricsWebSocketSingleton.isConnecting = true;
             try {
-                const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/metrics/ws`);
+                const ws = new WebSocket(getBackendWsUrl('/api/metrics/ws'));
                 clusterMetricsWebSocketSingleton.ws = ws;
                 ws.onopen = () => { clusterMetricsWebSocketSingleton.isConnecting = false; };
                 ws.onerror = () => { clusterMetricsWebSocketSingleton.isConnecting = false; safeCloseWebSocket(); };

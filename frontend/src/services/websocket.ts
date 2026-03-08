@@ -1,3 +1,5 @@
+import { getBackendWsUrl } from './api';
+
 type MessageHandler = (data: any) => void;
 
 class WebSocketService {
@@ -22,11 +24,7 @@ class WebSocketService {
         this.isIntentionallyClosed = false;
 
         try {
-            // Use relative URL so Vite proxy handles it (proxy is configured for /api and /ws)
-            // Vite proxy will forward WebSocket connections to http://localhost:8080
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host;
-            const wsUrl = `${protocol}//${host}${this.url}`;
+            const wsUrl = getBackendWsUrl(this.url);
 
             console.log(`[WebSocket] Connecting to ${wsUrl}`);
             this.ws = new WebSocket(wsUrl);

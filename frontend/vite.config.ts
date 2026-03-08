@@ -6,25 +6,6 @@ export default defineConfig({
     plugins: [react()],
     server: {
         port: 3000,
-        strictPort: true, // Fail if port 3000 is not available
-        proxy: {
-            '/api': {
-                target: 'http://localhost:8080',
-                changeOrigin: true,
-                secure: false,
-                ws: true,
-            },
-            '/ws': {
-                target: 'http://localhost:8080',
-                ws: true,
-                changeOrigin: true,
-                secure: false,
-            },
-            '/metrics': {
-                target: 'http://localhost:8080',
-                changeOrigin: true,
-                secure: false,
-            },
-        },
+        strictPort: true,
     },
 })

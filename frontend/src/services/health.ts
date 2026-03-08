@@ -1,4 +1,5 @@
 import { ClusterHealthResponse, HealthAlert, HealthStats, NodeHealthUpdate } from '../types/health';
+import { API_BASE, getBackendWsUrl } from './api';
 
 class HealthService {
     private ws: WebSocket | null = null;
@@ -22,9 +23,7 @@ class HealthService {
         this.isIntentionallyClosed = false;
 
         try {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host;
-            const wsUrl = `${protocol}//${host}/ws/node-health`;
+            const wsUrl = getBackendWsUrl('/ws/node-health');
 
             console.log(`[HealthService] Connecting to ${wsUrl}`);
             this.ws = new WebSocket(wsUrl);
@@ -137,7 +136,7 @@ class HealthService {
 
     // REST API methods for health data
     async getClusterHealth(): Promise<ClusterHealthResponse> {
-        const response = await fetch('/api/cluster/node-health');
+        const response = await fetch(`${API_BASE}/api/cluster/node-health`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -145,7 +144,7 @@ class HealthService {
     }
 
     async getUnifiedMetrics(): Promise<any> {
-        const response = await fetch('/api/metrics/unified');
+        const response = await fetch(`${API_BASE}/api/metrics/unified`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }

@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:8080';
+import { API_BASE } from './api';
 
 export interface MetricsConfig {
   dns_latency_threshold: number;

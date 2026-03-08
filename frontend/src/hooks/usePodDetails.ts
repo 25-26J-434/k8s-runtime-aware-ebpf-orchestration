@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE } from '../services/api';
 
 export interface ContainerInfo {
   name: string;
@@ -85,7 +86,7 @@ export function usePodDetails(refreshInterval: number = 5000) {
       const checkConnectionAndFallback = async () => {
         if (!podDetailsWebSocket.isConnected() && mounted) {
           try {
-            const response = await fetch('/api/pod/details');
+            const response = await fetch(`${API_BASE}/api/pod/details`);
             if (!response.ok) {
               throw new Error(`HTTP error! status: ${response.status}`);
             }
