@@ -1,0 +1,1623 @@
+{
+  "info": {
+    "_postman_id": "4c19754a-49ff-4cda-ae2e-b34c781e9d16",
+    "name": "Backend API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "33202918"
+  },
+  "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/health",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Ready",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/ready",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "ready"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Who Am I",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/whoami",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "whoami"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Metrics",
+      "item": [
+        {
+          "name": "Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/metrics",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "metrics"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "JSON Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/metrics/json",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "metrics",
+                "json"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Unified Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/metrics?type=dns&level=pod",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "metrics"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "dns"
+                },
+                {
+                  "key": "level",
+                  "value": "pod"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DNS Metrics (Per Pod)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/dns/pods",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "dns",
+                "pods"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "DNS Metrics (Per Pod)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/dns/pods",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "dns",
+                    "pods"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": null,
+              "header": [
+                {
+                  "key": "Access-Control-Allow-Headers",
+                  "value": "Content-Type, Authorization"
+                },
+                {
+                  "key": "Access-Control-Allow-Methods",
+                  "value": "GET, POST, PUT, DELETE, OPTIONS"
+                },
+                {
+                  "key": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Date",
+                  "value": "Tue, 24 Feb 2026 06:54:12 GMT"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "1312"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"pods\": {\n        \"kube-system/kube-proxy-6jjxl\": {\n            \"avg_latency_us\": 735.4971065770524,\n            \"last_latency_us\": 185.918,\n            \"max_latency_us\": 94636.136,\n            \"min_latency_us\": 32.085,\n            \"namespace\": \"kube-system\",\n            \"pod_name\": \"kube-proxy-6jjxl\",\n            \"total_events\": 2083\n        },\n        \"mongo/mongo-0\": {\n            \"avg_latency_us\": 1461.4011818181818,\n            \"last_latency_us\": 1721.731,\n            \"max_latency_us\": 3924.964,\n            \"min_latency_us\": 136.369,\n            \"namespace\": \"mongo\",\n            \"pod_name\": \"mongo-0\",\n            \"total_events\": 11\n        },\n        \"mongo/mongo-2\": {\n            \"avg_latency_us\": 1496.6268125,\n            \"last_latency_us\": 1310.098,\n            \"max_latency_us\": 3920.059,\n            \"min_latency_us\": 606.206,\n            \"namespace\": \"mongo\",\n            \"pod_name\": \"mongo-2\",\n            \"total_events\": 16\n        },\n        \"test-services/dns-loop\": {\n            \"avg_latency_us\": 859.2906218487394,\n            \"last_latency_us\": 523.085,\n            \"max_latency_us\": 7109.597,\n            \"min_latency_us\": 102.592,\n            \"namespace\": \"test-services\",\n            \"pod_name\": \"dns-loop\",\n            \"total_events\": 714\n        },\n        \"test-services/service-a-7c5d44f854-pjzhm\": {\n            \"avg_latency_us\": 481.28321833852044,\n            \"last_latency_us\": 246.975,\n            \"max_latency_us\": 86199.125,\n            \"min_latency_us\": 46.946,\n            \"namespace\": \"test-services\",\n            \"pod_name\": \"service-a-7c5d44f854-pjzhm\",\n            \"total_events\": 12531\n        },\n        \"test-services/tcp-client-79d47686fc-rtrcc\": {\n            \"avg_latency_us\": 723.5827891237236,\n            \"last_latency_us\": 124.093,\n            \"max_latency_us\": 2052577.736,\n            \"min_latency_us\": 61.311,\n            \"namespace\": \"test-services\",\n            \"pod_name\": \"tcp-client-79d47686fc-rtrcc\",\n            \"total_events\": 8422\n        }\n    }\n}"
+            }
+          ]
+        },
+        {
+          "name": "RTT Metrics (Per Pod)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/rtt/pods",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "rtt",
+                "pods"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Metrics All",
+      "item": [
+        {
+          "name": "DNS Metrics All",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/dns/pods/all",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "dns",
+                "pods",
+                "all"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "DNS Metrics All",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/dns/pods/all",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "dns",
+                    "pods",
+                    "all"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": null,
+              "header": [
+                {
+                  "key": "Access-Control-Allow-Headers",
+                  "value": "Content-Type, Authorization"
+                },
+                {
+                  "key": "Access-Control-Allow-Methods",
+                  "value": "GET, POST, PUT, DELETE, OPTIONS"
+                },
+                {
+                  "key": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Date",
+                  "value": "Mon, 02 Mar 2026 06:24:57 GMT"
+                },
+                {
+                  "key": "Transfer-Encoding",
+                  "value": "chunked"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"aggregated_at_utc\": \"2026-03-02T06:24:57Z\",\n    \"peer_errors\": [\n        {\n            \"peer\": \"172.18.0.4\",\n            \"error\": \"Get \\\"http://172.18.0.4:8080/api/dns/pods\\\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)\"\n        },\n        {\n            \"peer\": \"172.18.0.2\",\n            \"error\": \"Get \\\"http://172.18.0.2:8080/api/dns/pods\\\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)\"\n        }\n    ],\n    \"peers_attempted\": 2,\n    \"peers_responded\": 0,\n    \"pods\": {\n        \"ebpf-telemetry/ebpf-daemon-j2wkm\": {\n            \"avg_latency_us\": 485520.0409462417,\n            \"last_latency_us\": 1116630.892,\n            \"max_latency_us\": 4272523.471,\n            \"min_latency_us\": 18.665,\n            \"namespace\": \"ebpf-telemetry\",\n            \"pod_name\": \"ebpf-daemon-j2wkm\",\n            \"total_events\": 2102\n        },\n        \"kube-system/cilium-2gccm\": {\n            \"avg_latency_us\": 504926.8473875925,\n            \"last_latency_us\": 3463388.311,\n            \"max_latency_us\": 4270575.549,\n            \"min_latency_us\": 25.114,\n            \"namespace\": \"kube-system\",\n            \"pod_name\": \"cilium-2gccm\",\n            \"total_events\": 1757\n        },\n        \"kube-system/cilium-envoy-9lnfc\": {\n            \"avg_latency_us\": 481620.1992927737,\n            \"last_latency_us\": 175.769,\n            \"max_latency_us\": 4284622.711,\n            \"min_latency_us\": 26.975,\n            \"namespace\": \"kube-system\",\n            \"pod_name\": \"cilium-envoy-9lnfc\",\n            \"total_events\": 1882\n        },\n        \"kube-system/coredns-674b8bbfcf-jdbcx\": {\n            \"avg_latency_us\": 79970.3110038518,\n            \"last_latency_us\": 164665.892,\n            \"max_latency_us\": 4291553.178,\n            \"min_latency_us\": 20.351,\n            \"namespace\": \"kube-system\",\n            \"pod_name\": \"coredns-674b8bbfcf-jdbcx\",\n            \"total_events\": 19731\n        },\n        \"kube-system/coredns-674b8bbfcf-jj94b\": {\n            \"avg_latency_us\": 79992.78147104481,\n            \"last_latency_us\": 121491.614,\n            \"max_latency_us\": 4290329.86,\n            \"min_latency_us\": 25.622,\n            \"namespace\": \"kube-system\",\n            \"pod_name\": \"coredns-674b8bbfcf-jj94b\",\n            \"total_events\": 19841\n        },\n        \"kube-system/etcd-ebpf-cluster-control-plane\": {\n            \"avg_latency_us\": 501799.897653712,\n            \"last_latency_us\": 50.551,\n            \"max_latency_us\": 4273480.623,\n            \"min_latency_us\": 23.377,\n            \"namespace\": \"kube-system\",\n            \"pod_name\": \"etcd-ebpf-cluster-control-plane\",\n            \"total_events\": 2007\n        },\n        \"kube-system/kube-apiserver-ebpf-cluster-control-plane\": {\n            \"avg_latency_us\": 488926.08851449273,\n            \"last_latency_us\": 72.842,\n            \"max_latency_us\": 4249330.769,\n            \"min_latency_us\": 28.493,\n            \"namespace\": \"kube-system\",\n            \"pod_name\": \"kube-apiserver-ebpf-cluster-control-plane\",\n            \"total_events\": 1518\n        },\n        \"kube-system/kube-controller-manager-ebpf-cluster-control-plane\": {\n            \"avg_latency_us\": 473343.5001014405,\n            \"last_latency_us\": 169.872,\n            \"max_latency_us\": 4271632.684,\n            \"min_latency_us\": 20.762,\n            \"namespace\": \"kube-system\",\n            \"pod_name\": \"kube-controller-manager-ebpf-cluster-control-plane\",\n            \"total_events\": 1666\n        },\n        \"kube-system/kube-proxy-bqjwl\": {\n            \"avg_latency_us\": 529360.1383783977,\n            \"last_latency_us\": 339.894,\n            \"max_latency_us\": 4212461.929,\n            \"min_latency_us\": 29.43,\n            \"namespace\": \"kube-system\",\n            \"pod_name\": \"kube-proxy-bqjwl\",\n            \"total_events\": 1398\n        },\n        \"kube-system/kube-scheduler-ebpf-cluster-control-plane\": {\n            \"avg_latency_us\": 34106.625789774895,\n            \"last_latency_us\": 165.646,\n            \"max_latency_us\": 4258650.506,\n            \"min_latency_us\": 26.633,\n            \"namespace\": \"kube-system\",\n            \"pod_name\": \"kube-scheduler-ebpf-cluster-control-plane\",\n            \"total_events\": 18347\n        },\n        \"test-services/traffic-generator-29539165-qsp57\": {\n            \"avg_latency_us\": 267193.2091764706,\n            \"last_latency_us\": 547.835,\n            \"max_latency_us\": 1781406.279,\n            \"min_latency_us\": 30.102,\n            \"namespace\": \"test-services\",\n            \"pod_name\": \"traffic-generator-29539165-qsp57\",\n            \"total_events\": 17\n        },\n        \"test-services/traffic-generator-29539333-77kmb\": {\n            \"avg_latency_us\": 398896.2319473684,\n            \"last_latency_us\": 351.959,\n            \"max_latency_us\": 2179634.442,\n            \"min_latency_us\": 133.117,\n            \"namespace\": \"test-services\",\n            \"pod_name\": \"traffic-generator-29539333-77kmb\",\n            \"total_events\": 19\n        },\n        \"test-services/traffic-generator-29539353-jccfw\": {\n            \"avg_latency_us\": 59370.126071428575,\n            \"last_latency_us\": 34321.574,\n            \"max_latency_us\": 481539.609,\n            \"min_latency_us\": 71.362,\n            \"namespace\": \"test-services\",\n            \"pod_name\": \"traffic-generator-29539353-jccfw\",\n            \"total_events\": 14\n        },\n        \"test-services/traffic-generator-29539469-572bk\": {\n            \"avg_latency_us\": 705895.011,\n            \"last_latency_us\": 48.703,\n            \"max_latency_us\": 2053030.223,\n            \"min_latency_us\": 48.703,\n            \"namespace\": \"test-services\",\n            \"pod_name\": \"traffic-generator-29539469-572bk\",\n            \"total_events\": 9\n        },\n        \"test-services/traffic-generator-29540505-8p5hr\": {\n            \"avg_latency_us\": 398875.90090909094,\n            \"last_latency_us\": 65.253,\n            \"max_latency_us\": 2664732.102,\n            \"min_latency_us\": 35.074,\n            \"namespace\": \"test-services\",\n            \"pod_name\": \"traffic-generator-29540505-8p5hr\",\n            \"total_events\": 22\n        },\n        \"test-services/traffic-generator-29540511-6h8bh\": {\n            \"avg_latency_us\": 881723.4755,\n            \"last_latency_us\": 196.785,\n            \"max_latency_us\": 3989994.92,\n            \"min_latency_us\": 23.94,\n            \"namespace\": \"test-services\",\n            \"pod_name\": \"traffic-generator-29540511-6h8bh\",\n            \"total_events\": 16\n        }\n    }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cluster",
+      "item": [
+        {
+          "name": "Cluster Topology",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/cluster/topology",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "cluster",
+                "topology"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cluster Services",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/cluster/services",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "cluster",
+                "services"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cluster Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/cluster/summary",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "cluster",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "namespace",
+                  "value": "default",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Cluster Summary",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/cluster/summary",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "cluster",
+                    "summary"
+                  ],
+                  "query": [
+                    {
+                      "key": "namespace",
+                      "value": "default",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": null,
+              "header": [
+                {
+                  "key": "Access-Control-Allow-Headers",
+                  "value": "Content-Type, Authorization"
+                },
+                {
+                  "key": "Access-Control-Allow-Methods",
+                  "value": "GET, POST, PUT, DELETE, OPTIONS"
+                },
+                {
+                  "key": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Date",
+                  "value": "Mon, 02 Mar 2026 08:20:21 GMT"
+                },
+                {
+                  "key": "Transfer-Encoding",
+                  "value": "chunked"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"cluster\": {\n        \"context\": \"in-cluster\",\n        \"clusterInfo\": \"api: https://10.96.0.1:443\"\n    },\n    \"nodes\": [\n        {\n            \"internalIP\": \"172.18.0.3\",\n            \"kubeletVersion\": \"v1.33.2\",\n            \"labels\": {\n                \"beta.kubernetes.io/arch\": \"amd64\",\n                \"beta.kubernetes.io/os\": \"linux\",\n                \"kubernetes.io/arch\": \"amd64\",\n                \"kubernetes.io/hostname\": \"ebpf-cluster-control-plane\",\n                \"kubernetes.io/os\": \"linux\",\n                \"node-role.kubernetes.io/control-plane\": \"\",\n                \"node.kubernetes.io/exclude-from-external-load-balancers\": \"\"\n            },\n            \"name\": \"ebpf-cluster-control-plane\",\n            \"osImage\": \"Debian GNU/Linux 12 (bookworm)\",\n            \"roles\": [\n                \"control-plane\"\n            ]\n        },\n        {\n            \"internalIP\": \"172.18.0.2\",\n            \"kubeletVersion\": \"v1.33.2\",\n            \"labels\": {\n                \"beta.kubernetes.io/arch\": \"amd64\",\n                \"beta.kubernetes.io/os\": \"linux\",\n                \"kubernetes.io/arch\": \"amd64\",\n                \"kubernetes.io/hostname\": \"ebpf-cluster-worker\",\n                \"kubernetes.io/os\": \"linux\"\n            },\n            \"name\": \"ebpf-cluster-worker\",\n            \"osImage\": \"Debian GNU/Linux 12 (bookworm)\",\n            \"roles\": []\n        },\n        {\n            \"internalIP\": \"172.18.0.4\",\n            \"kubeletVersion\": \"v1.33.2\",\n            \"labels\": {\n                \"beta.kubernetes.io/arch\": \"amd64\",\n                \"beta.kubernetes.io/os\": \"linux\",\n                \"kubernetes.io/arch\": \"amd64\",\n                \"kubernetes.io/hostname\": \"ebpf-cluster-worker2\",\n                \"kubernetes.io/os\": \"linux\"\n            },\n            \"name\": \"ebpf-cluster-worker2\",\n            \"osImage\": \"Debian GNU/Linux 12 (bookworm)\",\n            \"roles\": []\n        }\n    ],\n    \"namespaces\": [\n        \"cilium-secrets\",\n        \"default\",\n        \"ebpf-telemetry\",\n        \"kube-node-lease\",\n        \"kube-public\",\n        \"kube-system\",\n        \"local-path-storage\",\n        \"mongo\",\n        \"test-services\"\n    ],\n    \"pods\": [\n        {\n            \"containers\": [\n                {\n                    \"name\": \"daemon\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 8080,\n                            \"name\": \"http\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app\": \"ebpf-daemon\",\n                \"component\": \"telemetry\",\n                \"controller-revision-hash\": \"c85cf65db\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"ebpf-daemon-8djxq\",\n            \"namespace\": \"ebpf-telemetry\",\n            \"node\": \"ebpf-cluster-worker\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.2\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"daemon\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 8080,\n                            \"name\": \"http\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app\": \"ebpf-daemon\",\n                \"component\": \"telemetry\",\n                \"controller-revision-hash\": \"c85cf65db\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"ebpf-daemon-dvwwm\",\n            \"namespace\": \"ebpf-telemetry\",\n            \"node\": \"ebpf-cluster-control-plane\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.3\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"daemon\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 8080,\n                            \"name\": \"http\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app\": \"ebpf-daemon\",\n                \"component\": \"telemetry\",\n                \"controller-revision-hash\": \"c85cf65db\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"ebpf-daemon-wnzxk\",\n            \"namespace\": \"ebpf-telemetry\",\n            \"node\": \"ebpf-cluster-worker2\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.4\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"cilium-envoy\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 9964,\n                            \"name\": \"envoy-metrics\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app.kubernetes.io/name\": \"cilium-envoy\",\n                \"app.kubernetes.io/part-of\": \"cilium\",\n                \"controller-revision-hash\": \"f757d64b5\",\n                \"k8s-app\": \"cilium-envoy\",\n                \"name\": \"cilium-envoy\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"cilium-envoy-ghz5n\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-worker\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.2\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"cilium-envoy\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 9964,\n                            \"name\": \"envoy-metrics\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app.kubernetes.io/name\": \"cilium-envoy\",\n                \"app.kubernetes.io/part-of\": \"cilium\",\n                \"controller-revision-hash\": \"f757d64b5\",\n                \"k8s-app\": \"cilium-envoy\",\n                \"name\": \"cilium-envoy\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"cilium-envoy-hltvp\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-control-plane\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.3\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"cilium-envoy\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 9964,\n                            \"name\": \"envoy-metrics\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app.kubernetes.io/name\": \"cilium-envoy\",\n                \"app.kubernetes.io/part-of\": \"cilium\",\n                \"controller-revision-hash\": \"f757d64b5\",\n                \"k8s-app\": \"cilium-envoy\",\n                \"name\": \"cilium-envoy\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"cilium-envoy-xkh5h\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-worker2\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.4\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"cilium-agent\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"app.kubernetes.io/name\": \"cilium-agent\",\n                \"app.kubernetes.io/part-of\": \"cilium\",\n                \"controller-revision-hash\": \"7f969dcc5f\",\n                \"k8s-app\": \"cilium\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"cilium-gdkr5\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-worker\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.2\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"cilium-operator\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 9963,\n                            \"name\": \"prometheus\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app.kubernetes.io/name\": \"cilium-operator\",\n                \"app.kubernetes.io/part-of\": \"cilium\",\n                \"io.cilium/app\": \"operator\",\n                \"name\": \"cilium-operator\",\n                \"pod-template-hash\": \"7cd6774bd4\"\n            },\n            \"name\": \"cilium-operator-7cd6774bd4-hzp5j\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-worker2\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.4\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"cilium-agent\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"app.kubernetes.io/name\": \"cilium-agent\",\n                \"app.kubernetes.io/part-of\": \"cilium\",\n                \"controller-revision-hash\": \"7f969dcc5f\",\n                \"k8s-app\": \"cilium\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"cilium-qxmhw\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-control-plane\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.3\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"cilium-agent\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"app.kubernetes.io/name\": \"cilium-agent\",\n                \"app.kubernetes.io/part-of\": \"cilium\",\n                \"controller-revision-hash\": \"7f969dcc5f\",\n                \"k8s-app\": \"cilium\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"cilium-smb8n\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-worker2\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.4\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"coredns\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 53,\n                            \"name\": \"dns\",\n                            \"protocol\": \"UDP\"\n                        },\n                        {\n                            \"containerPort\": 53,\n                            \"name\": \"dns-tcp\",\n                            \"protocol\": \"TCP\"\n                        },\n                        {\n                            \"containerPort\": 9153,\n                            \"name\": \"metrics\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"k8s-app\": \"kube-dns\",\n                \"pod-template-hash\": \"674b8bbfcf\"\n            },\n            \"name\": \"coredns-674b8bbfcf-ntwkb\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-control-plane\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.0.173\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"coredns\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 53,\n                            \"name\": \"dns\",\n                            \"protocol\": \"UDP\"\n                        },\n                        {\n                            \"containerPort\": 53,\n                            \"name\": \"dns-tcp\",\n                            \"protocol\": \"TCP\"\n                        },\n                        {\n                            \"containerPort\": 9153,\n                            \"name\": \"metrics\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"k8s-app\": \"kube-dns\",\n                \"pod-template-hash\": \"674b8bbfcf\"\n            },\n            \"name\": \"coredns-674b8bbfcf-w6vmw\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-control-plane\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.0.80\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"etcd\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"component\": \"etcd\",\n                \"tier\": \"control-plane\"\n            },\n            \"name\": \"etcd-ebpf-cluster-control-plane\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-control-plane\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.3\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"kube-apiserver\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"component\": \"kube-apiserver\",\n                \"tier\": \"control-plane\"\n            },\n            \"name\": \"kube-apiserver-ebpf-cluster-control-plane\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-control-plane\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.3\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"kube-controller-manager\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"component\": \"kube-controller-manager\",\n                \"tier\": \"control-plane\"\n            },\n            \"name\": \"kube-controller-manager-ebpf-cluster-control-plane\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-control-plane\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.3\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"kube-proxy\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"controller-revision-hash\": \"7f964d48ff\",\n                \"k8s-app\": \"kube-proxy\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"kube-proxy-2p9zf\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-control-plane\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.3\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"kube-proxy\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"controller-revision-hash\": \"7f964d48ff\",\n                \"k8s-app\": \"kube-proxy\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"kube-proxy-tgpzq\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-worker2\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.4\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"kube-proxy\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"controller-revision-hash\": \"7f964d48ff\",\n                \"k8s-app\": \"kube-proxy\",\n                \"pod-template-generation\": \"1\"\n            },\n            \"name\": \"kube-proxy-xnp6m\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-worker\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.2\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"kube-scheduler\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"component\": \"kube-scheduler\",\n                \"tier\": \"control-plane\"\n            },\n            \"name\": \"kube-scheduler-ebpf-cluster-control-plane\",\n            \"namespace\": \"kube-system\",\n            \"node\": \"ebpf-cluster-control-plane\",\n            \"phase\": \"Running\",\n            \"podIP\": \"172.18.0.3\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"local-path-provisioner\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"app\": \"local-path-provisioner\",\n                \"pod-template-hash\": \"7dc846544d\"\n            },\n            \"name\": \"local-path-provisioner-7dc846544d-cw7md\",\n            \"namespace\": \"local-path-storage\",\n            \"node\": \"ebpf-cluster-control-plane\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.0.53\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"mongo\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 27017,\n                            \"name\": \"mongo\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app.kubernetes.io/name\": \"mongo\",\n                \"apps.kubernetes.io/pod-index\": \"0\",\n                \"controller-revision-hash\": \"mongo-745b7d6598\",\n                \"statefulset.kubernetes.io/pod-name\": \"mongo-0\"\n            },\n            \"name\": \"mongo-0\",\n            \"namespace\": \"mongo\",\n            \"node\": \"ebpf-cluster-worker\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.1.161\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"mongo\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 27017,\n                            \"name\": \"mongo\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app.kubernetes.io/name\": \"mongo\",\n                \"apps.kubernetes.io/pod-index\": \"1\",\n                \"controller-revision-hash\": \"mongo-745b7d6598\",\n                \"statefulset.kubernetes.io/pod-name\": \"mongo-1\"\n            },\n            \"name\": \"mongo-1\",\n            \"namespace\": \"mongo\",\n            \"node\": \"ebpf-cluster-worker2\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.2.98\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"mongo\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 27017,\n                            \"name\": \"mongo\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app.kubernetes.io/name\": \"mongo\",\n                \"apps.kubernetes.io/pod-index\": \"2\",\n                \"controller-revision-hash\": \"mongo-745b7d6598\",\n                \"statefulset.kubernetes.io/pod-name\": \"mongo-2\"\n            },\n            \"name\": \"mongo-2\",\n            \"namespace\": \"mongo\",\n            \"node\": \"ebpf-cluster-worker\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.1.204\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"service-a\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 5000,\n                            \"name\": \"\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app\": \"service-a\",\n                \"pod-template-hash\": \"7c5d44f854\"\n            },\n            \"name\": \"service-a-7c5d44f854-87vc4\",\n            \"namespace\": \"test-services\",\n            \"node\": \"ebpf-cluster-worker2\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.2.225\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"service-a\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 5000,\n                            \"name\": \"\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app\": \"service-a\",\n                \"pod-template-hash\": \"7c5d44f854\"\n            },\n            \"name\": \"service-a-7c5d44f854-krnlj\",\n            \"namespace\": \"test-services\",\n            \"node\": \"ebpf-cluster-worker\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.1.81\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"service-b\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 5001,\n                            \"name\": \"\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app\": \"service-b\",\n                \"pod-template-hash\": \"66d6865c6b\"\n            },\n            \"name\": \"service-b-66d6865c6b-jkgvj\",\n            \"namespace\": \"test-services\",\n            \"node\": \"ebpf-cluster-worker2\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.2.100\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"service-b\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 5001,\n                            \"name\": \"\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app\": \"service-b\",\n                \"pod-template-hash\": \"66d6865c6b\"\n            },\n            \"name\": \"service-b-66d6865c6b-lx555\",\n            \"namespace\": \"test-services\",\n            \"node\": \"ebpf-cluster-worker\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.1.227\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"service-c\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 5003,\n                            \"name\": \"\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app\": \"service-c\",\n                \"pod-template-hash\": \"57664bd5cf\"\n            },\n            \"name\": \"service-c-57664bd5cf-fmpv9\",\n            \"namespace\": \"test-services\",\n            \"node\": \"ebpf-cluster-worker2\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.2.220\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"service-c\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 5003,\n                            \"name\": \"\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app\": \"service-c\",\n                \"pod-template-hash\": \"57664bd5cf\"\n            },\n            \"name\": \"service-c-57664bd5cf-fnjkk\",\n            \"namespace\": \"test-services\",\n            \"node\": \"ebpf-cluster-worker\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.1.233\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"tcp-client\",\n                    \"ports\": [\n                        {\n                            \"containerPort\": 5002,\n                            \"name\": \"\",\n                            \"protocol\": \"TCP\"\n                        }\n                    ]\n                }\n            ],\n            \"labels\": {\n                \"app\": \"tcp-client\",\n                \"pod-template-hash\": \"79d47686fc\"\n            },\n            \"name\": \"tcp-client-79d47686fc-nntcg\",\n            \"namespace\": \"test-services\",\n            \"node\": \"ebpf-cluster-worker\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.1.93\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"curl\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"batch.kubernetes.io/controller-uid\": \"60c20783-00f8-4d67-820a-f3050acfa5db\",\n                \"batch.kubernetes.io/job-name\": \"traffic-generator-29540658\",\n                \"controller-uid\": \"60c20783-00f8-4d67-820a-f3050acfa5db\",\n                \"job-name\": \"traffic-generator-29540658\"\n            },\n            \"name\": \"traffic-generator-29540658-hsm4d\",\n            \"namespace\": \"test-services\",\n            \"node\": \"ebpf-cluster-worker2\",\n            \"phase\": \"Succeeded\",\n            \"podIP\": \"10.244.2.79\"\n        },\n        {\n            \"containers\": [\n                {\n                    \"name\": \"curl\",\n                    \"ports\": []\n                }\n            ],\n            \"labels\": {\n                \"batch.kubernetes.io/controller-uid\": \"a9be22d5-3f48-4409-9cb2-228c5737618d\",\n                \"batch.kubernetes.io/job-name\": \"traffic-generator-29540659\",\n                \"controller-uid\": \"a9be22d5-3f48-4409-9cb2-228c5737618d\",\n                \"job-name\": \"traffic-generator-29540659\"\n            },\n            \"name\": \"traffic-generator-29540659-lk6wf\",\n            \"namespace\": \"test-services\",\n            \"node\": \"ebpf-cluster-worker2\",\n            \"phase\": \"Running\",\n            \"podIP\": \"10.244.2.21\"\n        }\n    ],\n    \"services\": [\n        {\n            \"clusterIP\": \"10.96.0.1\",\n            \"endpoints\": [\n                {\n                    \"address\": \"172.18.0.3\",\n                    \"conditions\": {\n                        \"ready\": true\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"https\",\n                            \"port\": 6443,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {}\n                }\n            ],\n            \"name\": \"kubernetes\",\n            \"namespace\": \"default\",\n            \"ports\": [\n                {\n                    \"name\": \"https\",\n                    \"port\": 443,\n                    \"protocol\": \"TCP\",\n                    \"targetPort\": \"6443\"\n                }\n            ],\n            \"selector\": null,\n            \"type\": \"ClusterIP\"\n        },\n        {\n            \"clusterIP\": \"10.96.180.48\",\n            \"endpoints\": [\n                {\n                    \"address\": \"172.18.0.3\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"http\",\n                            \"port\": 8080,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"ebpf-daemon-dvwwm\",\n                        \"namespace\": \"ebpf-telemetry\"\n                    }\n                },\n                {\n                    \"address\": \"172.18.0.4\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"http\",\n                            \"port\": 8080,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"ebpf-daemon-wnzxk\",\n                        \"namespace\": \"ebpf-telemetry\"\n                    }\n                },\n                {\n                    \"address\": \"172.18.0.2\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"http\",\n                            \"port\": 8080,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"ebpf-daemon-8djxq\",\n                        \"namespace\": \"ebpf-telemetry\"\n                    }\n                }\n            ],\n            \"name\": \"ebpf-daemon\",\n            \"namespace\": \"ebpf-telemetry\",\n            \"ports\": [\n                {\n                    \"name\": \"http\",\n                    \"port\": 8080,\n                    \"protocol\": \"TCP\",\n                    \"targetPort\": \"8080\"\n                }\n            ],\n            \"selector\": {\n                \"app\": \"ebpf-daemon\"\n            },\n            \"type\": \"ClusterIP\"\n        },\n        {\n            \"clusterIP\": \"None\",\n            \"endpoints\": [\n                {\n                    \"address\": \"172.18.0.2\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"envoy-metrics\",\n                            \"port\": 9964,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"cilium-envoy-ghz5n\",\n                        \"namespace\": \"kube-system\"\n                    }\n                },\n                {\n                    \"address\": \"172.18.0.4\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"envoy-metrics\",\n                            \"port\": 9964,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"cilium-envoy-xkh5h\",\n                        \"namespace\": \"kube-system\"\n                    }\n                },\n                {\n                    \"address\": \"172.18.0.3\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"envoy-metrics\",\n                            \"port\": 9964,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"cilium-envoy-hltvp\",\n                        \"namespace\": \"kube-system\"\n                    }\n                }\n            ],\n            \"name\": \"cilium-envoy\",\n            \"namespace\": \"kube-system\",\n            \"ports\": [\n                {\n                    \"name\": \"envoy-metrics\",\n                    \"port\": 9964,\n                    \"protocol\": \"TCP\",\n                    \"targetPort\": \"envoy-metrics\"\n                }\n            ],\n            \"selector\": {\n                \"k8s-app\": \"cilium-envoy\"\n            },\n            \"type\": \"ClusterIP\"\n        },\n        {\n            \"clusterIP\": \"10.96.124.165\",\n            \"endpoints\": [\n                {\n                    \"address\": \"172.18.0.3\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"peer-service\",\n                            \"port\": 4244,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"cilium-qxmhw\",\n                        \"namespace\": \"kube-system\"\n                    }\n                },\n                {\n                    \"address\": \"172.18.0.4\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"peer-service\",\n                            \"port\": 4244,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"cilium-smb8n\",\n                        \"namespace\": \"kube-system\"\n                    }\n                },\n                {\n                    \"address\": \"172.18.0.2\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"peer-service\",\n                            \"port\": 4244,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"cilium-gdkr5\",\n                        \"namespace\": \"kube-system\"\n                    }\n                }\n            ],\n            \"name\": \"hubble-peer\",\n            \"namespace\": \"kube-system\",\n            \"ports\": [\n                {\n                    \"name\": \"peer-service\",\n                    \"port\": 443,\n                    \"protocol\": \"TCP\",\n                    \"targetPort\": \"4244\"\n                }\n            ],\n            \"selector\": {\n                \"k8s-app\": \"cilium\"\n            },\n            \"type\": \"ClusterIP\"\n        },\n        {\n            \"clusterIP\": \"10.96.0.10\",\n            \"endpoints\": [\n                {\n                    \"address\": \"10.244.0.173\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"metrics\",\n                            \"port\": 9153,\n                            \"protocol\": \"TCP\"\n                        },\n                        {\n                            \"name\": \"dns\",\n                            \"port\": 53,\n                            \"protocol\": \"UDP\"\n                        },\n                        {\n                            \"name\": \"dns-tcp\",\n                            \"port\": 53,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"coredns-674b8bbfcf-ntwkb\",\n                        \"namespace\": \"kube-system\"\n                    }\n                },\n                {\n                    \"address\": \"10.244.0.80\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"metrics\",\n                            \"port\": 9153,\n                            \"protocol\": \"TCP\"\n                        },\n                        {\n                            \"name\": \"dns\",\n                            \"port\": 53,\n                            \"protocol\": \"UDP\"\n                        },\n                        {\n                            \"name\": \"dns-tcp\",\n                            \"port\": 53,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"coredns-674b8bbfcf-w6vmw\",\n                        \"namespace\": \"kube-system\"\n                    }\n                }\n            ],\n            \"name\": \"kube-dns\",\n            \"namespace\": \"kube-system\",\n            \"ports\": [\n                {\n                    \"name\": \"dns\",\n                    \"port\": 53,\n                    \"protocol\": \"UDP\",\n                    \"targetPort\": \"53\"\n                },\n                {\n                    \"name\": \"dns-tcp\",\n                    \"port\": 53,\n                    \"protocol\": \"TCP\",\n                    \"targetPort\": \"53\"\n                },\n                {\n                    \"name\": \"metrics\",\n                    \"port\": 9153,\n                    \"protocol\": \"TCP\",\n                    \"targetPort\": \"9153\"\n                }\n            ],\n            \"selector\": {\n                \"k8s-app\": \"kube-dns\"\n            },\n            \"type\": \"ClusterIP\"\n        },\n        {\n            \"clusterIP\": \"None\",\n            \"endpoints\": [\n                {\n                    \"address\": \"10.244.1.161\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"mongo\",\n                            \"port\": 27017,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"mongo-0\",\n                        \"namespace\": \"mongo\"\n                    }\n                },\n                {\n                    \"address\": \"10.244.2.98\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"mongo\",\n                            \"port\": 27017,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"mongo-1\",\n                        \"namespace\": \"mongo\"\n                    }\n                },\n                {\n                    \"address\": \"10.244.1.204\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"mongo\",\n                            \"port\": 27017,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"mongo-2\",\n                        \"namespace\": \"mongo\"\n                    }\n                }\n            ],\n            \"name\": \"mongo\",\n            \"namespace\": \"mongo\",\n            \"ports\": [\n                {\n                    \"name\": \"mongo\",\n                    \"port\": 27017,\n                    \"protocol\": \"TCP\",\n                    \"targetPort\": \"27017\"\n                }\n            ],\n            \"selector\": {\n                \"app.kubernetes.io/name\": \"mongo\"\n            },\n            \"type\": \"ClusterIP\"\n        },\n        {\n            \"clusterIP\": \"10.96.229.152\",\n            \"endpoints\": [\n                {\n                    \"address\": \"10.244.1.81\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"http\",\n                            \"port\": 5000,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"service-a-7c5d44f854-krnlj\",\n                        \"namespace\": \"test-services\"\n                    }\n                },\n                {\n                    \"address\": \"10.244.2.225\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"http\",\n                            \"port\": 5000,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"service-a-7c5d44f854-87vc4\",\n                        \"namespace\": \"test-services\"\n                    }\n                }\n            ],\n            \"name\": \"service-a\",\n            \"namespace\": \"test-services\",\n            \"ports\": [\n                {\n                    \"name\": \"http\",\n                    \"port\": 5000,\n                    \"protocol\": \"TCP\",\n                    \"targetPort\": \"5000\"\n                }\n            ],\n            \"selector\": {\n                \"app\": \"service-a\"\n            },\n            \"type\": \"ClusterIP\"\n        },\n        {\n            \"clusterIP\": \"10.96.174.217\",\n            \"endpoints\": [\n                {\n                    \"address\": \"10.244.1.227\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"http\",\n                            \"port\": 5001,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"service-b-66d6865c6b-lx555\",\n                        \"namespace\": \"test-services\"\n                    }\n                },\n                {\n                    \"address\": \"10.244.2.100\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"http\",\n                            \"port\": 5001,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"service-b-66d6865c6b-jkgvj\",\n                        \"namespace\": \"test-services\"\n                    }\n                }\n            ],\n            \"name\": \"service-b\",\n            \"namespace\": \"test-services\",\n            \"ports\": [\n                {\n                    \"name\": \"http\",\n                    \"port\": 5001,\n                    \"protocol\": \"TCP\",\n                    \"targetPort\": \"5001\"\n                }\n            ],\n            \"selector\": {\n                \"app\": \"service-b\"\n            },\n            \"type\": \"ClusterIP\"\n        },\n        {\n            \"clusterIP\": \"10.96.32.197\",\n            \"endpoints\": [\n                {\n                    \"address\": \"10.244.1.233\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"http\",\n                            \"port\": 5003,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"service-c-57664bd5cf-fnjkk\",\n                        \"namespace\": \"test-services\"\n                    }\n                },\n                {\n                    \"address\": \"10.244.2.220\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"http\",\n                            \"port\": 5003,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"service-c-57664bd5cf-fmpv9\",\n                        \"namespace\": \"test-services\"\n                    }\n                }\n            ],\n            \"name\": \"service-c\",\n            \"namespace\": \"test-services\",\n            \"ports\": [\n                {\n                    \"name\": \"http\",\n                    \"port\": 5003,\n                    \"protocol\": \"TCP\",\n                    \"targetPort\": \"5003\"\n                }\n            ],\n            \"selector\": {\n                \"app\": \"service-c\"\n            },\n            \"type\": \"ClusterIP\"\n        },\n        {\n            \"clusterIP\": \"10.96.20.68\",\n            \"endpoints\": [\n                {\n                    \"address\": \"10.244.1.93\",\n                    \"conditions\": {\n                        \"ready\": true,\n                        \"serving\": true,\n                        \"terminating\": false\n                    },\n                    \"ports\": [\n                        {\n                            \"name\": \"http\",\n                            \"port\": 5002,\n                            \"protocol\": \"TCP\"\n                        }\n                    ],\n                    \"targetRef\": {\n                        \"kind\": \"Pod\",\n                        \"name\": \"tcp-client-79d47686fc-nntcg\",\n                        \"namespace\": \"test-services\"\n                    }\n                }\n            ],\n            \"name\": \"tcp-client\",\n            \"namespace\": \"test-services\",\n            \"ports\": [\n                {\n                    \"name\": \"http\",\n                    \"port\": 5002,\n                    \"protocol\": \"TCP\",\n                    \"targetPort\": \"5002\"\n                }\n            ],\n            \"selector\": {\n                \"app\": \"tcp-client\"\n            },\n            \"type\": \"ClusterIP\"\n        }\n    ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pods",
+      "item": [
+        {
+          "name": "Pod Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/pod/details",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "pod",
+                "details"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Pod Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/pod/logs?namespace=default&pod=pod-name&lines=100",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "pod",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "namespace",
+                  "value": "default"
+                },
+                {
+                  "key": "pod",
+                  "value": "pod-name"
+                },
+                {
+                  "key": "lines",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Pod Action",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"restart\",\n  \"namespace\": \"default\",\n  \"pod_name\": \"pod-name\",\n  \"replicas\": 2\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/pod/action",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "pod",
+                "action"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Pod eBPF Action",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"traffic_control\",\n  \"namespace\": \"default\",\n  \"pod_name\": \"pod-name\",\n  \"pod_ip\": \"10.244.0.5\",\n  \"bandwidth_limit_mbps\": 50,\n  \"priority\": \"high\",\n  \"target_ips\": [\n    \"10.244.0.10\"\n  ],\n  \"duration_seconds\": 30\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/pod/ebpf-action",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "pod",
+                "ebpf-action"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Connections",
+      "item": [
+        {
+          "name": "Connections Topology",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/connections/topology?filter=established",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "connections",
+                "topology"
+              ],
+              "query": [
+                {
+                  "key": "filter",
+                  "value": "established"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Pod Connections",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/connections/pod?namespace=default&pod=pod-name",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "connections",
+                "pod"
+              ],
+              "query": [
+                {
+                  "key": "namespace",
+                  "value": "default"
+                },
+                {
+                  "key": "pod",
+                  "value": "pod-name"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Scheduling",
+      "item": [
+        {
+          "name": "Sched Latency Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/sched/metrics?limit=50",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "sched",
+                "metrics"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Sched Latency Pods",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/sched/pods",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "sched",
+                "pods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Sched Latency Containers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/sched/containers",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "sched",
+                "containers"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Sched Latency Records",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/sched/records?limit=100",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "sched",
+                "records"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Disk IO",
+      "item": [
+        {
+          "name": "Disk IO Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/disk/metrics",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "disk",
+                "metrics"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Disk IO Pods",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/disk/pods",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "disk",
+                "pods"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Disk IO Containers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/disk/containers",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "disk",
+                "containers"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Disk IO All",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/disk/all",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "disk",
+                "all"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Scaling",
+      "item": [
+        {
+          "name": "Scaling Rules (List)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/scaling/rules",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "scaling",
+                "rules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Scaling Rules (Create)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"namespace\": \"default\",\n  \"deployment\": \"my-app\",\n  \"metric\": \"dns_latency_us\",\n  \"operator\": \">\",\n  \"threshold\": 300000,\n  \"enabled\": true,\n  \"minReplicas\": 1,\n  \"maxReplicas\": 10,\n  \"step\": 1,\n  \"action\": \"scale\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/scaling/rules",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "scaling",
+                "rules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Scaling Rule (Update)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false,\n  \"threshold\": 500000\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/scaling/rules/{{ruleId}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "scaling",
+                "rules",
+                "{{ruleId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Scaling Rule (Delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/scaling/rules/{{ruleId}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "scaling",
+                "rules",
+                "{{ruleId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Scaling Rule (Toggle)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/scaling/rules/{{ruleId}}/toggle",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "scaling",
+                "rules",
+                "{{ruleId}}",
+                "toggle"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Scaling Deployments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/scaling/deployments?namespace=default",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "scaling",
+                "deployments"
+              ],
+              "query": [
+                {
+                  "key": "namespace",
+                  "value": "default"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Scaling Namespaces",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/scaling/namespaces",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "scaling",
+                "namespaces"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Scaling Latest Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/scaling/metrics/latest",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "scaling",
+                "metrics",
+                "latest"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Routing Policies",
+      "item": [
+        {
+          "name": "Probe Service",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/probe/{{service}}?namespace=default&port=5000&path=/whoami",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "probe",
+                "{{service}}"
+              ],
+              "query": [
+                {
+                  "key": "namespace",
+                  "value": "default"
+                },
+                {
+                  "key": "port",
+                  "value": "5000"
+                },
+                {
+                  "key": "path",
+                  "value": "/whoami"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Policies (List)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Policies (Create)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "// {\n//   \"policy_name\": \"route-a-to-c-on-dns\",\n//   \"namespace\": \"test-services\",\n//   \"frontend\": {\n//     \"service\": \"service-a\",\n//     \"port\": 5000\n//   },\n//   \"telemetry\": {\n//     \"metric\": \"dns_us\",\n//     \"violation_threshold\": 200000,\n//     \"monitor_pod_contains\": \"service-a\"\n//   },\n//   \"action\": {\n//     \"type\": \"redirect\",\n//     \"backend_selector\": \"app=service-c\",\n//     \"backend_port\": 5003,\n//     \"protocol\": \"TCP\",\n//     \"ttl_seconds\": 60,\n//     \"strategy\": \"all\",\n//     \"winner_label\": \"redirect-winner=yes\"\n//   }\n// }\n{\n  \"policy_name\": \"route-a-to-b-on-local\",\n  \"namespace\": \"test-services\",\n  \"scope\": \"cluster\",\n  \"frontend\": { \"service\": \"service-a\", \"port\": 5000 },\n  \"telemetry\": {\n    \"violation_threshold\": 30,\n    \"monitor_pod_contains\": \"service-a\",\n    \"metric\": \"disk_io\"\n  },\n  \"action\": {\n    \"type\": \"redirect\",\n    \"backend_selector\": \"app=service-b\",\n    \"backend_service\": \"service-b\",\n    \"backend_port\": 5001,\n    \"protocol\": \"TCP\",\n    \"ttl_seconds\": 60,\n    \"strategy\": \"best_pod\",\n    \"backend_candidates_selector\": \"app=service-b\",\n    \"winner_label\": \"redirect-winner=yes\"\n  }\n}\n"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Policies (Create)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "// {\n//   \"policy_name\": \"route-a-to-c-on-dns\",\n//   \"namespace\": \"test-services\",\n//   \"frontend\": {\n//     \"service\": \"service-a\",\n//     \"port\": 5000\n//   },\n//   \"telemetry\": {\n//     \"metric\": \"dns_us\",\n//     \"violation_threshold\": 200000,\n//     \"monitor_pod_contains\": \"service-a\"\n//   },\n//   \"action\": {\n//     \"type\": \"redirect\",\n//     \"backend_selector\": \"app=service-c\",\n//     \"backend_port\": 5003,\n//     \"protocol\": \"TCP\",\n//     \"ttl_seconds\": 60,\n//     \"strategy\": \"all\",\n//     \"winner_label\": \"redirect-winner=yes\"\n//   }\n// }\n\n{\n  \"policy_name\": \"route-a-to-b-on-dns\",\n  \"namespace\": \"test-services\",\n  \"scope\": \"cluster\",\n  \"frontend\": { \"service\": \"service-a\", \"port\": 5000 },\n  \"telemetry\": {\n    \"violation_threshold\": 300,\n    \"monitor_pod_contains\": \"service-a\",\n    \"metric\": \"dns_us\"\n  },\n  \"action\": {\n    \"type\": \"redirect\",\n    \"backend_selector\": \"app=service-b\",\n    \"backend_service\": \"service-b\",\n    \"backend_port\": 5001,\n    \"protocol\": \"TCP\",\n    \"ttl_seconds\": 60,\n    \"strategy\": \"best_pod\",\n    \"backend_candidates_selector\": \"app=service-b\",\n    \"winner_label\": \"redirect-winner=yes\"\n  }\n}\n"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/policies",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "policies"
+                  ]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": null,
+              "header": [
+                {
+                  "key": "Access-Control-Allow-Headers",
+                  "value": "Content-Type, Authorization"
+                },
+                {
+                  "key": "Access-Control-Allow-Methods",
+                  "value": "GET, POST, PUT, DELETE, OPTIONS"
+                },
+                {
+                  "key": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "key": "Date",
+                  "value": "Fri, 27 Feb 2026 18:23:14 GMT"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "753"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "text/plain; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\"id\":\"69a1e112698078ffc248c766\",\"policy_name\":\"route-a-to-b-on-dns\",\"namespace\":\"test-services\",\"scope\":\"cluster\",\"frontend\":{\"service\":\"service-a\",\"port\":5000},\"telemetry\":{\"metric\":\"dns_us\",\"violation_threshold\":300,\"monitor_pod_contains\":\"service-a\"},\"action\":{\"type\":\"redirect\",\"backend_selector\":\"app=service-b\",\"backend_service\":\"service-b\",\"backend_port\":5001,\"protocol\":\"TCP\",\"ttl_seconds\":60,\"strategy\":\"best_pod\",\"backend_candidates_selector\":\"app=service-b\",\"winner_label\":\"redirect-winner=yes\"},\"status\":{},\"history\":[{\"ts\":\"2026-02-27T18:23:14.607228425Z\",\"event\":\"CREATED\",\"message\":\"Policy created\",\"data\":{\"policy_name\":\"route-a-to-b-on-dns\"}}],\"createdAt\":\"2026-02-27T18:23:14.607229855Z\",\"updatedAt\":\"2026-02-27T18:23:14.607229855Z\"}\n"
+            }
+          ]
+        },
+        {
+          "name": "Policy (Get)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{policyName}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{policyName}}"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Policy (Get)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/policies/{{policyName}}",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "policies",
+                    "{{policyName}}"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": null,
+              "header": [
+                {
+                  "key": "Access-Control-Allow-Headers",
+                  "value": "Content-Type, Authorization"
+                },
+                {
+                  "key": "Access-Control-Allow-Methods",
+                  "value": "GET, POST, PUT, DELETE, OPTIONS"
+                },
+                {
+                  "key": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Date",
+                  "value": "Mon, 02 Mar 2026 09:27:11 GMT"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "1483"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"id\": \"69a545926448331b89b916e2\",\n    \"policy_name\": \"route-a-to-c-on-dns-local\",\n    \"namespace\": \"test-services\",\n    \"scope\": \"local\",\n    \"frontend\": {\n        \"service\": \"service-a\",\n        \"port\": 5000\n    },\n    \"telemetry\": {\n        \"metric\": \"dns_us\",\n        \"violation_threshold\": 300,\n        \"monitor_pod_contains\": \"service-a\"\n    },\n    \"action\": {\n        \"type\": \"redirect\",\n        \"backend_selector\": \"app=service-c\",\n        \"backend_service\": \"service-c\",\n        \"backend_port\": 5001,\n        \"protocol\": \"TCP\",\n        \"ttl_seconds\": 60,\n        \"strategy\": \"best_pod\",\n        \"backend_candidates_selector\": \"app=service-c\",\n        \"winner_label\": \"redirect-winner=yes\"\n    },\n    \"status\": {\n        \"last_evaluated_at\": \"2026-03-02T09:25:01.14Z\",\n        \"last_applied_at\": \"2026-03-02T09:25:01.14Z\",\n        \"last_expired_at\": \"2026-03-02T09:26:02.486Z\",\n        \"last_decision\": \"EXPIRED\",\n        \"last_helper_stdout\": \"Redirect applied to app=service-c\",\n        \"last_lrp_name\": \"route-a-to-c-on-dns-local\",\n        \"last_avg_value\": 519.3683233187552,\n        \"last_violation\": true\n    },\n    \"history\": [\n        {\n            \"ts\": \"2026-03-02T09:26:02.486Z\",\n            \"event\": \"EXPIRED\",\n            \"message\": \"LocalRedirectPolicy deleted\",\n            \"data\": {\n                \"reason\": \"auto-ttl\"\n            }\n        },\n        {\n            \"ts\": \"2026-03-02T09:25:01.318Z\",\n            \"event\": \"APPLIED\",\n            \"message\": \"LocalRedirectPolicy applied\",\n            \"data\": {\n                \"avg_value\": 519.3683233187552,\n                \"metric\": \"dns_us\",\n                \"target_backend\": \"service-c\"\n            }\n        },\n        {\n            \"ts\": \"2026-03-02T08:09:58.968Z\",\n            \"event\": \"EXPIRED\",\n            \"message\": \"LocalRedirectPolicy deleted\",\n            \"data\": {\n                \"reason\": \"auto-ttl\"\n            }\n        },\n        {\n            \"ts\": \"2026-03-02T08:08:50.599Z\",\n            \"event\": \"CREATED\",\n            \"message\": \"Policy created\",\n            \"data\": {\n                \"policy_name\": \"route-a-to-c-on-dns-local\"\n            }\n        }\n    ],\n    \"createdAt\": \"2026-03-02T08:08:50.599Z\",\n    \"updatedAt\": \"2026-03-02T09:26:02.486Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Policy (Update)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policy_name\": \"route-a-to-c-on-dns-cluster\",\n  \"namespace\": \"test-services\",\n  \"scope\": \"cluster\",\n  \"frontend\": { \"service\": \"service-a\", \"port\": 5000 },\n  \"telemetry\": {\n    \"violation_threshold\": 30,\n    \"monitor_pod_contains\": \"service-a\",\n    \"metric\": \"dis_io\"\n  },\n  \"action\": {\n    \"type\": \"redirect\",\n    \"backend_selector\": \"app=service-c\",\n    \"backend_service\": \"service-c\",\n    \"backend_port\": 5003,\n    \"protocol\": \"TCP\",\n    \"ttl_seconds\": 60,\n    \"strategy\": \"best_pod\",\n    \"backend_candidates_selector\": \"app=service-c\",\n    \"winner_label\": \"redirect-winner=yes\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{policyName}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{policyName}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Policy (Delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{policyName}}",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{policyName}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Policy (Evaluate)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{policyName}}/evaluate",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{policyName}}",
+                "evaluate"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Policy (Evaluate)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/policies/{{policyName}}/evaluate",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "policies",
+                    "{{policyName}}",
+                    "evaluate"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": null,
+              "header": [
+                {
+                  "key": "Access-Control-Allow-Headers",
+                  "value": "Content-Type, Authorization"
+                },
+                {
+                  "key": "Access-Control-Allow-Methods",
+                  "value": "GET, POST, PUT, DELETE, OPTIONS"
+                },
+                {
+                  "key": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Date",
+                  "value": "Sun, 01 Mar 2026 06:29:01 GMT"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "393"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"applied\": true,\n    \"message\": \"Violation triggered. Cluster redirection applied via eBPF DNAT.\",\n    \"target_backend\": \"service-b-66d6865c6b-4k2kf\",\n    \"ttl_seconds\": 60,\n    \"details\": [\n        \"DNAT map updated\",\n        \"Target backend: service-b-66d6865c6b-4k2kf\",\n        \"Metric avg: 466.01 (threshold 300.00)\"\n    ],\n    \"stdout\": \"DNAT map updated for service service-b\",\n    \"metric_average\": 466.00881488507184,\n    \"metric\": \"dns_us\",\n    \"violation\": true\n}"
+            },
+            {
+              "name": "Policy (Evaluate)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/policies/{{policyName}}/evaluate",
+                  "host": [
+                    "{{BASE_URL}}"
+                  ],
+                  "path": [
+                    "api",
+                    "policies",
+                    "{{policyName}}",
+                    "evaluate"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": null,
+              "header": [
+                {
+                  "key": "Access-Control-Allow-Headers",
+                  "value": "Content-Type, Authorization"
+                },
+                {
+                  "key": "Access-Control-Allow-Methods",
+                  "value": "GET, POST, PUT, DELETE, OPTIONS"
+                },
+                {
+                  "key": "Access-Control-Allow-Origin",
+                  "value": "*"
+                },
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "Date",
+                  "value": "Wed, 04 Mar 2026 04:44:25 GMT"
+                },
+                {
+                  "key": "Content-Length",
+                  "value": "338"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n    \"applied\": true,\n    \"message\": \"Violation triggered. Redirection applied.\",\n    \"target_backend\": \"service-c\",\n    \"ttl_seconds\": 60,\n    \"details\": [\n        \"Redirect policy applied\",\n        \"Target backend: service-c\",\n        \"Metric avg: 634.40 (threshold 300.00)\"\n    ],\n    \"stdout\": \"Redirect applied to app=service-c\",\n    \"metric_average\": 634.4046704906763,\n    \"metric\": \"dns_us\",\n    \"violation\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "Policy (Expire)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/policies/{{policyName}}/expire",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "policies",
+                "{{policyName}}",
+                "expire"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Comm",
+      "item": [
+        {
+          "name": "Comm Broadcast",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"metrics_update\",\n  \"payload\": {\n    \"example\": \"value\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/comm/broadcast",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "comm",
+                "broadcast"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Comm Unicast",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"metrics_update\",\n  \"targets\": [\n    \"10.0.0.2\"\n  ],\n  \"payload\": {\n    \"example\": \"value\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/comm/unicast",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "comm",
+                "unicast"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Comm Multicast",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"metrics_update\",\n  \"targets\": [\n    \"10.0.0.2\",\n    \"10.0.0.3\"\n  ],\n  \"payload\": {\n    \"example\": \"value\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/comm/multicast",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "comm",
+                "multicast"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Comm Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/comm/stats",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "comm",
+                "stats"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Comm Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/comm/logs?scope=local&limit=50",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "comm",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "scope",
+                  "value": "local"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Comm Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/comm/health",
+              "host": [
+                "{{BASE_URL}}"
+              ],
+              "path": [
+                "api",
+                "comm",
+                "health"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Check DNAT",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/dnat/entries",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "api",
+            "dnat",
+            "entries"
+          ]
+        },
+        "description": "Generated from cURL: curl -s http://localhost:18080/api/dnat/entries"
+      },
+      "response": [
+        {
+          "name": "Check DNAT",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/api/dnat/entries",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "api",
+                "dnat",
+                "entries"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": null,
+          "header": [
+            {
+              "key": "Access-Control-Allow-Headers",
+              "value": "Content-Type, Authorization"
+            },
+            {
+              "key": "Access-Control-Allow-Methods",
+              "value": "GET, POST, PUT, DELETE, OPTIONS"
+            },
+            {
+              "key": "Access-Control-Allow-Origin",
+              "value": "*"
+            },
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "key": "Date",
+              "value": "Thu, 05 Mar 2026 20:16:59 GMT"
+            },
+            {
+              "key": "Content-Length",
+              "value": "138"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n    \"node\": \"ebpf-cluster-worker2\",\n    \"entries\": [\n        {\n            \"service_ip\": \"10.96.7.99\",\n            \"service_port\": 5000,\n            \"target_ip\": \"10.244.2.211\",\n            \"target_port\": 5003\n        }\n    ]\n}"
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "BASE_URL",
+      "value": "localhost:8080"
+    },
+    {
+      "key": "WS_URL",
+      "value": "ws://localhost:8080"
+    },
+    {
+      "key": "policyName",
+      "value": "",
+      "type": "default"
+    }
+  ]
+}
