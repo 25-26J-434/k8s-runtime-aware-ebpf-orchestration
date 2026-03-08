@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useMetrics } from '../hooks/useMetrics';
-import { api } from '../services/api';
+import { api, API_BASE } from '../services/api';
 import { topologyWebSocket } from '../services/websocket';
 import { 
     FiRefreshCw, FiTrash2, FiX, FiCheckCircle, 
@@ -951,7 +951,7 @@ export function NetworkTopology() {
         if (!window.confirm(`Delete pod ${selectedPod.name}?`)) return;
         
         try {
-            const response = await fetch('/api/pod/action', {
+            const response = await fetch(`${API_BASE}/api/pod/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -980,7 +980,7 @@ export function NetworkTopology() {
         if (!window.confirm(`Restart pod ${selectedPod.name}?`)) return;
         
         try {
-            const response = await fetch('/api/pod/action', {
+            const response = await fetch(`${API_BASE}/api/pod/action`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1007,7 +1007,7 @@ export function NetworkTopology() {
         if (!selectedPod) return;
         
         try {
-            const response = await fetch(`/api/pod/logs?namespace=${selectedPod.namespace}&pod=${selectedPod.name}&lines=100`);
+            const response = await fetch(`${API_BASE}/api/pod/logs?namespace=${selectedPod.namespace}&pod=${selectedPod.name}&lines=100`);
             const result = await response.json();
             if (result.success) {
                 setPodLogs({ pod: selectedPod.name, logs: result.logs || 'No logs available' });

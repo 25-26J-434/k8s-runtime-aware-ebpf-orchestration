@@ -10,8 +10,27 @@ import type {
 } from '../types/api';
 import type { ScalingRule, LatestMetric, DeploymentInfo, ScalingPlacementResponse } from '../types/scaling';
 
-const API_BASE = '';  // Proxy handles routing
-const ROUTING_API_BASE = (import.meta as any).env?.VITE_ROUTING_API || API_BASE || '';
+/** Backend port (daemon). */
+const BACKEND_PORT = (import.meta as any).env?.VITE_API_PORT || '8080';
+
+/**
+ * Backend base URL (no proxy). In the browser uses same host as the page with port 8080,
+ * so hosting on Contabo with port-forwards 3000 (frontend) and 8080 (daemon) works.
+ * Override with VITE_API_BASE at build time if needed.
+ */
+export const API_BASE =
+    (import.meta as any).env?.VITE_API_BASE ||
+    (typeof window !== 'undefined'
+        ? `${window.location.protocol}//${window.location.hostname}:${BACKEND_PORT}`
+        : `http://localhost:${BACKEND_PORT}`);
+
+/** WebSocket URL for backend (same host as API_BASE, ws scheme). */
+export function getBackendWsUrl(path: string): string {
+    const base = API_BASE.replace(/^http/, 'ws');
+    return path.startsWith('/') ? base + path : base + '/' + path;
+}
+
+const ROUTING_API_BASE = (import.meta as any).env?.VITE_ROUTING_API || API_BASE;
 const SCALING_API_BASE = (import.meta as any).env?.VITE_SCALING_API_BASE || API_BASE;
 
 type ApplyResponse = {
