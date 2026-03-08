@@ -407,13 +407,13 @@ export const HealthMonitoring: React.FC = () => {
             <FiRefreshCw size={18} />
           </button>
 
-          <button 
+          {/* <button 
             onClick={() => setShowConfig(!showConfig)} 
             className="btn-icon"
             title="Configure metrics"
           >
             <FiSettings size={18} />
-          </button>
+          </button> */}
         </div>
       </div>
 
