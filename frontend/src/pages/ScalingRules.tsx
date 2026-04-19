@@ -524,20 +524,37 @@ export function ScalingRules() {
             </div>
 
             {showForm && (
-                <div className="scaling-modal">
-                    <div className="scaling-modal-card">
-                        <h2>{editingRule ? 'Edit Rule' : 'Create Rule'}</h2>
-                        <ScalingRuleForm
-                            initial={editingRule ?? undefined}
-                            nodeScope={selectedNode ? { name: selectedNode.name, ip: selectedNode.ip, pods: selectedNode.pods as Pod[] } : undefined}
-                            onTargetChange={setFormTarget}
-                            schedulingContent={renderSchedulingContent()}
-                            onCancel={() => { setShowForm(false); }}
-                            onSubmit={editingRule ? handleUpdate : handleCreate}
-                            submitLabel={editingRule ? 'Update' : 'Create'}
-                        />
-                    </div>
-                </div>
+                <>
+                    <div className="scaling-drawer-overlay" onClick={() => { setShowForm(false); setEditingRule(null); }} />
+                    <aside className="scaling-drawer open" role="dialog" aria-modal="true" aria-label={editingRule ? 'Edit Rule' : 'Create Rule'}>
+                        <div className="scaling-drawer-header">
+                            <div>
+                                <h2 className="scaling-drawer-title">{editingRule ? 'Edit Rule' : 'Create Rule'}</h2>
+                                <p className="scaling-drawer-subtitle">Configure autoscaling behavior with telemetry-driven rules.</p>
+                            </div>
+                            <button
+                                type="button"
+                                className="btn btn-sm btn-muted"
+                                onClick={() => { setShowForm(false); setEditingRule(null); }}
+                                aria-label="Close drawer"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div className="scaling-drawer-body">
+                            <ScalingRuleForm
+                                initial={editingRule ?? undefined}
+                                nodeScope={selectedNode ? { name: selectedNode.name, ip: selectedNode.ip, pods: selectedNode.pods as Pod[] } : undefined}
+                                onTargetChange={setFormTarget}
+                                schedulingContent={renderSchedulingContent()}
+                                onCancel={() => { setShowForm(false); }}
+                                onSubmit={editingRule ? handleUpdate : handleCreate}
+                                submitLabel={editingRule ? 'Update' : 'Create'}
+                            />
+                        </div>
+                    </aside>
+                </>
             )}
 
         </div>
