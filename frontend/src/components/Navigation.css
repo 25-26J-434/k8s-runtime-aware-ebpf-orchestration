@@ -21,6 +21,20 @@
     position: relative;
 }
 
+.brand-identity {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.brand-logo {
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.35);
+}
+
 .side-nav-toggle {
     position: absolute;
     top: 1rem;
@@ -172,14 +186,26 @@
 }
 
 .side-navigation.collapsed .side-nav-header {
-    padding: 1rem 0.6rem 0.9rem;
+    padding: 0.85rem 0.6rem 0.9rem;
     display: flex;
+    flex-direction: column;
     justify-content: center;
+    align-items: center;
+    gap: 0.65rem;
 }
 
 .side-navigation.collapsed .side-nav-toggle {
     position: static;
     margin: 0;
+}
+
+.side-navigation.collapsed .brand-identity {
+    justify-content: center;
+}
+
+.side-navigation.collapsed .brand-logo {
+    width: 34px;
+    height: 34px;
 }
 
 .side-navigation.collapsed .brand-text,

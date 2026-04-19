@@ -1,8 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useState, useRef, useEffect } from "react";
 import {
-  FiHome,
-  FiGitBranch,
+  FiGitMerge,
   FiGrid,
   FiClock,
   FiGlobe,
@@ -22,6 +21,7 @@ import {
   FiHeart,
   FiLayers,
   FiBell,
+  FiShuffle,
 } from "react-icons/fi";
 import { api, type ExtensionInfo } from "../services/api";
 import "./Navigation.css";
@@ -120,9 +120,11 @@ export function Navigation() {
   return (
     <nav className={`side-navigation ${collapsed ? "collapsed" : ""}`}>
       <div className="side-nav-header">
-        <div className="brand-text">
-          <div className="brand-title">Kernel Eye</div>
-          <div className="brand-subtitle">eBPF Telemetry</div>
+        <div className="brand-identity">
+          <img src="/kerneleye-favicon.svg" alt="Kernel Eye logo" className="brand-logo" />
+          <div className="brand-text">
+            <div className="brand-title">Kernel Eye</div>
+          </div>
         </div>
         <button
           type="button"
@@ -137,15 +139,15 @@ export function Navigation() {
 
       <div className="side-nav-links">
         <div className="side-nav-item-wrapper" ref={dashboardLinkRef}>
-          <Link
-            to="/dashboard"
-            className={`side-nav-link ${isActive("/dashboard") ? "active" : ""}`}
-            title="eBPF Metrics Dashboard"
-          >
-            <FiHome className="nav-icon" />
-            <span className="nav-link-text">Dashboard</span>
-            <FiChevronRight className="nav-arrow" />
-          </Link>
+        <Link
+          to="/dashboard"
+          className={`side-nav-link ${isActive("/dashboard") ? "active" : ""}`}
+          title="eBPF Metrics Dashboard"
+        >
+          <FiBarChart2 className="nav-icon" />
+          <span className="nav-link-text">Dashboard</span>
+          <FiChevronRight className="nav-arrow" />
+        </Link>
 
           {/* Dashboard Submenu */}
           <div className="submenu" style={submenuStyle}>
@@ -174,7 +176,7 @@ export function Navigation() {
           className={`side-nav-link ${isActive("/health") ? "active" : ""}`}
           title="Health Monitoring with Real-time Alerts"
         >
-          <FiHeart className="nav-icon" />
+          <FiActivity className="nav-icon" />
           <span className="nav-link-text">Health</span>
         </Link>
 
@@ -183,7 +185,7 @@ export function Navigation() {
           className={`side-nav-link ${isActive("/topology") ? "active" : ""}`}
           title="Network Topology with eBPF Actions"
         >
-          <FiGitBranch className="nav-icon" />
+          <FiGitMerge className="nav-icon" />
           <span className="nav-link-text">Topology</span>
         </Link>
 
@@ -192,7 +194,7 @@ export function Navigation() {
           className={`side-nav-link ${isActive("/routing") ? "active" : ""}`}
           title="Routing Optimization"
         >
-          <FiGrid className="nav-icon" />
+          <FiShuffle className="nav-icon" />
           <span className="nav-link-text">Routing</span>
         </Link>
 
@@ -220,7 +222,7 @@ export function Navigation() {
             className={`side-nav-link ${location.pathname.startsWith("/extensions") ? "active" : ""}`}
             title="SPI Extensions"
           >
-            <FiLayers className="nav-icon" />
+            <FiPackage className="nav-icon" />
             <span className="nav-link-text">Extensions</span>
             <FiChevronRight className="nav-arrow" />
           </Link>
