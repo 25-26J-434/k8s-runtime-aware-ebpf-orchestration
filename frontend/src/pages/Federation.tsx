@@ -424,7 +424,7 @@ export function Federation() {
 
                     {/* Analytics Charts */}
                     <section id="analytics" className="feature-card">
-                        <h2>Analytics</h2>
+                        <h2 className="page-title">Analytics</h2>
                         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
                             {/* Message Rate Chart */}
                             <div style={{ flex: 1, minWidth: 260, background: '#181e2a', borderRadius: 12, padding: 24, color: '#94a3b8', textAlign: 'center' }}>
@@ -493,7 +493,7 @@ export function Federation() {
                     {/* Cluster Snapshot Section */}
                     <section id="snapshot" ref={el => (sectionRefs.current['snapshot'] = el as HTMLDivElement | null)} className="feature-card">
                         <div className="section-header">
-                            <h2>Cluster Snapshot</h2>
+                            <h2 className="page-title">Cluster Snapshot</h2>
                             <div className="section-actions">
                                 <span className={`status-pill ${loadingNodes ? 'is-syncing' : ''}`}>{loadingNodes ? 'Refreshing' : 'Live'}</span>
                                 <button className="action-button" onClick={fetchTopology} disabled={loadingNodes}>Refresh Nodes</button>
@@ -534,7 +534,7 @@ export function Federation() {
                     {/* Nodes Section */}
                     <section id="nodes" ref={el => (sectionRefs.current['nodes'] = el as HTMLDivElement | null)} className="feature-card">
                         <div className="section-header">
-                            <h2>Cluster Nodes</h2>
+                            <h2 className="page-title">Cluster Nodes</h2>
                             <div className="section-actions">
                                 {messageType !== 'BROADCAST' && (<span className="status-pill">Targets · {selectedNodes.size}</span>)}
                             </div>
@@ -621,7 +621,7 @@ export function Federation() {
                             <span>Config: Heartbeat Interval: 5s | Mode: Full Mesh | Allowed Peers: All</span>
                         </div>
                         <div className="section-header">
-                            <h2>Communication Console</h2>
+                            <h2 className="page-title">Communication Console</h2>
                             <div className="section-actions">
                                 <button className="action-button" onClick={fetchStats}>Refresh Stats</button>
                             </div>
@@ -750,7 +750,7 @@ export function Federation() {
                             <button className="action-button" disabled>Export CSV</button>
                         </div>
                         <div className="section-header">
-                            <h2>Realtime Communication Logs</h2>
+                            <h2 className="page-title">Realtime Communication Logs</h2>
                             <div className="section-actions log-controls">
                                 <span className={`status-pill ${logsLoading ? 'is-syncing' : ''}`}>{logsLoading ? 'Refreshing' : 'Live'}</span>
                                 <label className="log-node-picker">

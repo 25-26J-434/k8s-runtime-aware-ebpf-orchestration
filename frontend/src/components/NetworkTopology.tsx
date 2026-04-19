@@ -1035,7 +1035,7 @@ export function NetworkTopology() {
             {/* Header */}
             <div className="topology-header-pro">
                 <div>
-                    <h2>Pod Network Topology</h2>
+                    <h2 className="page-title">Pod Network Topology</h2>
                     <span className="topology-stats">
                         {viewMode === 'cluster'
                             ? `${clusterTopology?.nodes?.length ?? 0} Nodes · ${pods.length} Pods`

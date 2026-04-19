@@ -752,7 +752,10 @@ export function Routing() {
     return (
         <div className="page-container routing-page">
             <div className="page-header">
-
+                <div className="page-title-section">
+                    <h1 className="page-title">Routing Management</h1>
+                    <p className="page-subtitle">Manage routing policies and traffic behavior.</p>
+                </div>
             </div>
 
             <div className="routing-card">

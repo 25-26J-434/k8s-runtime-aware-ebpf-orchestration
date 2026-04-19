@@ -77,15 +77,17 @@
 }
 
 .page-title {
-  font-size: 3.5rem;
+  font-size: 2.2rem;
   font-weight: 900;
   color: #e4e4e7;
-  letter-spacing: -2px;
-  background: linear-gradient(135deg, #e4e4e7 0%, #cbd5e1 100%);
+  letter-spacing: 0.2px;
+  background: linear-gradient(135deg, #e4e4e7 0%, #cbd5e1 50%, #60a5fa 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  line-height: 1.1;
+  line-height: 1.2;
+  text-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+  animation: titleGlow 3s ease-in-out infinite;
 }
 
 .page-subtitle {
@@ -1381,14 +1383,7 @@
 .extensions-breadcrumb-sep { font-size: 0.7rem; color: #475569; flex-shrink: 0; opacity: 0.8; }
 .extensions-breadcrumb-current { color: #cbd5e1; font-weight: 600; }
 .extensions-title {
-    font-size: 2rem;
-    font-weight: 800;
-    letter-spacing: -0.03em;
     margin-bottom: 0.4rem;
-    background: linear-gradient(135deg, #f1f5f9 0%, #cbd5e1 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
 }
 .extensions-subtitle { font-size: 1.05rem; color: #94a3b8; line-height: 1.55; margin-top: 0; }
 .extensions-content { padding-top: 0; }

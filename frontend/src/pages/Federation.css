@@ -57,10 +57,11 @@
 }
 
 .section-header h2 {
-  font-size: 2rem;
-  font-weight: 800;
-  color: #f1f5f9;
-  letter-spacing: -0.03em;
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  letter-spacing: inherit;
 }
 
 .section-actions {
