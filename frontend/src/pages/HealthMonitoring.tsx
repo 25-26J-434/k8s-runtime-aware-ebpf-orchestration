@@ -384,7 +384,7 @@ export const HealthMonitoring: React.FC = () => {
       {/* Header with Controls */}
       <div className="health-header-compact">
         <div className="header-left">
-          <h1>⚕️ Cluster Health</h1>
+          <h1 className="page-title">Cluster Health</h1>
         </div>
         <div className="header-right">
           <select 

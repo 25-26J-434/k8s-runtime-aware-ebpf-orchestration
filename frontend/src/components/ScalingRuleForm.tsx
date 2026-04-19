@@ -459,7 +459,6 @@ export function ScalingRuleForm({ initial = {}, nodeScope, onCancel, onSubmit, s
                 </div>
 
                 <div className="form-row form-actions">
-                    <div className="spacer"></div>
                     <button type="button" className="btn btn-muted" onClick={onCancel} disabled={submitting}>Cancel</button>
                     <button type="submit" className="btn btn-primary" disabled={submitting}>{submitLabel}</button>
                 </div>

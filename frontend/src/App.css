@@ -1,4 +1,7 @@
 /* Modern Dark Theme Professional Dashboard */
+:root {
+  --side-nav-width: 280px;
+}
 
 * {
   margin: 0;
@@ -23,7 +26,7 @@ body {
     radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
   background-attachment: fixed;
   position: relative;
-  margin-left: 280px; /* Space for side navigation */
+  margin-left: var(--side-nav-width); /* Space for side navigation */
 }
 
 .dashboard {
@@ -445,12 +448,12 @@ body {
   }
 }
 
-.section-header h2 {
+.section-header .dashboard-section-title,
+.unified-section-heading {
   font-size: 2.2rem;
   color: #e4e4e7;
   font-weight: 900;
-  letter-spacing: 2px;
-  text-transform: uppercase;
+  letter-spacing: 0.2px;
   background: linear-gradient(135deg, #e4e4e7 0%, #cbd5e1 50%, #60a5fa 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -459,6 +462,10 @@ body {
   text-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
   position: relative;
   animation: titleGlow 3s ease-in-out infinite;
+}
+
+.dashboard-section-title {
+  margin: 0;
 }
 
 @keyframes titleGlow {
@@ -1144,8 +1151,8 @@ body {
     font-size: 2rem;
   }
 
-  .section-header h2 {
-    font-size: 1.5rem;
+  .section-header .dashboard-section-title {
+    font-size: 2.5rem;
   }
 
   .pod-name {

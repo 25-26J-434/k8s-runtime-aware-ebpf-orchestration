@@ -28,9 +28,11 @@
 
 .topology-header-pro h2 {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #f1f5f9;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+    text-transform: none;
 }
 
 .topology-stats {
