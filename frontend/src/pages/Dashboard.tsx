@@ -314,7 +314,7 @@ export function Dashboard() {
                     className="section"
                 >
                     <div className="section-header">
-                        <h2>System Health</h2>
+                        <h2 className="dashboard-section-title">System Health</h2>
                         <span className="section-badge">Real-time Status</span>
                     </div>
                     <SystemHealth metrics={metrics} />
@@ -327,7 +327,7 @@ export function Dashboard() {
                     className="section"
                 >
                     <div className="section-header">
-                        <h2>Node Metrics</h2>
+                        <h2 className="dashboard-section-title">Node Metrics</h2>
                         <span className="section-badge">Node Overview</span>
                     </div>
                     <div className="overview-grid">
@@ -363,7 +363,7 @@ export function Dashboard() {
                         className="section"
                     >
                         <div className="section-header">
-                            <h2>Node System Metrics</h2>
+                            <h2 className="dashboard-section-title">Node System Metrics</h2>
                             <span className="section-badge">CPU & Memory</span>
                         </div>
 
@@ -427,7 +427,7 @@ export function Dashboard() {
                     className="section"
                 >
                     <div className="section-header">
-                        <h2>DNS Metrics</h2>
+                        <h2 className="dashboard-section-title">DNS Metrics</h2>
                         <span className="section-badge">Network Resolution</span>
                     </div>
 
@@ -516,7 +516,7 @@ export function Dashboard() {
                         className="section"
                     >
                         <div className="section-header">
-                            <h2>TCP Metrics</h2>
+                            <h2 className="dashboard-section-title">TCP Metrics</h2>
                             <span className="section-badge">Connection Performance</span>
                         </div>
 
@@ -865,7 +865,7 @@ export function Dashboard() {
                         className="section"
                     >
                         <div className="section-header">
-                            <h2>Disk I/O Metrics</h2>
+                            <h2 className="dashboard-section-title">Disk I/O Metrics</h2>
                             <span className="section-badge">Storage Performance</span>
                         </div>
                         <DiskIOMetrics 
@@ -882,7 +882,7 @@ export function Dashboard() {
                     className="section"
                 >
                     <div className="section-header">
-                        <h2>CPU Scheduling Latency</h2>
+                        <h2 className="dashboard-section-title">CPU Scheduling Latency</h2>
                         <span className="section-badge">Run Queue Performance</span>
                     </div>
                     <CPUSchedulingMetrics metrics={metrics} />
@@ -896,7 +896,7 @@ export function Dashboard() {
                         className="section"
                     >
                         <div className="section-header">
-                            <h2>Performance Rankings</h2>
+                            <h2 className="dashboard-section-title">Performance Rankings</h2>
                             <span className="section-badge">Top & Bottom Pods</span>
                         </div>
                         <TopPerformers metrics={metrics} />
@@ -911,7 +911,7 @@ export function Dashboard() {
                         className="section"
                     >
                         <div className="section-header">
-                            <h2>Pod-Level Metrics</h2>
+                            <h2 className="dashboard-section-title">Pod-Level Metrics</h2>
                             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span className="section-badge">{Object.keys(podMetrics).length} Active Pods</span>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -2221,7 +2221,7 @@ export function Dashboard() {
                         >
                             <div className="section-header">
                                 <div>
-                                    <h2>Service Health</h2>
+                                    <h2 className="dashboard-section-title">Service Health</h2>
                                     <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.5rem' }}>
                                         Services with endpoints on selected node: {metrics?.node_name || 'N/A'}
                                     </p>

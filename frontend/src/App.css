@@ -448,7 +448,7 @@ body {
   }
 }
 
-.section-header h2,
+.section-header .dashboard-section-title,
 .unified-section-heading {
   font-size: 2.2rem;
   color: #e4e4e7;
@@ -462,6 +462,10 @@ body {
   text-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
   position: relative;
   animation: titleGlow 3s ease-in-out infinite;
+}
+
+.dashboard-section-title {
+  margin: 0;
 }
 
 @keyframes titleGlow {
@@ -1147,8 +1151,8 @@ body {
     font-size: 2rem;
   }
 
-  .section-header h2 {
-    font-size: 1.5rem;
+  .section-header .dashboard-section-title {
+    font-size: 2.5rem;
   }
 
   .pod-name {
