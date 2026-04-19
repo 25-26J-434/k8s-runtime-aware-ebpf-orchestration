@@ -93,11 +93,14 @@
 .policy-table-wrapper {
   width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   margin-top: 0.5rem;
+  border-radius: 12px;
 }
 
 .policy-table {
-  width: 100%;
+  width: max(100%, 980px);
   border-collapse: separate;
   border-spacing: 0 8px;
 }
@@ -112,6 +115,7 @@
   padding: 0.35rem 0.85rem;
   background: rgba(59, 130, 246, 0.05);
   border-bottom: 1px solid rgba(59, 130, 246, 0.25);
+  white-space: nowrap;
 }
 
 .policy-table td {
@@ -120,6 +124,7 @@
   border: 1px solid rgba(255, 255, 255, 0.04);
   color: #e5e7eb;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .policy-table tr td:first-child {
@@ -199,6 +204,7 @@
   padding: 0.35rem 0.85rem;
   text-align: right;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .table-loading {
@@ -1288,6 +1294,98 @@
 .packet-dot.redirect.active {
   opacity: 1;
   animation-play-state: running;
+}
+
+@media (max-width: 980px) {
+  .routing-card {
+    padding: 1.1rem;
+  }
+
+  .table-toolbar {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .policy-table {
+    width: 100%;
+    border-spacing: 0;
+  }
+
+  .policy-table thead {
+    display: none;
+  }
+
+  .policy-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .policy-table tr {
+    display: grid;
+    grid-template-columns: 1fr;
+    border-radius: 12px;
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .policy-table tr:hover td {
+    background: transparent;
+  }
+
+  .policy-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.7rem 0.85rem;
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    background: transparent;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .policy-table tr td:last-child {
+    border-bottom: 0;
+  }
+
+  .policy-table tr td:first-child,
+  .policy-table tr td:last-child {
+    border-radius: 0;
+  }
+
+  .policy-table td[data-label]::before {
+    content: attr(data-label);
+    color: #94a3b8;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.45px;
+    flex: 0 0 44%;
+  }
+
+  .table-actions,
+  .policy-action-cell {
+    justify-content: flex-start;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .table-actions {
+    gap: 0.45rem;
+  }
+
+  .table-loading {
+    padding: 1rem;
+  }
+
+  .drawer {
+    width: 100vw;
+    right: -100vw;
+    padding: 1rem;
+  }
 }
 
 .packet-tracer-legend {

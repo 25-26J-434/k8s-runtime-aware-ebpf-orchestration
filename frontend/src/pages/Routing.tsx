@@ -136,15 +136,6 @@ export function Routing() {
         return '—';
     };
 
-    const formatAction = (action: any) => {
-        if (!action) return 'redirect';
-        if (typeof action === 'string') return action;
-        if (typeof action === 'object') {
-            return action.type || formatValue(action);
-        }
-        return String(action);
-    };
-
     const resolveTarget = (policy: PolicyRecord) => {
         const actionObj = typeof policy.action === 'object' ? (policy.action as any) : {};
         const targetLabel =
@@ -154,10 +145,6 @@ export function Routing() {
             actionObj.backend_candidates_selector ||
             policy.backend_candidates_selector;
         return targetLabel || '—';
-    };
-
-    const resolveFrontend = (policy: PolicyRecord) => {
-        return policy.frontend?.service || policy.frontend_service || (policy as any).source_service || '—';
     };
 
     const resolveWinnerLabel = (policy: PolicyRecord) => {
@@ -635,57 +622,47 @@ export function Routing() {
                     <thead>
                         <tr>
                             <th>Policy</th>
-                            <th>Traffic Entry Serivce</th>
-                            <th>Target Service</th>
                             <th>Scope</th>
                             <th>Status</th>
-                            <th>Action</th>
                             <th>Metric</th>
                             <th>Threshold</th>
-                            <th>Protocol</th>
                             <th>TTL (s)</th>
                             <th>Actions</th>
-                            <th>POLICY ACTION</th>
+                            <th>Policy Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         {showLoadingRow && (
                             <tr>
-                                <td colSpan={12} className="table-loading">
+                                <td colSpan={8} className="table-loading">
                                     Loading…
                                 </td>
                             </tr>
                         )}
                         {!showLoadingRow && list.length === 0 && (
                             <tr>
-                                <td colSpan={12} className="table-loading">
+                                <td colSpan={8} className="table-loading">
                                     {emptyLabel}
                                 </td>
                             </tr>
                         )}
                         {!showLoadingRow &&
                             list.map((policy) => {
-                                const source = resolveFrontend(policy);
-                                const target = resolveTarget(policy);
                                 const status = policyStatusLabel(policy);
 
                                 return (
                                     <tr key={policy.id || policy.policy_name}>
-                                        <td>
+                                        <td data-label="Policy">
                                             <div className="cell-main">{policy.policy_name || '—'}</div>
                                         </td>
-                                        <td>{source || '—'}</td>
-                                        <td>{target || '—'}</td>
-                                        <td>{policy.scope || 'local'}</td>
-                                        <td>
+                                        <td data-label="Scope">{policy.scope || 'local'}</td>
+                                        <td data-label="Status">
                                             <span className={`status-pill ${status}`}>{status}</span>
                                         </td>
-                                        <td>{formatAction(policy.action)}</td>
-                                        <td>{resolveMetric(policy)}</td>
-                                        <td>{resolveThreshold(policy)}</td>
-                                        <td>{resolveProtocol(policy)}</td>
-                                        <td>{resolveTtl(policy)}</td>
-                                        <td className="table-actions">
+                                        <td data-label="Metric">{resolveMetric(policy)}</td>
+                                        <td data-label="Threshold">{resolveThreshold(policy)}</td>
+                                        <td data-label="TTL (s)">{resolveTtl(policy)}</td>
+                                        <td className="table-actions" data-label="Actions">
                                             <button
                                                 type="button"
                                                 className="icon-button"
@@ -714,7 +691,7 @@ export function Routing() {
                                                 <FiTrash2 />
                                             </button>
                                         </td>
-                                        <td className="policy-action-cell">
+                                        <td className="policy-action-cell" data-label="Policy Action">
                                             <button
                                                 type="button"
                                                 className="apply-button"
