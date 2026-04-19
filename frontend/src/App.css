@@ -1,4 +1,7 @@
 /* Modern Dark Theme Professional Dashboard */
+:root {
+  --side-nav-width: 280px;
+}
 
 * {
   margin: 0;
@@ -23,7 +26,7 @@ body {
     radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
   background-attachment: fixed;
   position: relative;
-  margin-left: 280px; /* Space for side navigation */
+  margin-left: var(--side-nav-width); /* Space for side navigation */
 }
 
 .dashboard {

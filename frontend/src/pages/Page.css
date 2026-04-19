@@ -1308,7 +1308,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 1.25rem 1.25rem 1.25rem calc(280px + 1.25rem);
+  padding: 1.25rem 1.25rem 1.25rem calc(var(--side-nav-width, 280px) + 1.25rem);
   background: rgba(0, 0, 0, 0.6);
   z-index: 70;
   overflow-y: auto;

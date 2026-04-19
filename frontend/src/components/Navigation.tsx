@@ -6,6 +6,7 @@ import {
   FiGrid,
   FiClock,
   FiGlobe,
+  FiChevronLeft,
   FiChevronRight,
   FiBarChart2,
   FiActivity,
@@ -34,6 +35,13 @@ function getExtensionIcon(name: string) {
 
 export function Navigation() {
   const location = useLocation();
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("kernel-eye-nav-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [submenuStyle, setSubmenuStyle] = useState<React.CSSProperties>({});
   const [extensionsSubmenuStyle, setExtensionsSubmenuStyle] = useState<React.CSSProperties>({});
   const dashboardLinkRef = useRef<HTMLDivElement>(null);
@@ -47,6 +55,16 @@ export function Navigation() {
       .then((res) => setExtensions(res.extensions ?? []))
       .catch(() => setExtensions([]));
   }, []);
+
+  useEffect(() => {
+    const navWidth = collapsed ? "88px" : "280px";
+    document.documentElement.style.setProperty("--side-nav-width", navWidth);
+    try {
+      localStorage.setItem("kernel-eye-nav-collapsed", String(collapsed));
+    } catch {
+      // Ignore storage failures in restricted contexts.
+    }
+  }, [collapsed]);
 
   const dashboardSubItems = [
     { id: "health", label: "System Health", icon: FiActivity },
@@ -100,12 +118,21 @@ export function Navigation() {
   }, [location]);
 
   return (
-    <nav className="side-navigation">
+    <nav className={`side-navigation ${collapsed ? "collapsed" : ""}`}>
       <div className="side-nav-header">
         <div className="brand-text">
           <div className="brand-title">Kernel Eye</div>
           <div className="brand-subtitle">eBPF Telemetry</div>
         </div>
+        <button
+          type="button"
+          className="side-nav-toggle"
+          onClick={() => setCollapsed((current) => !current)}
+          aria-label={collapsed ? "Expand side navigation" : "Collapse side navigation"}
+          title={collapsed ? "Expand" : "Collapse"}
+        >
+          {collapsed ? <FiChevronRight /> : <FiChevronLeft />}
+        </button>
       </div>
 
       <div className="side-nav-links">
