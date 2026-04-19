@@ -922,12 +922,12 @@
 
 .section-body {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem;
 }
 
 .guardrail-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .scaling-form .form-row {
@@ -1056,6 +1056,7 @@
 .scaling-form .form-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.6rem;
   padding: 0 0.5rem;
 }
@@ -1163,9 +1164,85 @@
   }
 }
 
+@media (max-width: 1024px) {
+  .scaling-modal {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .placement-table {
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .placement-table thead {
+    display: none;
+  }
+
+  .placement-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .placement-table tr {
+    display: grid;
+    grid-template-columns: 1fr;
+    border: 1px solid rgba(59, 130, 246, 0.28);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .placement-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.65rem;
+    white-space: normal;
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .placement-table tr td:last-child {
+    border-bottom: 0;
+  }
+
+  .placement-table td[data-label]::before {
+    content: attr(data-label);
+    color: #94a3b8;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex: 0 0 42%;
+  }
+
+  .scaling-form .form-actions {
+    padding: 0;
+    justify-content: flex-end;
+  }
+}
+
 @media (max-width: 640px) {
   .scaling-overview {
     grid-template-columns: 1fr;
+  }
+
+  .scaling-modal-card {
+    padding: 0.9rem;
+  }
+
+  .scaling-form .form-actions {
+    justify-content: stretch;
+  }
+
+  .scaling-form .form-actions .btn {
+    width: 100%;
+  }
+
+  .scaling-form .form-actions .spacer {
+    display: none;
   }
 }
 
@@ -1229,10 +1306,12 @@
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding: 1.25rem 1.25rem 1.25rem calc(280px + 1.25rem);
   background: rgba(0, 0, 0, 0.6);
   z-index: 70;
+  overflow-y: auto;
 }
 
 .modal-card,
@@ -1241,8 +1320,9 @@
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 14px;
   padding: 1.2rem;
-  width: min(1100px, calc(100% - 40px));
-  max-height: calc(100vh - 40px);
+  width: min(1100px, 100%);
+  max-height: calc(100vh - 2.5rem);
+  margin: auto;
   overflow: auto;
 }
 

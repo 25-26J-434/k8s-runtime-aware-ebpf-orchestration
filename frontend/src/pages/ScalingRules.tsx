@@ -291,10 +291,10 @@ export function ScalingRules() {
                                         <tbody>
                                             {latestPlacementPods.map((pod) => (
                                                 <tr key={pod.name}>
-                                                    <td>{pod.name}</td>
-                                                    <td>{pod.node || 'Pending'}</td>
-                                                    <td>{pod.phase}</td>
-                                                    <td>{renderAge(pod)}</td>
+                                                    <td data-label="Pod Name">{pod.name}</td>
+                                                    <td data-label="Node">{pod.node || 'Pending'}</td>
+                                                    <td data-label="Phase">{pod.phase}</td>
+                                                    <td data-label="Age">{renderAge(pod)}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
