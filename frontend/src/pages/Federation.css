@@ -116,7 +116,8 @@
 
 .federation-page .section-header.compact {
   align-items: flex-start;
-  margin-bottom: 0.8rem;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .federation-summary,
@@ -574,4 +575,218 @@
   .node-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Pod management ─────────────────────────────────── */
+
+.node-pods-section {
+  border-top: 1px solid rgba(59, 130, 246, 0.15);
+  padding-top: 0.75rem;
+}
+
+.node-pods-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.4);
+  color: #94a3b8;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.node-pods-toggle:hover {
+  background: rgba(59, 130, 246, 0.15);
+  color: #e2e8f0;
+}
+
+.pods-toggle-arrow {
+  font-size: 0.65rem;
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+
+.pods-toggle-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.pod-list {
+  margin-top: 0.55rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.pod-list__empty {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.8rem;
+  color: rgba(148, 163, 184, 0.6);
+  font-style: italic;
+}
+
+.pod-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.pod-row__info {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.pod-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pod-status-dot.running {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.pod-status-dot.pending {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+
+.pod-status-dot.failed {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+}
+
+.pod-row__names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pod-row__name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pod-row__ns {
+  font-size: 0.7rem;
+  color: rgba(148, 163, 184, 0.65);
+}
+
+.pod-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.pod-action-result {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.pod-action-result.success {
+  color: #10b981;
+}
+
+.pod-action-result.error {
+  color: #ef4444;
+}
+
+.pod-down-btn {
+  padding: 0.3rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.pod-down-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.75);
+}
+
+.pod-down-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Confirmation modal ─────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-dialog {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.98), rgba(15, 23, 42, 0.98));
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 18px;
+  padding: 2rem;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.6);
+}
+
+.modal-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-bottom: 1rem;
+}
+
+.modal-body {
+  font-size: 0.9rem;
+  color: #cbd5e1;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+}
+
+.modal-body strong {
+  color: #f8fafc;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.action-button--danger {
+  border-color: rgba(239, 68, 68, 0.6);
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+.action-button--danger:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.85);
 }

@@ -2,7 +2,6 @@ import { Link, useLocation } from "react-router-dom";
 import { useState, useRef, useEffect } from "react";
 import {
   FiGitMerge,
-  FiGrid,
   FiClock,
   FiGlobe,
   FiChevronLeft,
@@ -16,7 +15,6 @@ import {
   FiPackage,
   FiDownload,
   FiSettings,
-  FiRefreshCw,
   FiTrendingUp,
   FiHeart,
   FiLayers,
@@ -216,44 +214,39 @@ export function Navigation() {
           <span className="nav-link-text">Federation</span>
         </Link>
 
+        {/* Extensions (dynamic plugins) */}
         <div className="side-nav-item-wrapper" ref={extensionsLinkRef}>
           <Link
             to="/extensions"
-            className={`side-nav-link ${location.pathname.startsWith("/extensions") ? "active" : ""}`}
-            title="SPI Extensions"
+            className={`side-nav-link ${isActive("/extensions") ? "active" : ""}`}
+            title="Extensions & Integrations"
           >
-            <FiPackage className="nav-icon" />
+            <FiLayers className="nav-icon" />
             <span className="nav-link-text">Extensions</span>
-            <FiChevronRight className="nav-arrow" />
+            {extensions.length > 0 && <FiChevronRight className="nav-arrow" />}
           </Link>
-          <div className="submenu" style={extensionsSubmenuStyle}>
-            <div className="submenu-header">Extensions</div>
-            <div className="submenu-items-container">
-              {extensions.length === 0 ? (
-                <Link
-                  to="/extensions/notification"
-                  className={`submenu-item submenu-item-link ${location.pathname === "/extensions/notification" ? "active" : ""}`}
-                >
-                  <FiBell className="submenu-icon" />
-                  <span className="submenu-text">Notification</span>
-                </Link>
-              ) : (
-                extensions.map((ext) => {
+
+          {extensions.length > 0 && (
+            <div className="submenu" style={extensionsSubmenuStyle}>
+              <div className="submenu-header">Extensions</div>
+              <div className="submenu-items-container">
+                {extensions.map((ext) => {
                   const Icon = getExtensionIcon(ext.name);
                   return (
                     <Link
                       key={ext.name}
                       to={`/extensions/${ext.name}`}
-                      className={`submenu-item submenu-item-link ${location.pathname === `/extensions/${ext.name}` ? "active" : ""}`}
+                      className="submenu-item"
+                      title={ext.label ?? ext.name}
                     >
                       <Icon className="submenu-icon" />
-                      <span className="submenu-text">{ext.label || ext.name}</span>
+                      <span className="submenu-text">{ext.label ?? ext.name}</span>
                     </Link>
                   );
-                })
-              )}
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 

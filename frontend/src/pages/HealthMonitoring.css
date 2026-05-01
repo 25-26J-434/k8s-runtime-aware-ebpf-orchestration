@@ -370,6 +370,51 @@
   text-align: right;
 }
 
+.pod-restart-btn {
+  padding: 0.28rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pod-restart-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.75);
+  color: #fee2e2;
+}
+
+.pod-restart-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pod-action-result {
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.pod-action-result.success { color: #22c55e; }
+.pod-action-result.error   { color: #ef4444; }
+
+.btn-danger {
+  background: rgba(239, 68, 68, 0.2) !important;
+  border: 1px solid rgba(239, 68, 68, 0.5) !important;
+  color: #fca5a5 !important;
+}
+
+.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.35) !important;
+  border-color: rgba(239, 68, 68, 0.8) !important;
+}
+
 .no-pods-msg {
   text-align: center;
   padding: 2rem 1rem;

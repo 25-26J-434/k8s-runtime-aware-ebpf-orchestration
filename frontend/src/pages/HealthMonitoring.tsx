@@ -7,7 +7,8 @@ import {
 } from "../types/health";
 import { healthService } from "../services/health";
 import { metricsConfigService } from "../services/metricsConfig";
-import { FiRefreshCw, FiAlertTriangle, FiSettings } from "react-icons/fi";
+import { api } from "../services/api";
+import { FiRefreshCw, FiAlertTriangle } from "react-icons/fi";
 import "./HealthMonitoring.css";
 
 export const HealthMonitoring: React.FC = () => {
@@ -24,6 +25,11 @@ export const HealthMonitoring: React.FC = () => {
   const [searchPod, setSearchPod] = useState<string>("");
   const [refreshing, setRefreshing] = useState(false);
   
+  // Pod restart states
+  const [confirmPod, setConfirmPod] = useState<{ pod: PodHealth; node: string } | null>(null);
+  const [restartLoading, setRestartLoading] = useState<Set<string>>(new Set());
+  const [restartResult, setRestartResult] = useState<Map<string, { success: boolean; message: string }>>(new Map());
+
   // Configuration states
   const [showConfig, setShowConfig] = useState(false);
   const [configLoading, setConfigLoading] = useState(true);
@@ -104,6 +110,27 @@ export const HealthMonitoring: React.FC = () => {
       console.error('[HealthMonitoring] Failed to save config:', errorMsg);
       setConfigError(`Failed to save configuration: ${errorMsg}`);
       alert(`Error: ${errorMsg}`);
+    }
+  };
+
+  const executeRestart = async () => {
+    if (!confirmPod) return;
+    const { pod } = confirmPod;
+    const key = `${pod.namespace}/${pod.name}`;
+    setConfirmPod(null);
+    setRestartLoading((prev) => new Set(prev).add(key));
+    try {
+      const result = await api.podAction("restart", pod.namespace, pod.name);
+      setRestartResult((prev) => new Map(prev).set(key, { success: result.success, message: result.message }));
+      setTimeout(() => {
+        setRestartResult((prev) => { const next = new Map(prev); next.delete(key); return next; });
+      }, 6000);
+      handleRefreshData();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Action failed";
+      setRestartResult((prev) => new Map(prev).set(key, { success: false, message: msg }));
+    } finally {
+      setRestartLoading((prev) => { const next = new Set(prev); next.delete(key); return next; });
     }
   };
 
@@ -349,9 +376,12 @@ export const HealthMonitoring: React.FC = () => {
     const { pod, node } = podData;
     const healthIcon = healthService.getHealthIcon(pod.healthy);
     const healthColor = healthService.getHealthColor(pod.healthy);
+    const key = `${pod.namespace}/${pod.name}`;
+    const isRestarting = restartLoading.has(key);
+    const result = restartResult.get(key);
 
     return (
-      <div key={`${pod.namespace}/${pod.name}`} className="pod-item-compact">
+      <div key={key} className="pod-item-compact">
         <div className="pod-compact-left">
           <span className="pod-health-icon">{healthIcon}</span>
           <div>
@@ -374,6 +404,20 @@ export const HealthMonitoring: React.FC = () => {
               {pod.health_score}
             </span>
           )}
+          {result && (
+            <span className={`pod-action-result ${result.success ? "success" : "error"}`} title={result.message}>
+              {result.success ? "✓" : "✗"}
+            </span>
+          )}
+          <button
+            type="button"
+            className="pod-restart-btn"
+            disabled={isRestarting}
+            onClick={() => setConfirmPod({ pod, node })}
+            title="Evict and restart this pod"
+          >
+            {isRestarting ? "…" : "Restart"}
+          </button>
         </div>
       </div>
     );
@@ -498,6 +542,28 @@ export const HealthMonitoring: React.FC = () => {
 
       {/* Configuration Modal */}
       {renderConfigModal()}
+
+      {/* Pod Restart Confirmation Modal */}
+      {confirmPod && (
+        <div className="modal-overlay" onClick={() => setConfirmPod(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Restart Pod</h2>
+              <button type="button" className="modal-close" onClick={() => setConfirmPod(null)}>✕</button>
+            </div>
+            <p style={{ color: "#cbd5e1", lineHeight: 1.6, margin: "1rem 0 1.5rem" }}>
+              Delete <strong style={{ color: "#f8fafc" }}>{confirmPod.pod.name}</strong> in namespace{" "}
+              <strong style={{ color: "#f8fafc" }}>{confirmPod.pod.namespace}</strong> on node{" "}
+              <strong style={{ color: "#f8fafc" }}>{confirmPod.node}</strong>?{" "}
+              Kubernetes will recreate it automatically if managed by a controller.
+            </p>
+            <div className="modal-footer">
+              <button type="button" className="btn-reset" onClick={() => setConfirmPod(null)}>Cancel</button>
+              <button type="button" className="btn-save btn-danger" onClick={executeRestart}>Confirm Restart</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
