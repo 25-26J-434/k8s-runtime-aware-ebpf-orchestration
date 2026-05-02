@@ -6,13 +6,6 @@ import type { CommLogEntry, CommStats } from '../types/api';
 
 type OutboundCommMode = 'BROADCAST' | 'UNICAST' | 'MULTICAST';
 
-interface PodInfo {
-    name: string;
-    namespace: string;
-    status: string;
-    ip: string;
-}
-
 interface ClusterNode {
     name: string;
     ip: string;
@@ -22,7 +15,6 @@ interface ClusterNode {
     runningPods: number;
     kernelVersion?: string;
     osImage?: string;
-    pods: PodInfo[];
 }
 
 const COMMUNICATION_MODES: Array<{
@@ -85,10 +77,6 @@ export function Federation() {
     const [logsLoading, setLogsLoading] = useState(false);
     const [logsError, setLogsError] = useState<string | null>(null);
     const [autoRefreshLogs, setAutoRefreshLogs] = useState(true);
-    const [podActionLoading, setPodActionLoading] = useState<Set<string>>(new Set());
-    const [podActionResult, setPodActionResult] = useState<Map<string, { success: boolean; message: string }>>(new Map());
-    const [confirmPod, setConfirmPod] = useState<PodInfo & { nodeName: string } | null>(null);
-    const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
     const nodeMap = useMemo(() => {
         const map = new Map<string, ClusterNode>();
@@ -145,12 +133,6 @@ export function Federation() {
                     runningPods,
                     kernelVersion: (node as any).kernel_version,
                     osImage: (node as any).os_image,
-                    pods: pods.map((pod) => ({
-                        name: pod.name,
-                        namespace: pod.namespace,
-                        status: pod.status,
-                        ip: pod.ip,
-                    })),
                 };
             });
             normalized.sort((a, b) => a.name.localeCompare(b.name));
@@ -420,77 +402,6 @@ export function Federation() {
         }
     };
 
-    const toggleNodeExpand = (nodeName: string) => {
-        setExpandedNodes((prev) => {
-            const next = new Set(prev);
-            if (next.has(nodeName)) {
-                next.delete(nodeName);
-            } else {
-                next.add(nodeName);
-            }
-            return next;
-        });
-    };
-
-    const confirmAndRestartPod = (pod: PodInfo, nodeName: string) => {
-        setConfirmPod({ ...pod, nodeName });
-    };
-
-    const executeRestartPod = async () => {
-        if (!confirmPod) return;
-        const key = `${confirmPod.namespace}/${confirmPod.name}`;
-        setConfirmPod(null);
-        setPodActionLoading((prev) => new Set(prev).add(key));
-        try {
-            const result = await api.podAction('restart', confirmPod.namespace, confirmPod.name);
-            setPodActionResult((prev) => new Map(prev).set(key, { success: result.success, message: result.message }));
-            setTimeout(() => {
-                setPodActionResult((prev) => { const next = new Map(prev); next.delete(key); return next; });
-            }, 6000);
-            fetchTopology();
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : 'Action failed';
-            setPodActionResult((prev) => new Map(prev).set(key, { success: false, message: msg }));
-        } finally {
-            setPodActionLoading((prev) => { const next = new Set(prev); next.delete(key); return next; });
-        }
-    };
-
-    // Sidebar navigation items
-    const navItems = [
-        { id: 'overview', label: 'Overview' },
-        { id: 'snapshot', label: 'Cluster Snapshot' },
-        { id: 'nodes', label: 'Nodes' },
-        { id: 'console', label: 'Messaging Console' },
-        { id: 'logs', label: 'Comm Logs' },
-    ];
-    const [activeSection, setActiveSection] = useState('overview');
-    const sectionRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
-
-    const scrollToSection = (sectionId: string) => {
-        const el = sectionRefs.current[sectionId];
-        if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            setActiveSection(sectionId);
-        }
-    };
-
-    useEffect(() => {
-        const handleScroll = () => {
-            const sections = Object.keys(sectionRefs.current);
-            const scrollPosition = window.scrollY + 150;
-            for (let i = sections.length - 1; i >= 0; i--) {
-                const section = sectionRefs.current[sections[i]];
-                if (section && section.offsetTop <= scrollPosition) {
-                    setActiveSection(sections[i]);
-                    break;
-                }
-            }
-        };
-        window.addEventListener('scroll', handleScroll);
-        return () => window.removeEventListener('scroll', handleScroll);
-    }, []);
-
     return (
         <div className="page-container federation-page">
             <div className="page-header federation-header">
@@ -566,135 +477,8 @@ export function Federation() {
                         </div>
                     </div>
 
-                    {/* Nodes Section */}
-                    <section id="nodes" ref={el => (sectionRefs.current['nodes'] = el as HTMLDivElement | null)} className="feature-card">
-                        <div className="section-header">
-                            <h2>Cluster Nodes</h2>
-                            <div className="section-actions">
-                                {messageType !== 'BROADCAST' && (<span className="status-pill">Targets · {selectedNodes.size}</span>)}
-                            </div>
-                        </div>
-                        {topologyError && <div className="error-banner">{topologyError}</div>}
-                        {!nodes.length && !loadingNodes ? (
-                            <div className="empty-state">No nodes reported yet. Ensure the daemonset is running.</div>
-                        ) : (
-                            <div className="node-grid">
-                                {nodes.map((node) => {
-                                    const isSelected = selectedNodes.has(node.ip);
-                                    const statusClass = node.status === 'Ready' ? 'is-ready' : 'is-warning';
-                                    const selectable = messageType !== 'BROADCAST';
-                                    const isExpanded = expandedNodes.has(node.name);
-                                    return (
-                                        <div
-                                            key={node.name}
-                                            className={`node-card${selectable ? ' is-selectable' : ''}${isSelected ? ' is-selected' : ''}`}
-                                        >
-                                            <div
-                                                className="node-card__header"
-                                                onClick={() => handleToggleNode(node.ip)}
-                                                role="button"
-                                                tabIndex={0}
-                                                onKeyDown={(e) => e.key === 'Enter' && handleToggleNode(node.ip)}
-                                            >
-                                                <div className="node-card__identity">
-                                                    <div>
-                                                        <div className="node-card__name">{node.name}</div>
-                                                        <div className="node-card__meta">{node.role}</div>
-                                                    </div>
-                                                </div>
-                                                <span className={`node-card__status ${statusClass}`}>{node.status}</span>
-                                                <span className={`node-health-badge ${node.status === 'Ready' ? 'healthy' : 'warning'}`}>{node.status === 'Ready' ? 'Online' : 'Check'}</span>
-                                            </div>
-                                            <div className="node-card__kv">
-                                                <div className="node-card__kv-row">
-                                                    <span className="node-card__kv-label">IP</span>
-                                                    <span className="node-card__kv-value">{node.ip}</span>
-                                                </div>
-                                                <div className="node-card__kv-row">
-                                                    <span className="node-card__kv-label">Pods</span>
-                                                    <span className="node-card__kv-value">{node.runningPods}/{node.podCount} running</span>
-                                                </div>
-                                                <div className="node-card__kv-row">
-                                                    <span className="node-card__kv-label">Role</span>
-                                                    <span className="node-card__kv-value">{node.role || '-'}</span>
-                                                </div>
-                                                {node.kernelVersion && (
-                                                    <div className="node-card__kv-row">
-                                                        <span className="node-card__kv-label">Kernel</span>
-                                                        <span className="node-card__kv-value">{node.kernelVersion}</span>
-                                                    </div>
-                                                )}
-                                                {node.osImage && (
-                                                    <div className="node-card__kv-row">
-                                                        <span className="node-card__kv-label">OS</span>
-                                                        <span className="node-card__kv-value">{node.osImage}</span>
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* Pod Management */}
-                                            <div className="node-pods-section">
-                                                <button
-                                                    type="button"
-                                                    className="node-pods-toggle"
-                                                    onClick={() => toggleNodeExpand(node.name)}
-                                                >
-                                                    <span>Pods ({node.podCount})</span>
-                                                    <span className={`pods-toggle-arrow${isExpanded ? ' expanded' : ''}`}>▶</span>
-                                                </button>
-                                                {isExpanded && (
-                                                    <div className="pod-list">
-                                                        {node.pods.length === 0 ? (
-                                                            <div className="pod-list__empty">No pods on this node</div>
-                                                        ) : (
-                                                            node.pods.map((pod) => {
-                                                                const podKey = `${pod.namespace}/${pod.name}`;
-                                                                const isLoading = podActionLoading.has(podKey);
-                                                                const result = podActionResult.get(podKey);
-                                                                const podStatusClass = pod.status === 'Running' ? 'running' : pod.status === 'Pending' ? 'pending' : 'failed';
-                                                                return (
-                                                                    <div key={podKey} className="pod-row">
-                                                                        <div className="pod-row__info">
-                                                                            <span className={`pod-status-dot ${podStatusClass}`} />
-                                                                            <div className="pod-row__names">
-                                                                                <span className="pod-row__name">{pod.name}</span>
-                                                                                <span className="pod-row__ns">{pod.namespace}</span>
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="pod-row__actions">
-                                                                            {result && (
-                                                                                <span className={`pod-action-result ${result.success ? 'success' : 'error'}`}>
-                                                                                    {result.success ? '✓' : '✗'}
-                                                                                </span>
-                                                                            )}
-                                                                            <button
-                                                                                type="button"
-                                                                                className="pod-down-btn"
-                                                                                disabled={isLoading}
-                                                                                onClick={() => confirmAndRestartPod(pod, node.name)}
-                                                                                title="Restart (evict) this pod"
-                                                                            >
-                                                                                {isLoading ? '…' : 'Restart'}
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <div className="node-controls">
-                                                <button type="button" className="action-button" style={{ marginRight: 8 }} disabled>Peer Discovery</button>
-                                                <button type="button" className="action-button" disabled>Resync</button>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </section>
+                    {statsError && <div className="error-banner">{statsError}</div>}
+                    <div className="federation-console-meta">Mode: Full Mesh · Heartbeat: 5s · Target Scope: Cluster</div>
 
                     <div className="federation-console-grid">
                         <div className="federation-console-panel">
@@ -980,33 +764,6 @@ export function Federation() {
                     )}
                 </section>
             </div>
-            {/* Pod Restart Confirmation Modal */}
-            {confirmPod && (
-                <div className="modal-overlay" onClick={() => setConfirmPod(null)}>
-                    <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
-                        <h3 className="modal-title">Restart Pod</h3>
-                        <p className="modal-body">
-                            This will delete <strong>{confirmPod.name}</strong> in namespace <strong>{confirmPod.namespace}</strong> on node <strong>{confirmPod.nodeName}</strong>.
-                            Kubernetes will recreate it automatically if managed by a controller.
-                        </p>
-                        <div className="modal-actions">
-                            <button type="button" className="action-button" onClick={() => setConfirmPod(null)}>Cancel</button>
-                            <button type="button" className="action-button action-button--danger" onClick={executeRestartPod}>Confirm Restart</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <footer className="dashboard-footer federation-footer">
-                <span>Powered by eBPF - Federation & Control</span>
-                <span>Auto-refresh: 5s</span>
-                {/* Notifications/alerts placeholder */}
-                <div className="federation-alerts" style={{ marginTop: 8, color: '#f59e0b' }}>[ No active alerts ]</div>
-                {/* Help/documentation placeholder */}
-                <div className="federation-help" style={{ marginTop: 8 }}>
-                    <a href="/COMPONENT4_QUICK_GUIDE.md" target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', textDecoration: 'underline' }}>Federation Quick Guide</a>
-                </div>
-            </footer>
         </div>
     );
 }
