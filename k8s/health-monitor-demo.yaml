@@ -1,0 +1,189 @@
+# Health Monitor Demo Pods
+# Purpose: Demonstrate pod health monitoring and live pod restart via the UI.
+# Namespace: health-demo (isolated from test-services so it's easy to clean up)
+#
+# Deploy:    kubectl apply -f k8s/health-monitor-demo.yaml
+# Tear down: kubectl delete namespace health-demo
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: health-demo
+  labels:
+    demo: health-monitoring
+---
+# ── Service A: web-frontend (nginx) ──────────────────────────────────────────
+# A healthy, always-running web server.
+# Perfect to restart and watch it come back "Running" in the UI.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-frontend
+  namespace: health-demo
+  labels:
+    app: web-frontend
+    tier: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-frontend
+  template:
+    metadata:
+      labels:
+        app: web-frontend
+        tier: frontend
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+# ── Service B: api-backend (busybox doing work) ───────────────────────────────
+# Simulates a backend service running continuously.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-backend
+  namespace: health-demo
+  labels:
+    app: api-backend
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-backend
+  template:
+    metadata:
+      labels:
+        app: api-backend
+        tier: backend
+    spec:
+      containers:
+        - name: worker
+          image: busybox:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "api-backend starting"
+              while true; do
+                echo "[$(date)] api-backend: processing requests"
+                sleep 5
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+---
+# ── Service C: cache-service (busybox doing DNS work) ─────────────────────────
+# Simulates a cache/sidecar that also generates DNS traffic for eBPF demo.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-service
+  namespace: health-demo
+  labels:
+    app: cache-service
+    tier: cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache-service
+  template:
+    metadata:
+      labels:
+        app: cache-service
+        tier: cache
+    spec:
+      containers:
+        - name: cache
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "cache-service starting"
+              while true; do
+                nslookup kubernetes.default.svc.cluster.local 2>/dev/null || true
+                echo "[$(date)] cache-service: heartbeat"
+                sleep 10
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+---
+# ── Service D: metrics-collector ──────────────────────────────────────────────
+# A second namespace pod — shows the namespace filter in the Health Monitor UI.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: health-demo-b
+  labels:
+    demo: health-monitoring
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-collector
+  namespace: health-demo-b
+  labels:
+    app: metrics-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metrics-collector
+  template:
+    metadata:
+      labels:
+        app: metrics-collector
+    spec:
+      containers:
+        - name: collector
+          image: busybox:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "metrics-collector starting"
+              while true; do
+                echo "[$(date)] metrics-collector: collecting"
+                sleep 8
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi

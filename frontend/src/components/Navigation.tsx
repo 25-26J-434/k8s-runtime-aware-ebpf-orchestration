@@ -26,7 +26,10 @@ import {
 import { api, type ExtensionInfo } from "../services/api";
 import "./Navigation.css";
 
-const extensionIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+const extensionIconMap: Record<
+  string,
+  React.ComponentType<{ className?: string }>
+> = {
   notification: FiBell,
 };
 function getExtensionIcon(name: string) {
@@ -43,7 +46,8 @@ export function Navigation() {
     }
   });
   const [submenuStyle, setSubmenuStyle] = useState<React.CSSProperties>({});
-  const [extensionsSubmenuStyle, setExtensionsSubmenuStyle] = useState<React.CSSProperties>({});
+  const [extensionsSubmenuStyle, setExtensionsSubmenuStyle] =
+    useState<React.CSSProperties>({});
   const dashboardLinkRef = useRef<HTMLDivElement>(null);
   const extensionsLinkRef = useRef<HTMLDivElement>(null);
   const [extensions, setExtensions] = useState<ExtensionInfo[]>([]);
@@ -51,7 +55,8 @@ export function Navigation() {
   const isActive = (path: string) => location.pathname === path;
 
   useEffect(() => {
-    api.getExtensions()
+    api
+      .getExtensions()
       .then((res) => setExtensions(res.extensions ?? []))
       .catch(() => setExtensions([]));
   }, []);
@@ -121,7 +126,11 @@ export function Navigation() {
     <nav className={`side-navigation ${collapsed ? "collapsed" : ""}`}>
       <div className="side-nav-header">
         <div className="brand-identity">
-          <img src="/kerneleye-favicon.svg" alt="Kernel Eye logo" className="brand-logo" />
+          <img
+            src="/kerneleye-favicon.svg"
+            alt="Kernel Eye logo"
+            className="brand-logo"
+          />
           <div className="brand-text">
             <div className="brand-title">Kernel Eye</div>
           </div>
@@ -130,7 +139,9 @@ export function Navigation() {
           type="button"
           className="side-nav-toggle"
           onClick={() => setCollapsed((current) => !current)}
-          aria-label={collapsed ? "Expand side navigation" : "Collapse side navigation"}
+          aria-label={
+            collapsed ? "Expand side navigation" : "Collapse side navigation"
+          }
           title={collapsed ? "Expand" : "Collapse"}
         >
           {collapsed ? <FiChevronRight /> : <FiChevronLeft />}
@@ -139,15 +150,15 @@ export function Navigation() {
 
       <div className="side-nav-links">
         <div className="side-nav-item-wrapper" ref={dashboardLinkRef}>
-        <Link
-          to="/dashboard"
-          className={`side-nav-link ${isActive("/dashboard") ? "active" : ""}`}
-          title="eBPF Metrics Dashboard"
-        >
-          <FiBarChart2 className="nav-icon" />
-          <span className="nav-link-text">Dashboard</span>
-          <FiChevronRight className="nav-arrow" />
-        </Link>
+          <Link
+            to="/dashboard"
+            className={`side-nav-link ${isActive("/dashboard") ? "active" : ""}`}
+            title="eBPF Metrics Dashboard"
+          >
+            <FiBarChart2 className="nav-icon" />
+            <span className="nav-link-text">Dashboard</span>
+            <FiChevronRight className="nav-arrow" />
+          </Link>
 
           {/* Dashboard Submenu */}
           <div className="submenu" style={submenuStyle}>
@@ -247,7 +258,9 @@ export function Navigation() {
                       className={`submenu-item submenu-item-link ${location.pathname === `/extensions/${ext.name}` ? "active" : ""}`}
                     >
                       <Icon className="submenu-icon" />
-                      <span className="submenu-text">{ext.label || ext.name}</span>
+                      <span className="submenu-text">
+                        {ext.label || ext.name}
+                      </span>
                     </Link>
                   );
                 })
