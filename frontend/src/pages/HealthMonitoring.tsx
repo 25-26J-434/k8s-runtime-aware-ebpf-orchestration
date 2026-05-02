@@ -29,6 +29,7 @@ export const HealthMonitoring: React.FC = () => {
   const [confirmPod, setConfirmPod] = useState<{ pod: PodHealth; node: string } | null>(null);
   const [restartLoading, setRestartLoading] = useState<Set<string>>(new Set());
   const [restartResult, setRestartResult] = useState<Map<string, { success: boolean; message: string }>>(new Map());
+  const [downPods, setDownPods] = useState<Set<string>>(new Set());
 
   // Configuration states
   const [showConfig, setShowConfig] = useState(false);
@@ -119,16 +120,47 @@ export const HealthMonitoring: React.FC = () => {
     const key = `${pod.namespace}/${pod.name}`;
     setConfirmPod(null);
     setRestartLoading((prev) => new Set(prev).add(key));
+    // Immediately mark pod as DOWN so the UI updates before API responds
+    setDownPods((prev) => new Set(prev).add(key));
+    // Add a live alert so the lecturer sees it in the alerts panel
+    setRecentAlerts((prev) => [
+      {
+        severity: "critical" as const,
+        source: "pod" as const,
+        node_name: pod.node ?? "",
+        pod_name: pod.name,
+        namespace: pod.namespace,
+        message: `Pod ${pod.name} (${pod.namespace}) is DOWN — restarting now`,
+        timestamp: new Date().toISOString(),
+      },
+      ...prev.slice(0, 9),
+    ]);
     try {
       const result = await api.podAction("restart", pod.namespace, pod.name);
+      // Broadcast to federation nodes that this pod is down
+      api.sendBroadcast({
+        type: "POD_DOWN",
+        payload: `⚠️ Pod ${pod.name} (ns: ${pod.namespace}) is DOWN — Kubernetes is restarting it`,
+        priority: "HIGH",
+      }).catch(() => {});
       setRestartResult((prev) => new Map(prev).set(key, { success: result.success, message: result.message }));
       setTimeout(() => {
         setRestartResult((prev) => { const next = new Map(prev); next.delete(key); return next; });
-      }, 6000);
-      handleRefreshData();
+      }, 8000);
+      // Auto-poll every 3 s for 15 s so the live recovery is visible
+      let polls = 0;
+      const poll = setInterval(() => {
+        polls++;
+        handleRefreshData();
+        if (polls >= 5) {
+          clearInterval(poll);
+          setDownPods((prev) => { const next = new Set(prev); next.delete(key); return next; });
+        }
+      }, 3000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Action failed";
       setRestartResult((prev) => new Map(prev).set(key, { success: false, message: msg }));
+      setDownPods((prev) => { const next = new Set(prev); next.delete(key); return next; });
     } finally {
       setRestartLoading((prev) => { const next = new Set(prev); next.delete(key); return next; });
     }
@@ -377,13 +409,19 @@ export const HealthMonitoring: React.FC = () => {
     const healthIcon = healthService.getHealthIcon(pod.healthy);
     const healthColor = healthService.getHealthColor(pod.healthy);
     const key = `${pod.namespace}/${pod.name}`;
-    const isRestarting = restartLoading.has(key);
+    const isLoading = restartLoading.has(key);
+    const isDown = downPods.has(key);
     const result = restartResult.get(key);
+    let readyLabel = pod.ready ? "Ready" : "NotReady";
+    if (isDown) readyLabel = "Restarting";
+    let btnLabel = "Down Pod";
+    if (isLoading) btnLabel = "…";
+    else if (isDown) btnLabel = "DOWN";
 
     return (
-      <div key={key} className="pod-item-compact">
+      <div key={key} className={`pod-item-compact${isDown ? " pod-item-down" : ""}`}>
         <div className="pod-compact-left">
-          <span className="pod-health-icon">{healthIcon}</span>
+          <span className="pod-health-icon">{isDown ? "💀" : healthIcon}</span>
           <div>
             <div className="pod-compact-name">{pod.name}</div>
             <div className="pod-compact-meta">{pod.namespace} • {node}</div>
@@ -391,32 +429,36 @@ export const HealthMonitoring: React.FC = () => {
         </div>
 
         <div className="pod-compact-middle">
-          <span className={`badge-mini phase-${pod.phase.toLowerCase()}`}>{pod.phase}</span>
+          {isDown ? (
+            <span className="badge-mini phase-down">DOWN</span>
+          ) : (
+            <span className={`badge-mini phase-${pod.phase.toLowerCase()}`}>{pod.phase}</span>
+          )}
           <span className={`badge-mini ready-${pod.ready ? "true" : "false"}`}>
-            {pod.ready ? "Ready" : "NotReady"}
+            {readyLabel}
           </span>
         </div>
 
         <div className="pod-compact-right">
           {pod.restart_count > 0 && <span className="restart-badge">{pod.restart_count}↻</span>}
-          {pod.health_score !== undefined && (
+          {pod.health_score !== undefined && !isDown && (
             <span className="score-badge" style={{ color: healthColor }}>
               {pod.health_score}
             </span>
           )}
           {result && (
             <span className={`pod-action-result ${result.success ? "success" : "error"}`} title={result.message}>
-              {result.success ? "✓" : "✗"}
+              {result.success ? "✓ Restarted" : "✗ Failed"}
             </span>
           )}
           <button
             type="button"
             className="pod-restart-btn"
-            disabled={isRestarting}
+            disabled={isLoading || isDown}
             onClick={() => setConfirmPod({ pod, node })}
-            title="Evict and restart this pod"
+            title="Down this pod — Kubernetes will restart it"
           >
-            {isRestarting ? "…" : "Restart"}
+            {btnLabel}
           </button>
         </div>
       </div>
