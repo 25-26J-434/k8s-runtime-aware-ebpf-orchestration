@@ -74,7 +74,7 @@ export function Federation() {
     const [consoleError, setConsoleError] = useState<string | null>(null);
     const [logNodeFilter, setLogNodeFilter] = useState<string>(ALL_NODES_OPTION);
     const [logEntries, setLogEntries] = useState<CommLogEntry[]>([]);
-    const [logsLoading, setLogsLoading] = useState(false);
+    const [logsLoading, setLogsLoading] = useState(true);
     const [logsError, setLogsError] = useState<string | null>(null);
     const [autoRefreshLogs, setAutoRefreshLogs] = useState(true);
 
@@ -700,8 +700,8 @@ export function Federation() {
                         <div className="empty-state">No communication activity for the selected filters.</div>
                     ) : (
                         <div className="log-feed">
-                            {filteredLogEntries.map((entry, index) => {
-                                const key = entry.id || `${entry.timestamp}-${index}`;
+                            {filteredLogEntries.map((entry) => {
+                                const key = entry.id || `${entry.timestamp}-${entry.event}-${entry.node_ip}`;
                                 const targets = (entry.targets && entry.targets.length > 0 ? entry.targets : entry.target_ips) || [];
                                 const delivered = (entry.delivered && entry.delivered.length > 0 ? entry.delivered : entry.delivered_ips) || [];
                                 const failed = (entry.failed && entry.failed.length > 0 ? entry.failed : entry.failed_ips) || [];
