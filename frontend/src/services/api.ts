@@ -793,6 +793,49 @@ export const api = {
             return { extensions: [] };
         }
     },
+
+    async getExtensionConfig(name: string): Promise<Record<string, unknown>> {
+        const response = await fetch(
+            `${API_BASE}/api/extensions/${encodeURIComponent(name)}/config`,
+            {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+                cache: 'no-cache',
+            },
+        );
+        if (!response.ok) {
+            if (response.status === 404) return {};
+            throw new Error(`Failed to load extension config: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    },
+
+    async setExtensionConfig(name: string, config: Record<string, unknown>): Promise<void> {
+        const response = await fetch(
+            `${API_BASE}/api/extensions/${encodeURIComponent(name)}/config`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config),
+            },
+        );
+        if (!response.ok) {
+            const text = await response.text().catch(() => '');
+            throw new Error(
+                `Failed to save extension config: ${response.status} ${response.statusText}${text ? ` - ${text}` : ''}`,
+            );
+        }
+    },
+
+    async triggerNotificationExtension(): Promise<void> {
+        const response = await fetch(`${API_BASE}/api/extensions/notification/trigger`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to trigger notification: ${response.status} ${response.statusText}`);
+        }
+    },
 }
 
 export type ExtensionInput = {
