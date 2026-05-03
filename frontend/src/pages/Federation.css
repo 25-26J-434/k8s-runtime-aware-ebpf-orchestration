@@ -538,6 +538,13 @@
   color: #fca5a5;
 }
 
+.log-feed__message {
+  margin-top: 0.25rem;
+  color: #e2eaf5;
+  font-size: 0.86rem;
+  font-style: italic;
+}
+
 .log-feed__payload {
   margin-top: 0.5rem;
   border-radius: 10px;
@@ -549,6 +556,24 @@
   padding: 0.6rem;
   max-height: 170px;
   overflow: auto;
+}
+
+.badge-priority-high,
+.badge-priority-critical {
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fda4af;
+}
+
+.badge-priority-medium,
+.badge-priority-warn {
+  border-color: rgba(234, 179, 8, 0.6);
+  color: #fde68a;
+}
+
+.badge-priority-low,
+.badge-priority-info {
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #93c5fd;
 }
 
 @media (max-width: 1200px) {

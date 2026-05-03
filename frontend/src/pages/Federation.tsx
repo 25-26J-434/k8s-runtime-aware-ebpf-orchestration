@@ -27,7 +27,7 @@ const COMMUNICATION_MODES: Array<{
     { value: 'MULTICAST', title: 'Multicast', description: 'Fan out to a selected group of peers.' },
 ];
 
-const EVENT_OPTIONS = ['HANDSHAKE', 'SCHEDULING', 'STATE_UPDATE', 'METRIC_UPDATE', 'DISCOVERY'] as const;
+const EVENT_OPTIONS = ['HANDSHAKE', 'HEALTH_ALERT', 'SCHEDULING', 'STATE_UPDATE', 'METRIC_UPDATE', 'DISCOVERY'] as const;
 const VISIBLE_LOG_LIMIT = 60;
 const DEFAULT_PAYLOAD = `{
   "message": "Hello peers",
@@ -708,22 +708,39 @@ export function Federation() {
                                 const isFailure = entry.result ? FAILURE_RESULTS.has(entry.result) : false;
                                 const resultLabel = entry.result ? entry.result.replace(/_/g, ' ') : null;
                                 const nodeLabel = getNodeLabel(entry.node, entry.node_ip);
+                                const direction = entry.direction ?? 'UNKNOWN';
+                                const mode = entry.mode ?? 'UNKNOWN';
+
+                                // Support both flat payload { message, priority } and nested { event, payload: { message, priority }, action }
+                                const innerPayload = (entry.payload?.payload && typeof entry.payload.payload === 'object')
+                                    ? (entry.payload.payload as Record<string, unknown>)
+                                    : entry.payload;
+                                const effectiveEvent = entry.event
+                                    || (entry.payload?.event && typeof entry.payload.event === 'string' ? entry.payload.event : null)
+                                    || 'Unknown';
+                                const payloadMessage = innerPayload && typeof innerPayload.message === 'string' ? innerPayload.message : null;
+                                const payloadPriority = innerPayload && typeof innerPayload.priority === 'string' ? (innerPayload.priority as string) : null;
 
                                 return (
                                     <div key={key} className={`log-feed__item${isFailure ? ' is-error' : ''}`}>
                                         <div className="log-feed__meta">
-                                            <span className="log-feed__title">{entry.event}</span>
+                                            <span className="log-feed__title">{effectiveEvent}</span>
                                             <span>{formatTime(entry.timestamp)}</span>
                                         </div>
                                         <div className="log-feed__badges">
-                                            <span className={`badge badge-${entry.direction.toLowerCase()}`}>{entry.direction}</span>
-                                            <span className="badge">{entry.mode}</span>
+                                            <span className={`badge badge-${direction.toLowerCase()}`}>{direction}</span>
+                                            <span className="badge">{mode}</span>
+                                            {payloadPriority && (
+                                                <span className={`badge badge-priority-${payloadPriority.toLowerCase()}`}>
+                                                    {payloadPriority.toUpperCase()}
+                                                </span>
+                                            )}
                                             {resultLabel && <span className={`badge badge-result-${entry.result}`}>{resultLabel}</span>}
                                         </div>
                                         <div className="log-feed__line">
-                                            <strong>{nodeLabel}</strong> {entry.direction === 'SENT' ? 'sent' : 'processed'} a{' '}
-                                            {entry.mode.toLowerCase()} message
-                                            {entry.direction === 'RECEIVED' && (entry.source || entry.source_ip) && (
+                                            <strong>{nodeLabel}</strong> {direction === 'SENT' ? 'sent' : 'processed'} a{' '}
+                                            {mode.toLowerCase()} message
+                                            {direction === 'RECEIVED' && (entry.source || entry.source_ip) && (
                                                 <>
                                                     {' '}
                                                     from <strong>{entry.source || entry.source_ip}</strong>
@@ -731,10 +748,15 @@ export function Federation() {
                                             )}
                                             .
                                         </div>
+                                        {payloadMessage && (
+                                            <div className="log-feed__line log-feed__message">
+                                                {payloadMessage}
+                                            </div>
+                                        )}
                                         <div className="log-feed__line log-feed__line--meta">
                                             <span>Node IP: {entry.node_ip}</span>
-                                            {entry.direction === 'RECEIVED' && entry.source_ip && <span>Source IP: {entry.source_ip}</span>}
-                                            {entry.direction === 'SENT' && delivered.length > 0 && <span>Delivered: {delivered.length}</span>}
+                                            {direction === 'RECEIVED' && entry.source_ip && <span>Source IP: {entry.source_ip}</span>}
+                                            {direction === 'SENT' && delivered.length > 0 && <span>Delivered: {delivered.length}</span>}
                                         </div>
                                         {targets.length > 0 && (
                                             <div className="log-feed__line">
@@ -754,8 +776,8 @@ export function Federation() {
                                                 <span>{formatList(failed)}</span>
                                             </div>
                                         )}
-                                        {entry.payload && Object.keys(entry.payload).length > 0 && (
-                                            <pre className="log-feed__payload">{JSON.stringify(entry.payload, null, 2)}</pre>
+                                        {innerPayload && Object.keys(innerPayload).length > 0 && (
+                                            <pre className="log-feed__payload">{JSON.stringify(innerPayload, null, 2)}</pre>
                                         )}
                                     </div>
                                 );

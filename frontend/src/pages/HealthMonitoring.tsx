@@ -13,22 +13,29 @@ import "./HealthMonitoring.css";
 
 export const HealthMonitoring: React.FC = () => {
   // Data states
-  const [healthData, setHealthData] = useState<ClusterHealthResponse | null>(null);
+  const [healthData, setHealthData] = useState<ClusterHealthResponse | null>(
+    null,
+  );
   const [healthStats, setHealthStats] = useState<HealthStats | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [recentAlerts, setRecentAlerts] = useState<HealthAlert[]>([]);
-  
+
   // Filter states
   const [selectedNode, setSelectedNode] = useState<string>("all");
   const [filterNamespace, setFilterNamespace] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchPod, setSearchPod] = useState<string>("");
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // Pod restart states
-  const [confirmPod, setConfirmPod] = useState<{ pod: PodHealth; node: string } | null>(null);
+  const [confirmPod, setConfirmPod] = useState<{
+    pod: PodHealth;
+    node: string;
+  } | null>(null);
   const [restartLoading, setRestartLoading] = useState<Set<string>>(new Set());
-  const [restartResult, setRestartResult] = useState<Map<string, { success: boolean; message: string }>>(new Map());
+  const [restartResult, setRestartResult] = useState<
+    Map<string, { success: boolean; message: string }>
+  >(new Map());
   const [downPods, setDownPods] = useState<Set<string>>(new Set());
 
   // Configuration states
@@ -56,10 +63,13 @@ export const HealthMonitoring: React.FC = () => {
         const config = await metricsConfigService.getConfig();
         setMetricsConfig(config);
         setConfigError(null);
-        console.log('[HealthMonitoring] Loaded config from backend:', config);
+        console.log("[HealthMonitoring] Loaded config from backend:", config);
       } catch (error) {
-        console.error('[HealthMonitoring] Failed to load config from backend:', error);
-        setConfigError('Failed to load configuration from backend');
+        console.error(
+          "[HealthMonitoring] Failed to load config from backend:",
+          error,
+        );
+        setConfigError("Failed to load configuration from backend");
         // Keep using default values on error
       } finally {
         setConfigLoading(false);
@@ -74,6 +84,29 @@ export const HealthMonitoring: React.FC = () => {
     });
     healthService.onAlert((alert) => {
       setRecentAlerts((prev) => [alert, ...prev.slice(0, 9)]);
+
+      const priorityMap: Record<string, string> = {
+        critical: "HIGH",
+        warning: "MEDIUM",
+        info: "LOW",
+      };
+      const priority = priorityMap[alert.severity] ?? "LOW";
+
+      api
+        .sendBroadcast({
+          event: "HEALTH_ALERT",
+          payload: {
+            message: alert.message,
+            priority,
+            severity: alert.severity,
+            source: alert.source,
+            node: alert.node_name,
+            ...(alert.pod_name && { pod: alert.pod_name }),
+            ...(alert.namespace && { namespace: alert.namespace }),
+          },
+          action: "NONE",
+        })
+        .catch(() => {});
     });
 
     loadConfig();
@@ -103,12 +136,15 @@ export const HealthMonitoring: React.FC = () => {
     try {
       setConfigError(null);
       await metricsConfigService.updateConfig(metricsConfig);
-      console.log('[HealthMonitoring] Configuration saved to backend:', metricsConfig);
-      alert('Configuration saved successfully!');
+      console.log(
+        "[HealthMonitoring] Configuration saved to backend:",
+        metricsConfig,
+      );
+      alert("Configuration saved successfully!");
       setShowConfig(false);
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[HealthMonitoring] Failed to save config:', errorMsg);
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      console.error("[HealthMonitoring] Failed to save config:", errorMsg);
       setConfigError(`Failed to save configuration: ${errorMsg}`);
       alert(`Error: ${errorMsg}`);
     }
@@ -138,14 +174,28 @@ export const HealthMonitoring: React.FC = () => {
     try {
       const result = await api.podAction("restart", pod.namespace, pod.name);
       // Broadcast to federation nodes that this pod is down
-      api.sendBroadcast({
-        type: "POD_DOWN",
-        payload: `⚠️ Pod ${pod.name} (ns: ${pod.namespace}) is DOWN — Kubernetes is restarting it`,
-        priority: "HIGH",
-      }).catch(() => {});
-      setRestartResult((prev) => new Map(prev).set(key, { success: result.success, message: result.message }));
+      api
+        .sendBroadcast({
+          event: "HEALTH_ALERT",
+          payload: {
+            message: `⚠️ Pod ${pod.name} (ns: ${pod.namespace}) is DOWN — Kubernetes is restarting it`,
+            priority: "HIGH",
+          },
+          action: "NONE",
+        })
+        .catch(() => {});
+      setRestartResult((prev) =>
+        new Map(prev).set(key, {
+          success: result.success,
+          message: result.message,
+        }),
+      );
       setTimeout(() => {
-        setRestartResult((prev) => { const next = new Map(prev); next.delete(key); return next; });
+        setRestartResult((prev) => {
+          const next = new Map(prev);
+          next.delete(key);
+          return next;
+        });
       }, 8000);
       // Auto-poll every 3 s for 15 s so the live recovery is visible
       let polls = 0;
@@ -154,15 +204,29 @@ export const HealthMonitoring: React.FC = () => {
         handleRefreshData();
         if (polls >= 5) {
           clearInterval(poll);
-          setDownPods((prev) => { const next = new Set(prev); next.delete(key); return next; });
+          setDownPods((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
         }
       }, 3000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Action failed";
-      setRestartResult((prev) => new Map(prev).set(key, { success: false, message: msg }));
-      setDownPods((prev) => { const next = new Set(prev); next.delete(key); return next; });
+      setRestartResult((prev) =>
+        new Map(prev).set(key, { success: false, message: msg }),
+      );
+      setDownPods((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
     } finally {
-      setRestartLoading((prev) => { const next = new Set(prev); next.delete(key); return next; });
+      setRestartLoading((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
     }
   };
 
@@ -181,16 +245,16 @@ export const HealthMonitoring: React.FC = () => {
   // Filter pods based on search and filters
   const getFilteredPods = (): { pod: PodHealth; node: string }[] => {
     let pods = getAllPods();
-    
+
     // Filter by selected node
     if (selectedNode !== "all") {
       pods = pods.filter((p) => p.node === selectedNode);
     }
-    
+
     if (filterNamespace !== "all") {
       pods = pods.filter((p) => p.pod.namespace === filterNamespace);
     }
-    
+
     if (filterStatus !== "all") {
       pods = pods.filter((p) => {
         if (filterStatus === "healthy") return p.pod.healthy === true;
@@ -200,12 +264,12 @@ export const HealthMonitoring: React.FC = () => {
         return true;
       });
     }
-    
+
     if (searchPod) {
       const search = searchPod.toLowerCase();
       pods = pods.filter((p) => p.pod.name.toLowerCase().includes(search));
     }
-    
+
     return pods;
   };
 
@@ -233,27 +297,42 @@ export const HealthMonitoring: React.FC = () => {
         <div className="modal-content" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
             <h2>Metrics Thresholds Configuration</h2>
-            <button className="modal-close" onClick={() => setShowConfig(false)}>✕</button>
+            <button
+              className="modal-close"
+              onClick={() => setShowConfig(false)}
+            >
+              ✕
+            </button>
           </div>
-          
+
           <div className="config-grid">
             {/* DNS Latency */}
             <div className="config-section">
               <h3>DNS Latency</h3>
               <div className="config-item">
                 <label>Threshold (ms):</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={metricsConfig.dns_latency_threshold}
-                  onChange={(e) => setMetricsConfig({...metricsConfig, dns_latency_threshold: Number(e.target.value)})}
+                  onChange={(e) =>
+                    setMetricsConfig({
+                      ...metricsConfig,
+                      dns_latency_threshold: Number(e.target.value),
+                    })
+                  }
                 />
               </div>
               <div className="config-item">
                 <label>Score Penalty:</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={metricsConfig.dns_latency_penalty}
-                  onChange={(e) => setMetricsConfig({...metricsConfig, dns_latency_penalty: Number(e.target.value)})}
+                  onChange={(e) =>
+                    setMetricsConfig({
+                      ...metricsConfig,
+                      dns_latency_penalty: Number(e.target.value),
+                    })
+                  }
                 />
               </div>
             </div>
@@ -263,18 +342,28 @@ export const HealthMonitoring: React.FC = () => {
               <h3>TCP Retransmissions</h3>
               <div className="config-item">
                 <label>Threshold:</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={metricsConfig.tcp_retrans_threshold}
-                  onChange={(e) => setMetricsConfig({...metricsConfig, tcp_retrans_threshold: Number(e.target.value)})}
+                  onChange={(e) =>
+                    setMetricsConfig({
+                      ...metricsConfig,
+                      tcp_retrans_threshold: Number(e.target.value),
+                    })
+                  }
                 />
               </div>
               <div className="config-item">
                 <label>Score Penalty:</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={metricsConfig.tcp_retrans_penalty}
-                  onChange={(e) => setMetricsConfig({...metricsConfig, tcp_retrans_penalty: Number(e.target.value)})}
+                  onChange={(e) =>
+                    setMetricsConfig({
+                      ...metricsConfig,
+                      tcp_retrans_penalty: Number(e.target.value),
+                    })
+                  }
                 />
               </div>
             </div>
@@ -284,18 +373,28 @@ export const HealthMonitoring: React.FC = () => {
               <h3>Packet Loss</h3>
               <div className="config-item">
                 <label>Threshold (%):</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={metricsConfig.packet_loss_threshold}
-                  onChange={(e) => setMetricsConfig({...metricsConfig, packet_loss_threshold: Number(e.target.value)})}
+                  onChange={(e) =>
+                    setMetricsConfig({
+                      ...metricsConfig,
+                      packet_loss_threshold: Number(e.target.value),
+                    })
+                  }
                 />
               </div>
               <div className="config-item">
                 <label>Score Penalty:</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={metricsConfig.packet_loss_penalty}
-                  onChange={(e) => setMetricsConfig({...metricsConfig, packet_loss_penalty: Number(e.target.value)})}
+                  onChange={(e) =>
+                    setMetricsConfig({
+                      ...metricsConfig,
+                      packet_loss_penalty: Number(e.target.value),
+                    })
+                  }
                 />
               </div>
             </div>
@@ -305,18 +404,28 @@ export const HealthMonitoring: React.FC = () => {
               <h3>Round-Trip Time (RTT)</h3>
               <div className="config-item">
                 <label>Threshold (ms):</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={metricsConfig.rtt_threshold}
-                  onChange={(e) => setMetricsConfig({...metricsConfig, rtt_threshold: Number(e.target.value)})}
+                  onChange={(e) =>
+                    setMetricsConfig({
+                      ...metricsConfig,
+                      rtt_threshold: Number(e.target.value),
+                    })
+                  }
                 />
               </div>
               <div className="config-item">
                 <label>Score Penalty:</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={metricsConfig.rtt_penalty}
-                  onChange={(e) => setMetricsConfig({...metricsConfig, rtt_penalty: Number(e.target.value)})}
+                  onChange={(e) =>
+                    setMetricsConfig({
+                      ...metricsConfig,
+                      rtt_penalty: Number(e.target.value),
+                    })
+                  }
                 />
               </div>
             </div>
@@ -326,42 +435,68 @@ export const HealthMonitoring: React.FC = () => {
               <h3>Restart Count</h3>
               <div className="config-item">
                 <label>Threshold:</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={metricsConfig.restart_count_threshold}
-                  onChange={(e) => setMetricsConfig({...metricsConfig, restart_count_threshold: Number(e.target.value)})}
+                  onChange={(e) =>
+                    setMetricsConfig({
+                      ...metricsConfig,
+                      restart_count_threshold: Number(e.target.value),
+                    })
+                  }
                 />
               </div>
               <div className="config-item">
                 <label>Score Penalty:</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={metricsConfig.restart_count_penalty}
-                  onChange={(e) => setMetricsConfig({...metricsConfig, restart_count_penalty: Number(e.target.value)})}
+                  onChange={(e) =>
+                    setMetricsConfig({
+                      ...metricsConfig,
+                      restart_count_penalty: Number(e.target.value),
+                    })
+                  }
                 />
               </div>
             </div>
           </div>
 
           {configError && (
-            <div style={{ color: '#ef4444', padding: '10px', marginBottom: '10px', fontSize: '12px' }}>
+            <div
+              style={{
+                color: "#ef4444",
+                padding: "10px",
+                marginBottom: "10px",
+                fontSize: "12px",
+              }}
+            >
               ⚠️ {configError}
             </div>
           )}
 
           <div className="modal-footer">
-            <button className="btn-save" onClick={handleSaveConfig} disabled={configLoading}>
-              {configLoading ? 'Saving...' : 'Save & Close'}
+            <button
+              className="btn-save"
+              onClick={handleSaveConfig}
+              disabled={configLoading}
+            >
+              {configLoading ? "Saving..." : "Save & Close"}
             </button>
-            <button className="btn-reset" onClick={async () => {
-              try {
-                const config = await metricsConfigService.getConfig();
-                setMetricsConfig(config);
-                alert('Reset to backend configuration');
-              } catch (error) {
-                alert('Failed to reset configuration');
-              }
-            }}>Reset to Saved</button>
+            <button
+              className="btn-reset"
+              onClick={async () => {
+                try {
+                  const config = await metricsConfigService.getConfig();
+                  setMetricsConfig(config);
+                  alert("Reset to backend configuration");
+                } catch (error) {
+                  alert("Failed to reset configuration");
+                }
+              }}
+            >
+              Reset to Saved
+            </button>
           </div>
         </div>
       </div>
@@ -377,27 +512,39 @@ export const HealthMonitoring: React.FC = () => {
         <div className="mini-stat">
           <div className="mini-stat-value">{healthStats.totalPods}</div>
           <div className="mini-stat-label">Total Pods</div>
-          <div className="mini-stat-sub">{healthStats.healthyPods}✓ {healthStats.unhealthyPods}✕</div>
+          <div className="mini-stat-sub">
+            {healthStats.healthyPods}✓ {healthStats.unhealthyPods}✕
+          </div>
         </div>
 
         <div className="mini-stat">
           <div className="mini-stat-value">{healthStats.totalNodes}</div>
           <div className="mini-stat-label">Nodes</div>
-          <div className="mini-stat-sub">{healthStats.healthyNodes}✓ {healthStats.unhealthyNodes}✕</div>
+          <div className="mini-stat-sub">
+            {healthStats.healthyNodes}✓ {healthStats.unhealthyNodes}✕
+          </div>
         </div>
 
         <div className="mini-stat">
-          <div className="mini-stat-value">{healthStats.criticalAlerts + healthStats.warningAlerts}</div>
+          <div className="mini-stat-value">
+            {healthStats.criticalAlerts + healthStats.warningAlerts}
+          </div>
           <div className="mini-stat-label">Alerts</div>
-          <div className="mini-stat-sub">{healthStats.criticalAlerts} Critical</div>
+          <div className="mini-stat-sub">
+            {healthStats.criticalAlerts} Critical
+          </div>
         </div>
 
         <div className="mini-stat">
-          <div className={`mini-stat-value status-${isConnected ? "connected" : "disconnected"}`}>
+          <div
+            className={`mini-stat-value status-${isConnected ? "connected" : "disconnected"}`}
+          >
             {isConnected ? "◉" : "○"}
           </div>
           <div className="mini-stat-label">Status</div>
-          <div className="mini-stat-sub">{isConnected ? "Live" : "Offline"}</div>
+          <div className="mini-stat-sub">
+            {isConnected ? "Live" : "Offline"}
+          </div>
         </div>
       </div>
     );
@@ -419,12 +566,17 @@ export const HealthMonitoring: React.FC = () => {
     else if (isDown) btnLabel = "DOWN";
 
     return (
-      <div key={key} className={`pod-item-compact${isDown ? " pod-item-down" : ""}`}>
+      <div
+        key={key}
+        className={`pod-item-compact${isDown ? " pod-item-down" : ""}`}
+      >
         <div className="pod-compact-left">
           <span className="pod-health-icon">{isDown ? "💀" : healthIcon}</span>
           <div>
             <div className="pod-compact-name">{pod.name}</div>
-            <div className="pod-compact-meta">{pod.namespace} • {node}</div>
+            <div className="pod-compact-meta">
+              {pod.namespace} • {node}
+            </div>
           </div>
         </div>
 
@@ -432,7 +584,9 @@ export const HealthMonitoring: React.FC = () => {
           {isDown ? (
             <span className="badge-mini phase-down">DOWN</span>
           ) : (
-            <span className={`badge-mini phase-${pod.phase.toLowerCase()}`}>{pod.phase}</span>
+            <span className={`badge-mini phase-${pod.phase.toLowerCase()}`}>
+              {pod.phase}
+            </span>
           )}
           <span className={`badge-mini ready-${pod.ready ? "true" : "false"}`}>
             {readyLabel}
@@ -440,14 +594,19 @@ export const HealthMonitoring: React.FC = () => {
         </div>
 
         <div className="pod-compact-right">
-          {pod.restart_count > 0 && <span className="restart-badge">{pod.restart_count}↻</span>}
+          {pod.restart_count > 0 && (
+            <span className="restart-badge">{pod.restart_count}↻</span>
+          )}
           {pod.health_score !== undefined && !isDown && (
             <span className="score-badge" style={{ color: healthColor }}>
               {pod.health_score}
             </span>
           )}
           {result && (
-            <span className={`pod-action-result ${result.success ? "success" : "error"}`} title={result.message}>
+            <span
+              className={`pod-action-result ${result.success ? "success" : "error"}`}
+              title={result.message}
+            >
               {result.success ? "✓ Restarted" : "✗ Failed"}
             </span>
           )}
@@ -473,19 +632,21 @@ export const HealthMonitoring: React.FC = () => {
           <h1 className="page-title">Cluster Health</h1>
         </div>
         <div className="header-right">
-          <select 
-            value={selectedNode} 
+          <select
+            value={selectedNode}
             onChange={(e) => setSelectedNode(e.target.value)}
             className="cluster-select"
           >
             <option value="all">All Nodes</option>
             {nodes.map((node) => (
-              <option key={node} value={node}>{node}</option>
+              <option key={node} value={node}>
+                {node}
+              </option>
             ))}
           </select>
 
-          <button 
-            onClick={handleRefreshData} 
+          <button
+            onClick={handleRefreshData}
             className={`btn-icon ${refreshing ? "refreshing" : ""}`}
             disabled={refreshing}
             title="Refresh data"
@@ -519,20 +680,22 @@ export const HealthMonitoring: React.FC = () => {
               onChange={(e) => setSearchPod(e.target.value)}
               className="search-tiny"
             />
-            
-            <select 
-              value={filterNamespace} 
+
+            <select
+              value={filterNamespace}
               onChange={(e) => setFilterNamespace(e.target.value)}
               className="filter-tiny"
             >
               <option value="all">All NS</option>
               {namespaces.map((ns) => (
-                <option key={ns} value={ns}>{ns}</option>
+                <option key={ns} value={ns}>
+                  {ns}
+                </option>
               ))}
             </select>
 
-            <select 
-              value={filterStatus} 
+            <select
+              value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
               className="filter-tiny"
             >
@@ -570,7 +733,10 @@ export const HealthMonitoring: React.FC = () => {
           ) : (
             <div className="alerts-list-compact">
               {recentAlerts.slice(0, 12).map((alert, idx) => (
-                <div key={idx} className={`alert-item-tiny alert-${alert.severity}`}>
+                <div
+                  key={idx}
+                  className={`alert-item-tiny alert-${alert.severity}`}
+                >
                   <div className="alert-msg-tiny">{alert.message}</div>
                   <div className="alert-time-tiny">
                     {new Date(alert.timestamp).toLocaleTimeString()}
@@ -591,17 +757,49 @@ export const HealthMonitoring: React.FC = () => {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Restart Pod</h2>
-              <button type="button" className="modal-close" onClick={() => setConfirmPod(null)}>✕</button>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setConfirmPod(null)}
+              >
+                ✕
+              </button>
             </div>
-            <p style={{ color: "#cbd5e1", lineHeight: 1.6, margin: "1rem 0 1.5rem" }}>
-              Delete <strong style={{ color: "#f8fafc" }}>{confirmPod.pod.name}</strong> in namespace{" "}
-              <strong style={{ color: "#f8fafc" }}>{confirmPod.pod.namespace}</strong> on node{" "}
+            <p
+              style={{
+                color: "#cbd5e1",
+                lineHeight: 1.6,
+                margin: "1rem 0 1.5rem",
+              }}
+            >
+              Delete{" "}
+              <strong style={{ color: "#f8fafc" }}>
+                {confirmPod.pod.name}
+              </strong>{" "}
+              in namespace{" "}
+              <strong style={{ color: "#f8fafc" }}>
+                {confirmPod.pod.namespace}
+              </strong>{" "}
+              on node{" "}
               <strong style={{ color: "#f8fafc" }}>{confirmPod.node}</strong>?{" "}
-              Kubernetes will recreate it automatically if managed by a controller.
+              Kubernetes will recreate it automatically if managed by a
+              controller.
             </p>
             <div className="modal-footer">
-              <button type="button" className="btn-reset" onClick={() => setConfirmPod(null)}>Cancel</button>
-              <button type="button" className="btn-save btn-danger" onClick={executeRestart}>Confirm Restart</button>
+              <button
+                type="button"
+                className="btn-reset"
+                onClick={() => setConfirmPod(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-save btn-danger"
+                onClick={executeRestart}
+              >
+                Confirm Restart
+              </button>
             </div>
           </div>
         </div>
