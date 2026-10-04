@@ -18,7 +18,6 @@
 package comm
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -63,6 +62,7 @@ const (
 )
 
 type Message struct {
+	ID          string            `json:"id,omitempty"`
 	Event       EventType         `json:"event"`
 	Type        CommunicationType `json:"type"`
 	Sender      string            `json:"sender"`
@@ -212,6 +212,7 @@ func Init(cfg Config) func() {
 		var ctx context.Context
 		ctx, cancelRefresh = context.WithCancel(context.Background())
 		go refreshPeers(ctx)
+		go heartbeatLoop(ctx)
 	})
 
 	return func() {
@@ -402,17 +403,9 @@ func setPeers(nodes []NodeInfo, ips []string) {
 }
 
 func sendToNode(ip string, body []byte) error {
-	url := "http://" + ip + ":8080/receive"
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Post(url, "application/json", bytes.NewBuffer(body))
+	latency, err := postWithRetry(peerURL(ip, "/receive"), body)
+	recordPeerResult(ip, latency, err)
 	if err != nil {
-		logf("ERROR sending to %s: %v", ip, err)
-		return err
-	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
-	if resp.StatusCode >= 400 {
-		err = fmt.Errorf("received status %d", resp.StatusCode)
 		logf("ERROR sending to %s: %v", ip, err)
 		return err
 	}
@@ -443,6 +436,9 @@ func resolveTargets(targets []string) []string {
 
 func sendData(commType CommunicationType, msg Message, targets []string) {
 	msg.Type = commType
+	if msg.ID == "" {
+		msg.ID = newMessageID()
+	}
 	msg.Sender = nodeName
 	msg.SenderIP = nodeIP
 	msg.Timestamp = time.Now().Unix()
@@ -548,9 +544,17 @@ func BroadcastMessage(msg Message) {
 }
 
 func receiveHandler(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
-	var msg Message
-	json.Unmarshal(body, &msg)
+	msg, ok := decodeMessage(w, r)
+	if !ok {
+		return
+	}
+
+	// Retried deliveries can arrive twice; acknowledge but do not reprocess.
+	if markSeen(msg.ID) {
+		logf("[COMM] Duplicate message %s from %s ignored", msg.ID, msg.Sender)
+		w.Write([]byte("OK"))
+		return
+	}
 
 	logf("\n[COMM] RECEIVED on %s (%s):", nodeName, nodeIP)
 	out, _ := json.MarshalIndent(msg, "", "  ")
@@ -594,12 +598,8 @@ func receiveHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func broadcastHandler(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
-	var msg Message
-	json.Unmarshal(body, &msg)
-
-	if msg.Event == "" {
-		http.Error(w, "event is required", http.StatusBadRequest)
+	msg, ok := decodeMessage(w, r)
+	if !ok {
 		return
 	}
 
@@ -612,12 +612,8 @@ func broadcastHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func unicastHandler(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
-	var msg Message
-	json.Unmarshal(body, &msg)
-
-	if msg.Event == "" {
-		http.Error(w, "event is required", http.StatusBadRequest)
+	msg, ok := decodeMessage(w, r)
+	if !ok {
 		return
 	}
 
@@ -641,12 +637,8 @@ func unicastHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func multicastHandler(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
-	var msg Message
-	json.Unmarshal(body, &msg)
-
-	if msg.Event == "" {
-		http.Error(w, "event is required", http.StatusBadRequest)
+	msg, ok := decodeMessage(w, r)
+	if !ok {
 		return
 	}
 
@@ -675,15 +667,6 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(commStats)
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "healthy",
-		"node":   nodeName,
-		"ip":     nodeIP,
-	})
 }
 
 func logsHandler(w http.ResponseWriter, r *http.Request) {
@@ -909,13 +892,12 @@ func listPeerIPs(excludeSelf bool) []string {
 }
 
 func fetchLogsFromPeer(ip string, limit int) ([]CommLogEntry, error) {
-	client := &http.Client{Timeout: 4 * time.Second}
-	url := fmt.Sprintf("http://%s:8080/api/comm/logs?scope=local", ip)
+	url := peerURL(ip, "/api/comm/logs?scope=local")
 	if limit > 0 {
 		url = fmt.Sprintf("%s&limit=%d", url, limit)
 	}
 
-	resp, err := client.Get(url)
+	resp, err := peerHTTPClient.Get(url)
 	if err != nil {
 		return nil, err
 	}

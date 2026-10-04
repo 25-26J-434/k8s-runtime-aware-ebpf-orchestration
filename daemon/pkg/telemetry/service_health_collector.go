@@ -131,7 +131,15 @@ func StartServiceHealthCollector(k8sClient *kubernetes.Clientset) {
 	}
 }
 
-// collectServiceHealth checks health of all services
+// maxConcurrentProbes bounds parallel HTTP health probes per collection cycle.
+const maxConcurrentProbes = 16
+
+// probeHTTPClient has a hard timeout so one hung pod cannot stall collection.
+var probeHTTPClient = &http.Client{Timeout: 2 * time.Second}
+
+// collectServiceHealth checks health of all services.
+// Results are built locally and swapped in under the lock at the end, so
+// readers are never blocked behind slow HTTP probes.
 func collectServiceHealth(k8sClient *kubernetes.Clientset) {
 	if k8sClient == nil {
 		return
@@ -139,38 +147,31 @@ func collectServiceHealth(k8sClient *kubernetes.Clientset) {
 
 	ctx := context.Background()
 
-	// Get all services
 	services, err := k8sClient.CoreV1().Services("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		log.Printf("[ServiceHealth] Failed to list services: %v", err)
 		return
 	}
 
-	// Get all endpoints
 	endpoints, err := k8sClient.CoreV1().Endpoints("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		log.Printf("[ServiceHealth] Failed to list endpoints: %v", err)
 		return
 	}
 
-	serviceHealthMutex.Lock()
-	defer serviceHealthMutex.Unlock()
-
-	serviceHealthMetrics.ServiceDetails = make(map[string]ServiceHealth)
-	serviceHealthMetrics.TotalServices = len(services.Items)
-	serviceHealthMetrics.HealthyServices = 0
-	serviceHealthMetrics.UnhealthyServices = 0
-
-	// Create endpoint map for quick lookup
-	endpointMap := make(map[string]*corev1.Endpoints)
+	endpointMap := make(map[string]*corev1.Endpoints, len(endpoints.Items))
 	for i := range endpoints.Items {
 		key := fmt.Sprintf("%s/%s", endpoints.Items[i].Namespace, endpoints.Items[i].Name)
 		endpointMap[key] = &endpoints.Items[i]
 	}
 
+	details := make(map[string]ServiceHealth, len(services.Items))
+	var wg sync.WaitGroup
+	var detailsMu sync.Mutex
+	sem := make(chan struct{}, maxConcurrentProbes)
+
 	for _, svc := range services.Items {
 		svcKey := fmt.Sprintf("%s/%s", svc.Namespace, svc.Name)
-		endpointKey := fmt.Sprintf("%s/%s", svc.Namespace, svc.Name)
 
 		svcHealth := ServiceHealth{
 			Name:           svc.Name,
@@ -181,87 +182,106 @@ func collectServiceHealth(k8sClient *kubernetes.Clientset) {
 			LastCheck:      time.Now(),
 		}
 
-		// Get endpoint information
-		if ep, ok := endpointMap[endpointKey]; ok {
-			svcHealth.TotalEndpoints = len(ep.Subsets)
-			readyCount := 0
+		var probes []func()
 
+		if ep, ok := endpointMap[svcKey]; ok {
 			for _, subset := range ep.Subsets {
 				for _, addr := range subset.Addresses {
-					readyCount++
 					podName := ""
 					if addr.TargetRef != nil && addr.TargetRef.Kind == "Pod" {
 						podName = addr.TargetRef.Name
 					}
+					svcHealth.ReadyEndpoints++
+					svcHealth.TotalEndpoints++
 
-					endpointHealth := EndpointHealth{
+					key := fmt.Sprintf("%s:%s", podName, addr.IP)
+					svcHealth.EndpointHealth[key] = EndpointHealth{
 						PodIP:     addr.IP,
 						PodName:   podName,
 						Status:    "ready",
-						HTTPCheck: false,
 						LastCheck: time.Now(),
 					}
 
-					// Try HTTP health check if service has a port
 					if len(subset.Ports) > 0 {
-						port := subset.Ports[0].Port
-						httpCheck, latency := checkHTTPHealth(addr.IP, int(port))
-						endpointHealth.HTTPCheck = httpCheck
-						endpointHealth.LatencyMs = latency
+						port := int(subset.Ports[0].Port)
+						ip := addr.IP
+						probes = append(probes, func() {
+							ok, latency := checkHTTPHealth(ip, port)
+							detailsMu.Lock()
+							defer detailsMu.Unlock()
+							entry := details[svcKey].EndpointHealth[key]
+							entry.HTTPCheck = ok
+							entry.LatencyMs = latency
+							details[svcKey].EndpointHealth[key] = entry
+						})
 					}
-
-					key := fmt.Sprintf("%s:%s", podName, addr.IP)
-					svcHealth.EndpointHealth[key] = endpointHealth
 				}
 
-				// Count not-ready addresses
 				for _, addr := range subset.NotReadyAddresses {
 					podName := ""
 					if addr.TargetRef != nil && addr.TargetRef.Kind == "Pod" {
 						podName = addr.TargetRef.Name
 					}
-
-					endpointHealth := EndpointHealth{
+					svcHealth.TotalEndpoints++
+					key := fmt.Sprintf("%s:%s", podName, addr.IP)
+					svcHealth.EndpointHealth[key] = EndpointHealth{
 						PodIP:     addr.IP,
 						PodName:   podName,
 						Status:    "not_ready",
-						HTTPCheck: false,
 						LastCheck: time.Now(),
 					}
-
-					key := fmt.Sprintf("%s:%s", podName, addr.IP)
-					svcHealth.EndpointHealth[key] = endpointHealth
 				}
 			}
-
-			svcHealth.ReadyEndpoints = readyCount
 		}
 
-		// Determine service status
-		if svcHealth.ReadyEndpoints > 0 {
-			if svcHealth.ReadyEndpoints == svcHealth.TotalEndpoints {
-				svcHealth.Status = "healthy"
-				serviceHealthMetrics.HealthyServices++
-			} else {
-				svcHealth.Status = "degraded"
-				serviceHealthMetrics.UnhealthyServices++
-			}
-		} else {
+		switch {
+		case svcHealth.ReadyEndpoints == 0:
 			svcHealth.Status = "unhealthy"
-			serviceHealthMetrics.UnhealthyServices++
+		case svcHealth.ReadyEndpoints == svcHealth.TotalEndpoints:
+			svcHealth.Status = "healthy"
+		default:
+			svcHealth.Status = "degraded"
 		}
 
-		serviceHealthMetrics.ServiceDetails[svcKey] = svcHealth
+		details[svcKey] = svcHealth
+
+		for _, probe := range probes {
+			probe := probe
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				probe()
+			}()
+		}
 	}
+	wg.Wait()
+
+	result := ServiceHealthMetrics{
+		TotalServices:  len(services.Items),
+		ServiceDetails: details,
+	}
+	for _, svc := range details {
+		if svc.Status == "healthy" {
+			result.HealthyServices++
+		} else {
+			result.UnhealthyServices++
+		}
+	}
+
+	serviceHealthMutex.Lock()
+	serviceHealthMetrics = result
+	serviceHealthMutex.Unlock()
 }
 
-// checkHTTPHealth performs an HTTP health check
+// checkHTTPHealth performs an HTTP health check with a bounded timeout.
 func checkHTTPHealth(ip string, port int) (bool, float64) {
 	start := time.Now()
 	url := fmt.Sprintf("http://%s:%d/health", ip, port)
 
-	resp, err := http.Get(url)
-	latency := float64(time.Since(start).Nanoseconds()) / 1e6 // Convert to milliseconds
+	resp, err := probeHTTPClient.Get(url)
+	latency := float64(time.Since(start).Nanoseconds()) / 1e6 // milliseconds
 
 	if err != nil {
 		return false, latency
@@ -284,9 +304,15 @@ func InitServiceHealthCollector(nodeName string, k8sClient *kubernetes.Clientset
 	}
 }
 
-// GetServiceHealthMetrics returns current service health metrics
+// GetServiceHealthMetrics returns a snapshot of current service health metrics.
+// The map is copied so callers cannot race with the collector.
 func GetServiceHealthMetrics() ServiceHealthMetrics {
 	serviceHealthMutex.RLock()
 	defer serviceHealthMutex.RUnlock()
-	return serviceHealthMetrics
+	snapshot := serviceHealthMetrics
+	snapshot.ServiceDetails = make(map[string]ServiceHealth, len(serviceHealthMetrics.ServiceDetails))
+	for k, v := range serviceHealthMetrics.ServiceDetails {
+		snapshot.ServiceDetails[k] = v
+	}
+	return snapshot
 }
