@@ -146,6 +146,15 @@ export function Navigation() {
                     <FiGlobe className="nav-icon" />
                     <span className="nav-link-text">Federation</span>
                 </Link>
+
+                <Link
+                    to="/health"
+                    className={`side-nav-link ${isActive('/health') ? 'active' : ''}`}
+                    title="Cluster Health Monitoring"
+                >
+                    <FiActivity className="nav-icon" />
+                    <span className="nav-link-text">Cluster Health</span>
+                </Link>
             </div>
 
             <div className="side-nav-footer">

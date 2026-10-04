@@ -8,6 +8,7 @@ import { Scheduling } from './pages/Scheduling';
 import { ScalingRules as Scalings } from './pages/ScalingRules';
 import { Deployments } from './pages/Deployments';
 import { Federation } from './pages/Federation';
+import { ClusterHealth } from './pages/ClusterHealth';
 import './App.css';
 
 function App() {
@@ -58,6 +59,12 @@ function App() {
                     <div className="app">
                         <Navigation />
                         <Federation />
+                    </div>
+                } />
+                <Route path="/health" element={
+                    <div className="app">
+                        <Navigation />
+                        <ClusterHealth />
                     </div>
                 } />
             </Routes>
