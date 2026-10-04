@@ -189,3 +189,9 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 		"heartbeat_s": heartbeatInterval().Seconds(),
 	})
 }
+
+// PeerStatuses returns a snapshot of peer liveness for other packages
+// (e.g. the cluster health API).
+func PeerStatuses() []PeerStatus {
+	return snapshotPeerHealth()
+}

@@ -103,6 +103,7 @@ func StartServer() {
 
 	// Register in-process communication handlers (broadcast/unicast/multicast/stats/health).
 	comm.RegisterHandlers(nil, corsMiddleware)
+	registerHealthRoutes()
 	http.HandleFunc("/api/pod/action", corsMiddleware(handlePodAction))
 	http.HandleFunc("/api/pod/logs", corsMiddleware(handlePodLogs))
 	http.HandleFunc("/api/pod/ebpf-action", corsMiddleware(handleEBPFAction))
