@@ -112,6 +112,7 @@ type CommStats struct {
 	Multicast  int      `json:"multicast"`
 	Received   int      `json:"received"`
 	Total      int      `json:"total"`
+	Telemetry  int      `json:"telemetry"` // system health/metric heartbeats, not in Total
 	LastUpdate string   `json:"last_update"`
 	Node       string   `json:"node"`
 	NodeIP     string   `json:"node_ip"`
@@ -192,7 +193,8 @@ func Init(cfg Config) func() {
 		commStats = CommStats{
 			Node:       nodeName,
 			NodeIP:     nodeIP,
-			LastUpdate: time.Now().Format("2006-01-02 15:04:05"),
+			LastUpdate: nowStamp(),
+			Peers:      []string{},
 		}
 
 		nodes, ips := discoverPeersFromK8s()
@@ -404,8 +406,7 @@ func setPeers(nodes []NodeInfo, ips []string) {
 
 func sendToNode(ip string, body []byte) error {
 	url := "http://" + ip + ":8080/receive"
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Post(url, "application/json", bytes.NewBuffer(body))
+	resp, err := peerHTTPClient.Post(url, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		logf("ERROR sending to %s: %v", ip, err)
 		return err
@@ -454,16 +455,21 @@ func sendData(commType CommunicationType, msg Message, targets []string) {
 		return
 	}
 
+	telemetry := isTelemetryEvent(msg.Event)
 	statsLock.Lock()
-	commStats.Total++
-	commStats.LastUpdate = time.Now().Format("2006-01-02 15:04:05")
-	switch commType {
-	case Unicast:
-		commStats.Unicast++
-	case Broadcast:
-		commStats.Broadcast++
-	case Multicast:
-		commStats.Multicast++
+	commStats.LastUpdate = nowStamp()
+	if telemetry {
+		commStats.Telemetry++
+	} else {
+		commStats.Total++
+		switch commType {
+		case Unicast:
+			commStats.Unicast++
+		case Broadcast:
+			commStats.Broadcast++
+		case Multicast:
+			commStats.Multicast++
+		}
 	}
 	statsLock.Unlock()
 
@@ -548,19 +554,40 @@ func BroadcastMessage(msg Message) {
 	sendData(Broadcast, msg, nil)
 }
 
-func receiveHandler(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
+// decodeMessage reads and parses a request body, replying 400 when it is not valid JSON.
+func decodeMessage(w http.ResponseWriter, r *http.Request) (Message, bool) {
 	var msg Message
-	json.Unmarshal(body, &msg)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return msg, false
+	}
+	if err := json.Unmarshal(body, &msg); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return msg, false
+	}
+	return msg, true
+}
 
-	logf("\n[COMM] RECEIVED on %s (%s):", nodeName, nodeIP)
-	out, _ := json.MarshalIndent(msg, "", "  ")
-	fmt.Println(string(out))
+func receiveHandler(w http.ResponseWriter, r *http.Request) {
+	msg, ok := decodeMessage(w, r)
+	if !ok {
+		return
+	}
+
+	telemetry := isTelemetryEvent(msg.Event)
+	if !telemetry {
+		logf("[COMM] RECEIVED on %s (%s): %s from %s", nodeName, nodeIP, msg.Event, msg.Sender)
+	}
 
 	statsLock.Lock()
-	commStats.Received++
-	commStats.Total++
-	commStats.LastUpdate = time.Now().Format("2006-01-02 15:04:05")
+	if telemetry {
+		commStats.Telemetry++
+	} else {
+		commStats.Received++
+		commStats.Total++
+	}
+	commStats.LastUpdate = nowStamp()
 	statsLock.Unlock()
 
 	targetLabels := uniqueStrings(append([]string{}, msg.TargetNodes...))
@@ -595,9 +622,10 @@ func receiveHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func broadcastHandler(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
-	var msg Message
-	json.Unmarshal(body, &msg)
+	msg, ok := decodeMessage(w, r)
+	if !ok {
+		return
+	}
 
 	if msg.Event == "" {
 		http.Error(w, "event is required", http.StatusBadRequest)
@@ -605,17 +633,16 @@ func broadcastHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logf("\n[COMM] BROADCAST from %s (%s):", nodeName, nodeIP)
-	out, _ := json.MarshalIndent(msg, "", "  ")
-	fmt.Println(string(out))
 
 	sendData(Broadcast, msg, nil)
 	w.Write([]byte("OK"))
 }
 
 func unicastHandler(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
-	var msg Message
-	json.Unmarshal(body, &msg)
+	msg, ok := decodeMessage(w, r)
+	if !ok {
+		return
+	}
 
 	if msg.Event == "" {
 		http.Error(w, "event is required", http.StatusBadRequest)
@@ -634,17 +661,16 @@ func unicastHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logf("\n[COMM] UNICAST to %s from %s (%s):", resolved[0], nodeName, nodeIP)
-	out, _ := json.MarshalIndent(msg, "", "  ")
-	fmt.Println(string(out))
 
 	sendData(Unicast, msg, resolved)
 	w.Write([]byte("OK"))
 }
 
 func multicastHandler(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
-	var msg Message
-	json.Unmarshal(body, &msg)
+	msg, ok := decodeMessage(w, r)
+	if !ok {
+		return
+	}
 
 	if msg.Event == "" {
 		http.Error(w, "event is required", http.StatusBadRequest)
@@ -663,8 +689,6 @@ func multicastHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logf("\n[COMM] MULTICAST to %v from %s (%s):", resolved, nodeName, nodeIP)
-	out, _ := json.MarshalIndent(msg, "", "  ")
-	fmt.Println(string(out))
 
 	sendData(Multicast, msg, resolved)
 	w.Write([]byte("OK"))
@@ -744,6 +768,9 @@ func logsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func recordLog(entry CommLogEntry) {
+	if isTelemetryEvent(entry.Event) {
+		return
+	}
 	if entry.Timestamp == "" {
 		entry.Timestamp = time.Now().UTC().Format(time.RFC3339Nano)
 	}
@@ -973,12 +1000,26 @@ func refreshPeers(ctx context.Context) {
 				statsLock.Lock()
 				commStats.PeerCount = len(peers)
 				commStats.Peers = append([]string{}, peers...)
-				commStats.LastUpdate = time.Now().Format("2006-01-02 15:04:05")
+				commStats.LastUpdate = nowStamp()
 				statsLock.Unlock()
 			}
 		}
 	}
 }
+
+// nowStamp returns the current time as UTC RFC3339 so the UI can parse it without guessing a zone.
+func nowStamp() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}
+
+// isTelemetryEvent marks high-frequency system traffic (heartbeats, metric/health fan-out).
+// These are counted separately and kept out of the log ring so they never evict real
+// user messages such as broadcasts, unicasts and handshakes.
+func isTelemetryEvent(e EventType) bool {
+	return e == EventNodeHealth || e == EventMetricUpdate
+}
+
+var peerHTTPClient = &http.Client{Timeout: 3 * time.Second}
 
 func logf(format string, a ...any) {
 	fmt.Printf(format+"\n", a...)
