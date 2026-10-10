@@ -16,6 +16,8 @@ export interface PodHealth {
   health_reasons?: string[];
 }
 
+export type Freshness = 'live' | 'stale' | 'offline';
+
 export interface NodeHealthUpdate {
   timestamp: string;
   node_name: string;
@@ -30,10 +32,17 @@ export interface NodeHealthUpdate {
   unknown_pods: number;
   pods: PodHealth[];
   error?: string;
+  last_seen?: string;
+  age_seconds?: number;
+  freshness?: Freshness;
 }
 
 export interface HealthAlert {
+  id?: string;
+  state?: 'firing' | 'resolved';
   timestamp: string;
+  last_seen?: string;
+  resolved_at?: string;
   severity: 'critical' | 'warning' | 'info';
   source: 'node' | 'pod';
   node_name: string;
@@ -43,10 +52,27 @@ export interface HealthAlert {
   details?: Record<string, any>;
 }
 
+export interface ClusterHealthSummary {
+  nodes_live: number;
+  nodes_stale: number;
+  nodes_offline: number;
+  critical_alerts: number;
+  warning_alerts: number;
+  info_alerts: number;
+}
+
 export interface ClusterHealthResponse {
   timestamp: string;
+  seq?: number;
+  summary?: ClusterHealthSummary;
   nodes: Record<string, NodeHealthUpdate>;
   alerts?: HealthAlert[];
+}
+
+export interface HealthAlertHistoryResponse {
+  timestamp: string;
+  active: HealthAlert[];
+  history: HealthAlert[];
 }
 
 export interface UnifiedMetricsResponse {
