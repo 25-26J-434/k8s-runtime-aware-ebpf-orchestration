@@ -149,22 +149,22 @@ func resolveNodeAlerts(nodeKey string) []HealthAlert {
 	return out
 }
 
-// expireEventAlerts removes one-shot alerts whose TTL passed; returns whether anything changed.
-func expireEventAlerts() bool {
+// expireEventAlerts removes one-shot alerts whose TTL passed and returns them as resolved.
+func expireEventAlerts() []HealthAlert {
 	now := time.Now().UTC()
 	nowStr := now.Format(time.RFC3339)
 	alertMgrMu.Lock()
 	defer alertMgrMu.Unlock()
-	changed := false
+	var out []HealthAlert
 	for id, m := range alertMgr {
 		if !m.expires.IsZero() && !now.Before(m.expires) {
 			m.alert.State, m.alert.ResolvedAt = alertStateResolved, nowStr
 			delete(alertMgr, id)
 			recordHistoryLocked(m.alert)
-			changed = true
+			out = append(out, m.alert)
 		}
 	}
-	return changed
+	return out
 }
 
 func sortAlerts(list []HealthAlert) {

@@ -334,7 +334,11 @@ func sweepNodeFreshness() bool {
 	now := time.Now().UTC()
 	localKey := getLocalNodeName()
 	changed := false
-	var offline []NodeHealthUpdate
+	type offlineNode struct {
+		key string
+		h   NodeHealthUpdate
+	}
+	var offline []offlineNode
 	var pruned []string
 
 	clusterNodeHealthMu.Lock()
@@ -359,7 +363,7 @@ func sweepNodeFreshness() bool {
 			changed = true
 		}
 		if h.Freshness == "offline" {
-			offline = append(offline, h)
+			offline = append(offline, offlineNode{key, h})
 		}
 	}
 	clusterNodeHealthMu.Unlock()
@@ -370,11 +374,8 @@ func sweepNodeFreshness() bool {
 		previousHealthMu.Unlock()
 		dispatchAlertChanges(nil, resolveNodeAlerts(key))
 	}
-	for _, h := range offline {
-		key := h.NodeName
-		if key == "" {
-			key = h.NodeIP
-		}
+	for _, o := range offline {
+		key, h := o.key, o.h
 		a := alertFor("node:"+key+":offline", AlertCritical, "node", h,
 			fmt.Sprintf("Node %s stopped reporting (last seen %s)", key, h.LastSeen),
 			map[string]interface{}{"last_seen": h.LastSeen})
@@ -674,7 +675,8 @@ func nodeHealthWebSocketBroadcaster() {
 		}
 
 		changed := sweepNodeFreshness()
-		if expireEventAlerts() {
+		if expired := expireEventAlerts(); len(expired) > 0 {
+			dispatchAlertChanges(nil, expired)
 			changed = true
 		}
 		if changed {
