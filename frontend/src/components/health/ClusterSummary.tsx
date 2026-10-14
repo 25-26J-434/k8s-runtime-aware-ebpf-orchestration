@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import type { ClusterHealthResponse, Freshness, NodeHealthUpdate } from "../../types/health";
-import { scoreTone } from "./podStatus";
 
 interface Props {
   data: ClusterHealthResponse | undefined;
@@ -93,7 +92,7 @@ export function ClusterSummary({ data, selectedNode, onSelectNode }: Props) {
           </button>
           {nodeEntries.map(([key, n]) => {
             const f = nodeFreshness(n);
-            const tone = f === "offline" ? "crit" : f === "stale" ? "warn" : scoreTone(n.health_score);
+            const tone = f === "offline" || n.status === "unhealthy" ? "crit" : f === "stale" || n.status === "degraded" ? "warn" : "ok";
             return (
               <button
                 key={key}
@@ -108,7 +107,6 @@ export function ClusterSummary({ data, selectedNode, onSelectNode }: Props) {
                 </span>
                 <span className="hm-node-meta">
                   {n.healthy_pods}/{n.total_pods} pods healthy
-                  {n.health_score !== undefined && ` · score ${n.health_score}`}
                 </span>
                 <span className={`hm-node-fresh is-${f}`}>
                   {FRESHNESS_LABEL[f]} · {formatAge(n.age_seconds)}

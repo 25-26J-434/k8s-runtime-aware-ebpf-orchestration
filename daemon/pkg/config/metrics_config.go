@@ -8,33 +8,22 @@ import (
 	"sync"
 )
 
-// MetricsConfig holds configurable thresholds for health scoring
+// MetricsConfig holds configurable thresholds for health warnings.
 type MetricsConfig struct {
-	DNSLatencyThreshold    float64 `json:"dns_latency_threshold"`    // ms
-	DNSLatencyPenalty      int     `json:"dns_latency_penalty"`
-	TCPRetransThreshold    float64 `json:"tcp_retrans_threshold"`
-	TCPRetransPenalty      int     `json:"tcp_retrans_penalty"`
-	PacketLossThreshold    float64 `json:"packet_loss_threshold"`    // %
-	PacketLossPenalty      int     `json:"packet_loss_penalty"`
-	RTTThreshold           float64 `json:"rtt_threshold"`            // ms
-	RTTPenalty             int     `json:"rtt_penalty"`
-	RestartCountThreshold  int32   `json:"restart_count_threshold"`
-	RestartCountPenalty    int     `json:"restart_count_penalty"`
+	DNSLatencyThreshold   float64 `json:"dns_latency_threshold"` // ms
+	TCPRetransThreshold   float64 `json:"tcp_retrans_threshold"`
+	PacketLossThreshold   float64 `json:"packet_loss_threshold"` // %
+	RTTThreshold          float64 `json:"rtt_threshold"`         // ms
+	RestartCountThreshold int32   `json:"restart_count_threshold"`
 }
 
 var (
 	currentMetricsConfig = MetricsConfig{
-		// Default values matching current hardcoded thresholds
 		DNSLatencyThreshold:   20.0,
-		DNSLatencyPenalty:     20,
 		TCPRetransThreshold:   50.0,
-		TCPRetransPenalty:     20,
 		PacketLossThreshold:   20.0,
-		PacketLossPenalty:     20,
 		RTTThreshold:          200.0,
-		RTTPenalty:            20,
 		RestartCountThreshold: 5,
-		RestartCountPenalty:   30,
 	}
 	configMutex sync.RWMutex
 )
@@ -84,24 +73,14 @@ func HandleSetMetricsConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate penalties (must be positive)
-	if newConfig.DNSLatencyPenalty <= 0 || newConfig.TCPRetransPenalty <= 0 ||
-		newConfig.PacketLossPenalty <= 0 || newConfig.RTTPenalty <= 0 ||
-		newConfig.RestartCountPenalty <= 0 {
-		http.Error(w, "Penalties must be positive", http.StatusBadRequest)
-		return
-	}
-
 	configMutex.Lock()
 	currentMetricsConfig = newConfig
 	configMutex.Unlock()
 
-	log.Printf("[Config] Metrics configuration updated: DNS=%vms/%dpts, TCP=%v/%dpts, Loss=%v%%/%dpts, RTT=%vms/%dpts, Restarts=%d/%dpts",
-		newConfig.DNSLatencyThreshold, newConfig.DNSLatencyPenalty,
-		newConfig.TCPRetransThreshold, newConfig.TCPRetransPenalty,
-		newConfig.PacketLossThreshold, newConfig.PacketLossPenalty,
-		newConfig.RTTThreshold, newConfig.RTTPenalty,
-		newConfig.RestartCountThreshold, newConfig.RestartCountPenalty)
+	log.Printf("[Config] Health warning thresholds updated: DNS=%vms, TCP=%v, Loss=%v%%, RTT=%vms, Restarts=%d",
+		newConfig.DNSLatencyThreshold, newConfig.TCPRetransThreshold,
+		newConfig.PacketLossThreshold, newConfig.RTTThreshold,
+		newConfig.RestartCountThreshold)
 
 	w.Header().Set("Content-Type", "application/json")
 	response := map[string]string{

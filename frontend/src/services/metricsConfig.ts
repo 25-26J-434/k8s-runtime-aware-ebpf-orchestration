@@ -2,15 +2,10 @@ import { API_BASE } from './api';
 
 export interface MetricsConfig {
   dns_latency_threshold: number;
-  dns_latency_penalty: number;
   tcp_retrans_threshold: number;
-  tcp_retrans_penalty: number;
   packet_loss_threshold: number;
-  packet_loss_penalty: number;
   rtt_threshold: number;
-  rtt_penalty: number;
   restart_count_threshold: number;
-  restart_count_penalty: number;
 }
 
 export const metricsConfigService = {

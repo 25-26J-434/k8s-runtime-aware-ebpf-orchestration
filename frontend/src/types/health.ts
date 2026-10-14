@@ -1,9 +1,3 @@
-export interface HealthLevel {
-  level: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
-  score: number;
-  reasons: string[];
-}
-
 export interface PodHealth {
   name: string;
   namespace: string;
@@ -12,7 +6,6 @@ export interface PodHealth {
   ready: boolean;
   restart_count: number;
   healthy: boolean;            // true = healthy, false = unhealthy
-  health_score?: number;
   health_reasons?: string[];
 }
 
@@ -24,7 +17,6 @@ export interface NodeHealthUpdate {
   node_ip?: string;
   status: string;
   healthy: boolean;            // true = healthy, false = unhealthy
-  health_score?: number;
   health_reasons?: string[];
   total_pods: number;
   healthy_pods: number;

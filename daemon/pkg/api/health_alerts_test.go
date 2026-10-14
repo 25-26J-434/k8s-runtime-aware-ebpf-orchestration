@@ -41,7 +41,6 @@ func TestAlertFiresOnceThenResolves(t *testing.T) {
 		t.Fatalf("unexpected alert: %+v", fired[0])
 	}
 
-	// Same condition on the next cycles must not re-alert.
 	for i := 0; i < 3; i++ {
 		if fired, _ := detectHealthAlerts("node-a", bad); len(fired) != 0 {
 			t.Fatalf("cycle %d re-fired %d alerts", i, len(fired))
@@ -65,7 +64,7 @@ func TestMetricReasonsRaiseAlerts(t *testing.T) {
 
 	n := nodeWithPod("Running", true,
 		"high packet loss: 12", "high retransmissions: 80", "dns latency high: 300.0ms",
-		"rtt elevated: 40.0ms") // elevated is informational only
+		"rtt elevated: 40.0ms")
 	fired, _ := detectHealthAlerts("node-a", n)
 	if len(fired) != 3 {
 		t.Fatalf("fired %d alerts, want 3: %+v", len(fired), fired)
@@ -109,7 +108,6 @@ func TestOfflineNodeRaisesAlertAndRecovers(t *testing.T) {
 		t.Fatalf("expected an offline critical alert, got %+v", resp.Alerts)
 	}
 
-	// The node reports again: offline alert resolves.
 	update := NodeHealthUpdate{NodeName: "peer-1", Status: "healthy"}
 	storeNodeHealth("peer-1", update)
 	detectHealthAlerts("peer-1", update)
@@ -118,20 +116,39 @@ func TestOfflineNodeRaisesAlertAndRecovers(t *testing.T) {
 	}
 }
 
-func TestZeroHealthScoreIsSerialized(t *testing.T) {
-	b, _ := json.Marshal(NodeHealthUpdate{NodeName: "n", HealthScore: 0})
-	if !strings.Contains(string(b), `"health_score":0`) {
-		t.Fatalf("health_score missing from %s", b)
-	}
-	b, _ = json.Marshal(PodHealth{Name: "p", HealthScore: 0})
-	if !strings.Contains(string(b), `"health_score":0`) {
-		t.Fatalf("pod health_score missing from %s", b)
+func TestSucceededPodIsHealthy(t *testing.T) {
+	healthy, reasons := evaluatePodHealth(PodHealth{Phase: "Succeeded"}, nil)
+	if !healthy || len(reasons) != 0 {
+		t.Fatalf("Succeeded pod: healthy=%v reasons=%v", healthy, reasons)
 	}
 }
 
-func TestSucceededPodIsHealthy(t *testing.T) {
-	healthy, score, reasons := evaluatePodHealthLevel(PodHealth{Phase: "Succeeded"}, nil)
-	if !healthy || score != 100 || len(reasons) != 0 {
-		t.Fatalf("Succeeded pod: healthy=%v score=%d reasons=%v", healthy, score, reasons)
+func TestMetricWarningsDoNotChangeKubernetesPodHealth(t *testing.T) {
+	pod := PodHealth{Name: "web", Namespace: "default", Phase: "Running", Ready: true}
+	metrics := map[string]interface{}{
+		"tcp_metrics": map[string]interface{}{"packet_loss": float64(25)},
+	}
+
+	healthy, reasons := evaluatePodHealth(pod, metrics)
+	if !healthy {
+		t.Fatal("ready running pod should remain Kubernetes-healthy")
+	}
+	if len(reasons) != 1 || reasons[0] != "high packet loss: 25" {
+		t.Fatalf("metric warnings = %v, want packet-loss warning", reasons)
+	}
+}
+
+func TestHealthPayloadsOmitNumericScores(t *testing.T) {
+	for name, value := range map[string]interface{}{
+		"node": NodeHealthUpdate{NodeName: "node-a"},
+		"pod":  PodHealth{Name: "web"},
+	} {
+		payload, err := json.Marshal(value)
+		if err != nil {
+			t.Fatalf("marshal %s health: %v", name, err)
+		}
+		if strings.Contains(string(payload), "health_score") {
+			t.Errorf("%s health payload unexpectedly contains numeric score: %s", name, payload)
+		}
 	}
 }

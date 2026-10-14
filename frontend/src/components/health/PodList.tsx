@@ -2,7 +2,7 @@ import { memo, useDeferredValue, useMemo, useState } from "react";
 import { FiRotateCw } from "react-icons/fi";
 import type { PodHealth } from "../../types/health";
 import { podKey, type RestartTarget } from "../../hooks/usePodRestart";
-import { podStatus, scoreTone } from "./podStatus";
+import { podStatus } from "./podStatus";
 
 export interface PodEntry {
   pod: PodHealth;
@@ -39,9 +39,6 @@ const PodRow = memo(function PodRow({ entry, busy, onRestart }: RowProps) {
       <span className={`hm-badge is-${status.tone}`}>{status.label}</span>
       <span className="hm-pod-num" title="Container restarts">
         {pod.restart_count > 0 ? `${pod.restart_count}↻` : ""}
-      </span>
-      <span className={`hm-pod-score is-${scoreTone(pod.health_score)}`} title="Health score (0–100)">
-        {pod.health_score ?? "–"}
       </span>
       <button
         type="button"

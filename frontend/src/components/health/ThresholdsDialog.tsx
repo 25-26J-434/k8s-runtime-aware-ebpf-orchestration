@@ -5,23 +5,18 @@ import { useMetricsConfig, useSaveMetricsConfig } from "../../hooks/useMetricsCo
 // Standard defaults the backend ships with; users can override any of them.
 export const STANDARD_THRESHOLDS: MetricsConfig = {
   dns_latency_threshold: 20,
-  dns_latency_penalty: 20,
   tcp_retrans_threshold: 50,
-  tcp_retrans_penalty: 20,
   packet_loss_threshold: 20,
-  packet_loss_penalty: 20,
   rtt_threshold: 200,
-  rtt_penalty: 20,
   restart_count_threshold: 5,
-  restart_count_penalty: 30,
 };
 
-const SECTIONS: { title: string; help: string; threshold: keyof MetricsConfig; penalty: keyof MetricsConfig; unit: string }[] = [
-  { title: "DNS latency", help: "Slow name lookups", threshold: "dns_latency_threshold", penalty: "dns_latency_penalty", unit: "ms" },
-  { title: "TCP retransmissions", help: "Packets that had to be re-sent", threshold: "tcp_retrans_threshold", penalty: "tcp_retrans_penalty", unit: "count" },
-  { title: "Packet loss", help: "Dropped packets", threshold: "packet_loss_threshold", penalty: "packet_loss_penalty", unit: "count" },
-  { title: "Round-trip time", help: "Network delay between peers", threshold: "rtt_threshold", penalty: "rtt_penalty", unit: "ms" },
-  { title: "Restart count", help: "Container restarts", threshold: "restart_count_threshold", penalty: "restart_count_penalty", unit: "restarts" },
+const SECTIONS: { title: string; help: string; threshold: keyof MetricsConfig; unit: string }[] = [
+  { title: "DNS latency", help: "Slow name lookups", threshold: "dns_latency_threshold", unit: "ms" },
+  { title: "TCP retransmissions", help: "Packets that had to be re-sent", threshold: "tcp_retrans_threshold", unit: "count" },
+  { title: "Packet loss", help: "Dropped packets", threshold: "packet_loss_threshold", unit: "%" },
+  { title: "Round-trip time", help: "Network delay between peers", threshold: "rtt_threshold", unit: "ms" },
+  { title: "Restart count", help: "Container restarts", threshold: "restart_count_threshold", unit: "restarts" },
 ];
 
 export function ThresholdsDialog({ onClose }: { onClose: () => void }) {
@@ -55,7 +50,7 @@ export function ThresholdsDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <p className="hm-modal-sub">
-          A pod loses score points when a metric passes its threshold. Set your own limits, or restore the standard values.
+          Health warnings appear when a metric passes its threshold. Set your own limits, or restore the standard values.
         </p>
 
         {isLoading || (!draft && !isError) ? (
@@ -78,23 +73,13 @@ export function ThresholdsDialog({ onClose }: { onClose: () => void }) {
                 <legend>{s.title}</legend>
                 <span className="hm-config-help">{s.help}</span>
                 <label>
-                  Alert above ({s.unit})
+                  Warn above ({s.unit})
                   <input
                     type="number"
                     min={0}
                     className="hm-input"
                     value={Number.isNaN(draft[s.threshold]) ? "" : draft[s.threshold]}
                     onChange={(e) => set(s.threshold, e.target.value)}
-                  />
-                </label>
-                <label>
-                  Score penalty
-                  <input
-                    type="number"
-                    min={0}
-                    className="hm-input"
-                    value={Number.isNaN(draft[s.penalty]) ? "" : draft[s.penalty]}
-                    onChange={(e) => set(s.penalty, e.target.value)}
                   />
                 </label>
               </fieldset>

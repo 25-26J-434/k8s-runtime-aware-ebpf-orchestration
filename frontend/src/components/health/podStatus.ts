@@ -28,10 +28,3 @@ export function podStatus(pod: PodHealth): PodStatus {
       return { label: pod.phase || "Unknown", tone: "warn", rank: 3 };
   }
 }
-
-export function scoreTone(score: number | undefined): Tone {
-  if (score === undefined) return "idle";
-  if (score >= 80) return "ok";
-  if (score >= 50) return "warn";
-  return "crit";
-}
