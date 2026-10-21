@@ -40,7 +40,13 @@ export function usePodRestart() {
     mutationFn: (t: RestartTarget) => api.podAction("restart", t.namespace, t.name),
     onMutate: (t) => setBusy(podKey(t.namespace, t.name), true),
     onSuccess: (result, t) => {
-      setNotice({ ok: result.success, message: result.message || `Restart requested for ${t.name}` });
+      if (!result.success) {
+        // The daemon answers 200 with success:false; the real reason is in `error`.
+        setBusy(podKey(t.namespace, t.name), false);
+        setNotice({ ok: false, message: [result.message, result.error].filter(Boolean).join(": ") || "Restart failed" });
+        return;
+      }
+      setNotice({ ok: true, message: result.message || `Restart requested for ${t.name}` });
       api
         .sendBroadcast({
           event: "HEALTH_ALERT",
