@@ -1,0 +1,20 @@
+/** BFF paths (relative to /api/v1). Each maps 1:1 to a daemon endpoint under /api/. */
+export const endpoints = {
+  metrics: "metrics",
+  metricsConfig: "metrics-config",
+  topology: "cluster/topology",
+  nodeHealth: "cluster/node-health",
+  healthAlerts: "cluster/health-alerts",
+  podAction: "pod/action",
+  podLogs: "pod/logs",
+  podDetails: "pod/details",
+  connections: "connections/topology",
+  commStats: "comm/stats",
+  commLogs: "comm/logs",
+  commBroadcast: "comm/broadcast",
+  commUnicast: "comm/unicast",
+  commMulticast: "comm/multicast",
+  scalingDeployments: "scaling/deployments",
+  scalingLatestMetrics: "scaling/metrics/latest",
+  extensions: "extensions",
+} as const;
